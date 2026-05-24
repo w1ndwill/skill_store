@@ -1,81 +1,139 @@
 # ⚡ AI Skill Hub Manager (v1.0.0 Release)
 
-> 🚀 **零门槛、零依赖的 Windows 原生双端 AI 协同规则与本地技能库可视化管理器。**
+> 🚀 **A zero-barrier, zero-dependency Windows native standalone AI development workflow and local skill library visual manager.**
 
-**AI Skill Hub Manager** 是一款专为 AI 时代协同开发量身打造的 Windows 桌面客户端。本系统能够跨项目、跨框架高效管理、编辑您的 AI 技能约束文件（如 `.md` 开发规约与红线准则），并支持一键将选定的技能一键同步分发装载到您指定的任意开发项目中，自动在目标项目内构建高效的哈希校验与 `AGENTS.md` 索引目录。
-
----
-
-## ✨ 核心特性
-
-- 📦 **100% 独立单文件运行 (.exe)**：
-  - 彻底摆脱“本地 Web 服务监听 + 浏览器套壳”的易冲突架构。基于 `pywebview` 引擎直读本地临时静态包，不监听任何端口，零网络依赖。
-  - 彻底去除 CMD 黑窗口闪烁，双击即可秒级拉起原生清爽窗口。
-- ⚙️ **全新升级的“自适应路径系统” (v1.0.0 版)**：
-  - **路径完全去硬编码**：首次启动程序会自动创建本地 `skills/` 全局技能库文件夹。
-  - **原生文件夹路径管理器**：支持在 UI 中直观地一键切换、选取自定义全局技能库（D 盘、C 盘、用户文档目录等），彻底适配各种系统差异与网络分发。
-- 📂 **智能项目选取与状态哈希审计**：
-  - 点击“关联开发项目”一键唤起 Windows 标准原生文件夹选择框，0 键盘输入，极致防错。
-  - 精准进行项目备份与全局库文件哈希审计，智能呈现状态图标：
-    - 🟢 **已同步 (Synced)**：项目端规约与全局库 MD5 校验绝对匹配。
-    - 🟡 **有更新 (Out of sync)**：检测到全局技能指南被更新，提示一键物理分发同步。
-    - ⚪ **未装载 (Unloaded)**：项目目录中暂无此技能规约。
-- 📝 **内置等宽高级 Markdown 原生模态编辑器**：
-  - 点击“编辑技能”直接唤起自带编辑框，模态置顶，光标秒级自动聚焦，支持实时渲染预览。
-- 🎨 **大厂级 Premium 极客微动交互**：
-  - stripe 风格双行数据看板、iOS 自适应滑块、自适应弹性伸缩高度的卡片排版。
-  - 鼠标悬浮项目及卡片时，触发科技感动态呼吸边框微光特效（Border Glow Effect）。
+**AI Skill Hub Manager** is a premium Windows desktop client tailored for collaborative AI development. It enables you to efficiently manage and edit your AI skill/rule constraint files (e.g., `.md` development specifications and quality redlines) across different projects and frameworks. With a single click, it distributes and mounts selected skills to any of your specified development projects, automatically building robust MD5 hash verification and a beautiful `AGENTS.md` index directory.
 
 ---
 
-## 📁 目录结构
+## 🌎 Language Versions
+
+- [English README](README.md)
+- [简体中文 README](README_ZH.md)
+
+---
+
+## 🎨 Key Features
+
+- 📦 **100% Standalone Single File Run (.exe)**:
+  - Completely abandons the conflict-prone "local web server + browser shell" architecture. Built on the `pywebview` engine, it directly reads local bundled static assets with zero open ports and zero network dependencies.
+  - Removes CMD console window flash entirely. Double-click to instantly launch the native clean window.
+- ⚙️ **Adaptive Path System (v1.0.0 Major Core Update)**:
+  - **Zero Hardcoded Paths**: The application automatically creates a default `skills/` global skill library folder in its own directory on first launch.
+  - **Native Folder Selector**: Swap and select custom global skill libraries (D: drive, C: drive, user documents directory, etc.) directly in the sidebar with a native Windows folder picker.
+- 📂 **Smart Project Management & Hash Auditing**:
+  - Click "Associate Project" to instantly bring up the native Windows folder selection dialog. Zero keyboard typing, zero errors.
+  - Conducts precise project backup and global library MD5 hash auditing, displaying real-time status dots:
+    - 🟢 **Synced**: The project規约 and the global library are a perfect MD5 match.
+    - 🟡 **Out of sync**: The global skill guideline has been edited/updated. Click to sync instantly.
+    - ⚪ **Unloaded**: This skill is not yet loaded in the target project.
+- 📝 **Built-in Monospace Markdown Modal Editor**:
+  - Click "Edit Skill" to bring up a parent-bound modal text editor with high-contrast text rendering, auto-focus on open, and real-time Markdown preview.
+- 🎨 **Premium Geek Interactions**:
+  - Stripe-style double-line stats dashboard, iOS-style slider toggles, and height-flexible card grids.
+  - Hovering over projects or skill cards triggers a smooth, breathing tech-indigo border glow effect (Border Glow Effect).
+
+---
+
+## 📁 Directory Structure
 
 ```text
 d:\DevApps\skill_store\
-├── main.py              # pywebview 后端逻辑与 API 桥接层
-├── static/              # 前端 SPA (明亮模式与 Glassmorphism 磨砂设计)
-│   ├── index.html       # SPA 骨架模板
-│   ├── index.css        # Premium 精致样式设计系统
-│   └── app.js           # 前端数据交互与 toast 系统
-├── config.json          # 本地自适应动态配置库 (自动生成，git 已忽略)
-├── .gitignore           # 科学合理的 Git 过滤配置
-└── README.md            # 项目说明文档
+├── main.py              # pywebview backend API & bridge layer
+├── static/              # Frontend SPA (明亮模式 & Glassmorphism design)
+│   ├── index.html       # SPA skeleton template
+│   ├── index.css        # Premium UI design system stylesheet
+│   └── app.js           # Frontend data interactions & toast system
+├── config.json          # Local adaptive configuration database (auto-generated, git ignored)
+├── .gitignore           # Highly clean Git exclusions
+├── README.md            # Project manual (English)
+└── README_ZH.md         # Project manual (简体中文)
 ```
 
 ---
 
-## 🛠️ 本地编译与打包
+## 💻 Installation Guide
 
-如果您想自行修改代码并进行二次编译，请按照如下步骤操作：
+### Method A: Run Standalone EXE (Recommended)
+1. Go to the **Releases** tab of this GitHub repository and download the latest `AI_Skill_Hub_Manager.exe`.
+2. Move `AI_Skill_Hub_Manager.exe` to any folder on your computer (e.g. `D:\DevApps\skill_store`).
+3. Double-click `AI_Skill_Hub_Manager.exe` to launch.
+4. *Note: Running it for the first time will automatically generate `config.json` and a `skills/` folder next to the executable.*
 
-### 1. 环境准备
-确保您的 Windows 系统已安装 Python 3.10+ 环境，并安装以下第三方依赖：
+### Method B: Install and Run from Source
+If you want to run from source or develop locally, please follow these steps:
+
+#### 1. Clone the Repository
 ```bash
-pip install pywebview pyinstaller
+git clone https://github.com/your-username/your-repo-name.git
+cd skill_store
 ```
 
-### 2. 开发者模式运行
-在代码所在目录下运行：
+#### 2. Install Python Environment
+Make sure Python 3.10+ is installed on your Windows system.
+
+#### 3. Install Third-party Dependencies
+Install `pywebview` to support the desktop GUI:
+```bash
+pip install pywebview
+```
+
+#### 4. Run the Application
 ```bash
 python main.py
 ```
 
-### 3. 一键编译打包 Standalone EXE
-使用 PyInstaller 将所有前端资产及依赖完整压缩封装为一个独立的 EXE 运行包：
+---
+
+## 🛠️ Compilation & Packaging Guide
+
+If you modify the source code (especially HTML/CSS/JS assets in the `static/` folder) and want to rebuild it into a standalone `.exe`, follow these steps:
+
+### 1. Install PyInstaller
+```bash
+pip install pyinstaller
+```
+
+### 2. Run Compilation
+Compile all assets and dependencies into a single, clean single-file executable:
 ```bash
 pyinstaller --noconsole --onefile --clean --add-data "static;static" main.py
 ```
-编译完成后，可在 `dist/` 目录下找到生成的 `main.exe`，重命名为 `AI_Skill_Hub_Manager.exe` 即可发给团队的其他开发人员直接双击运行！
+
+### 3. Retrieve Compiled Binary
+The compiled `main.exe` will be located in the `dist/` directory. Rename it to `AI_Skill_Hub_Manager.exe` and place it in your preferred directory for deployment.
 
 ---
 
-## 🚀 关于 1.0 正式版 GitHub 托管建议
+## 🕹️ Detailed Usage Manual
 
-为了保证代码仓库的极致干净与规范，我们已配置了完善的 `.gitignore` 过滤机制：
-1. **源码管理**：代码仓库仅追踪 `main.py`、`static/` 文件夹及本说明文件。
-2. **本地配置过滤**：用户的 `config.json` 与 `projects.json` 已自动过滤，确保不会将敏感路径或个人开发目录提交至云端。
-3. **打包文件发布**：大型二进制编译包 `AI_Skill_Hub_Manager.exe` 已经过滤，**建议将其上传至您 GitHub 仓库的 `Releases`（版本发布）中作为附件资产**，方便用户下载，这符合开源界最正规的软件发布流程！
+### Step 1: Configure Your Global Skill Library
+1. Launch the application. You will see the currently loaded absolute path in the **"Global Skill Library"** config widget in the left sidebar.
+2. To link your existing rule directory (e.g., `D:\DevApps\skills`), click the ⚙️ Settings icon next to the path, select your target directory in the dialog, and select "Select Folder".
+3. To add a new skill guidelines file, click **"New Skill"** at the top of the sidebar, type a filename (e.g., `git-commit.md`), and the system will create a beautiful Chinese Markdown template and automatically open the modal editor.
+
+### Step 2: Link Your Development Projects
+1. Click **"Associate Project"** at the top of the left sidebar.
+2. Select the root folder of any software project you are developing (e.g., `D:\Project\my-app`) in the native dialog.
+3. Click to select the associated project in the sidebar list. The right panel will instantly refresh and show the sync status for every global skill.
+
+### Step 3: One-Click Sync & Load Spec
+1. In the right cards grid, toggle the **"Enable Mounting"** slider at the bottom of each skill card to select which rules should apply to the currently selected project.
+2. Once selected, the **"One-Click Sync Skills"** button in the top header will light up.
+3. Click **"One-Click Sync Skills"**. The client will automatically:
+   - Copy the selected `.md` rule files into your project's `.agent/skills/` directory.
+   - Automatically generate or update a beautiful [**`AGENTS.md`**](AGENTS.md) navigation index file in your project's root folder, allowing local AI agents (such as Cursor, GitHub Copilot, Windsurf) to load and execute the rule immediately.
+   - Automatically uninstall and physically delete any unselected rules in the project folder to keep your directory clean.
 
 ---
 
-*⚡ Power by Advanced Agentic Coding - Antigravity.*
+## 🚀 Professional GitHub Hosting Advice
+
+To maintain a clean and industry-standard Git repository:
+1. **Source Tracking**: Only track the source files (`main.py`, `static/`, and documentation `README.md`, `README_ZH.md`).
+2. **Local Settings Ignored**: User configuration databases like `config.json` and `projects.json` are automatically ignored to avoid committing personal directory paths to public repositories.
+3. **Executable Distribution**: Large compiled binary files (`AI_Skill_Hub_Manager.exe`) are ignored. **We highly recommend uploading your compiled `AI_Skill_Hub_Manager.exe` as a Release Asset in your GitHub Release page** rather than checking it into the Git source tree.
+
+---
+
+*⚡ Powered by Advanced Agentic Coding - Antigravity.*
