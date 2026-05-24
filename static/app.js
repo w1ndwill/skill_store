@@ -263,6 +263,22 @@ async function handleCreateSkill() {
 }
 
 function handleSelectProject(path) {
+  if (currentProjectPath === path) {
+    // 点击已激活的项目 -> 取消关联激活，返回全局技能列表只读视图
+    currentProjectPath = null;
+    enabledSkills.clear();
+    currentProjectTitle.textContent = '请选择一个项目进行配置';
+    currentProjectDesc.textContent = '选择左侧项目后，可在此管理技能装载';
+    syncBtn.setAttribute('disabled', 'true');
+    syncBtn.classList.remove('pulsing-btn', 'active');
+    renderProjectsList();
+    renderSkillsGrid();
+    updateStatistics();
+    lucide.createIcons();
+    showToast('已退出项目配置模式，返回全局只读视图', 'success');
+    return;
+  }
+
   const proj = projects.find(p => p.path === path);
   if (!proj) return;
   if (proj.error) showToast(`项目路径无法访问: ${proj.error}`, 'warning');
@@ -451,6 +467,42 @@ async function handleChangeSkillsDir() {
     await fetchProjects();
   } catch (e) {
     showToast('更改全局技能库失败: ' + e, 'error');
+  }
+}
+
+async function handleRefreshSkills() {
+  const icon = document.querySelector('#btn-refresh-skills i');
+  if (icon) {
+    icon.classList.add('spinning');
+  }
+  try {
+    await fetchSkills();
+    if (currentProjectPath) {
+      await fetchProjects();
+      
+      // Update local state without losing the currently configured path
+      const proj = projects.find(p => p.path === currentProjectPath);
+      if (proj) {
+        enabledSkills.clear();
+        Object.entries(proj.skills_status || {}).forEach(([fname, status]) => {
+          if (status === 'synced' || status === 'out_of_sync') enabledSkills.add(fname);
+        });
+        currentProjectTitle.textContent = proj.name;
+        currentProjectDesc.innerHTML = `<i data-lucide="folder" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>${proj.path}`;
+        updateStatistics();
+      }
+      renderProjectsList();
+      renderSkillsGrid();
+    }
+    showToast('全局技能库已成功重扫描刷新 🟢', 'success');
+  } catch (e) {
+    showToast('刷新技能库失败: ' + e, 'error');
+  } finally {
+    if (icon) {
+      setTimeout(() => {
+        icon.classList.remove('spinning');
+      }, 500);
+    }
   }
 }
 

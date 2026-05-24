@@ -103,6 +103,9 @@
         <div class="content-toolbar">
           <h3>全局技能列表</h3>
           <div class="toolbar-controls">
+            <button class="btn btn-secondary btn-icon" id="btn-refresh-skills" onclick="handleRefreshSkills()" title="刷新全局技能库" style="margin-right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0;">
+              <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i>
+            </button>
             <div class="search-box">
               <i data-lucide="search" style="width:15px;height:15px;color:var(--text-muted);"></i>
               <input type="text" id="search-input" class="search-input" placeholder="搜索技能名称、标签…" oninput="handleSearch()">
