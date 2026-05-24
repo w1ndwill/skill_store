@@ -596,4 +596,4 @@ if __name__ == "__main__":
         background_color='#f6f8fa'
     )
     api.set_window(window)
-    webview.start(debug=False)
+    webview.start(debug=True)
