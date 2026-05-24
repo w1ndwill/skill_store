@@ -8,6 +8,11 @@ let currentProjectPath = null;
 let enabledSkills = new Set();
 let editingFilename = null;
 
+// i18n & Theme State
+let currentLanguage = 'zh';
+let currentTheme = 'light';
+let defaultScanDir = '';
+
 // DOM cache
 const projectList = document.getElementById('project-list');
 const cardsGrid = document.getElementById('cards-grid');
@@ -27,6 +32,138 @@ const toastContainer = document.getElementById('toast-container');
 const searchInput = document.getElementById('search-input');
 const skillsDirPath = document.getElementById('skills-dir-path');
 
+// ------------------------------------------
+// Bilingual i18n Dictionary
+// ------------------------------------------
+const locales = {
+  zh: {
+    sidebarTitle: 'AI Skill Hub',
+    sidebarSub: '本地技能可视化管理器',
+    btnAssociate: '关联项目',
+    btnNewSkill: '新建技能',
+    headingProjects: '目标项目',
+    emptyProjects: '暂无关联项目',
+    emptyProjectsSub: '点击上方按钮选取文件夹',
+    btnSettings: '系统设置',
+    noProjectTitle: '请选择一个项目进行配置',
+    noProjectDesc: '选择左侧项目后，可在此管理技能装载',
+    syncBtn: '一键同步技能',
+    syncingBtn: '同步中…',
+    statTotal: '全局技能库',
+    statSynced: '当前已装载',
+    statUnsynced: '待更新',
+    listHeader: '全局技能列表',
+    searchPlaceholder: '搜索技能名称、标签…',
+    statusSynced: '已同步',
+    statusUpdated: '有更新',
+    statusPendingMount: '待装载',
+    statusPendingUnmount: '待卸载',
+    statusUnloaded: '未装载',
+    statusReadonly: '全局只读',
+    btnEditSkill: '编辑技能',
+    toggleLabel: '启用装载',
+    editModalTitle: '编辑技能',
+    editModalTabSource: '编辑源码',
+    editModalTabPreview: '实时预览',
+    editModalCancel: '取消',
+    editModalSave: '保存并更新',
+    toastLoadFail: '获取列表失败: ',
+    toastConfigFail: '获取系统配置失败: ',
+    toastProjectFail: '获取项目列表失败: ',
+    toastAssocSuccess: '已关联项目: ',
+    toastAssocExists: '该项目已关联',
+    toastCreateSuccess: '技能文件已创建: ',
+    toastCreateExists: '该文件已存在',
+    toastSaveSuccess: '全局技能已保存',
+    toastSyncSuccess: '同步完成！已装载 ',
+    toastSyncFail: '同步失败: ',
+    toastRemoveSuccess: '项目已移除',
+    toastPathUpdate: '全局技能库路径已更新',
+    toastRefreshSuccess: '全局技能库已成功重扫描刷新 🟢',
+    toastSettingsSaved: '系统配置已保存并生效 ⚙️',
+    settingsTitle: '系统设置',
+    settingsCancel: '取消',
+    settingsSave: '保存配置',
+    settingsHeadingGeneral: '通用偏好',
+    settingsLabelLang: '系统语言 (Language)',
+    settingsDescLang: '切换整个界面的显示语言',
+    settingsLabelTheme: '界面主题 (Theme)',
+    settingsDescTheme: '选择明亮模式或护眼深色模式',
+    settingsThemeLight: '☀️ 明亮模式 (Light)',
+    settingsThemeDark: '🌙 深色模式 (Dark)',
+    settingsHeadingPaths: '路径管理',
+    settingsLabelSkillsdir: '全局技能库路径',
+    settingsDescSkillsdir: '存放全局技能规约 Markdown 文件的目录',
+    settingsLabelScandir: '项目默认扫描起点',
+    settingsDescScandir: '点击“关联项目”时，默认打开的初始目录',
+    exitProjectMode: '已退出项目配置模式，返回全局只读视图',
+    confirmRemove: '确定要移除此项目的关联吗？\n不会删除项目中的任何文件。'
+  },
+  en: {
+    sidebarTitle: 'AI Skill Hub',
+    sidebarSub: 'Local Skill Manager',
+    btnAssociate: 'Link Project',
+    btnNewSkill: 'New Skill',
+    headingProjects: 'Target Projects',
+    emptyProjects: 'No Linked Projects',
+    emptyProjectsSub: 'Click button above to select folder',
+    btnSettings: 'Settings',
+    noProjectTitle: 'Select a project to configure',
+    noProjectDesc: 'Select a project on the left to manage skill mounts',
+    syncBtn: 'Sync Skills Now',
+    syncingBtn: 'Syncing...',
+    statTotal: 'Global Skill Library',
+    statSynced: 'Currently Loaded',
+    statUnsynced: 'Pending Update',
+    listHeader: 'Global Skills List',
+    searchPlaceholder: 'Search skills, tags...',
+    statusSynced: 'Synced',
+    statusUpdated: 'Updated',
+    statusPendingMount: 'Pending Mount',
+    statusPendingUnmount: 'Pending Unmount',
+    statusUnloaded: 'Unloaded',
+    statusReadonly: 'Global Read-Only',
+    btnEditSkill: 'Edit Skill',
+    toggleLabel: 'Enable Mount',
+    editModalTitle: 'Edit Skill',
+    editModalTabSource: 'Edit Source',
+    editModalTabPreview: 'Live Preview',
+    editModalCancel: 'Cancel',
+    editModalSave: 'Save & Update',
+    toastLoadFail: 'Failed to fetch skill list: ',
+    toastConfigFail: 'Failed to fetch configuration: ',
+    toastProjectFail: 'Failed to fetch projects list: ',
+    toastAssocSuccess: 'Linked project: ',
+    toastAssocExists: 'This project is already linked',
+    toastCreateSuccess: 'Skill file created: ',
+    toastCreateExists: 'File already exists',
+    toastSaveSuccess: 'Global skill saved successfully',
+    toastSyncSuccess: 'Sync completed! Loaded ',
+    toastSyncFail: 'Sync failed: ',
+    toastRemoveSuccess: 'Project association removed',
+    toastPathUpdate: 'Global skills path updated',
+    toastRefreshSuccess: 'Global skill library rescanned & refreshed 🟢',
+    toastSettingsSaved: 'Settings saved and applied ⚙️',
+    settingsTitle: 'System Settings',
+    settingsCancel: 'Cancel',
+    settingsSave: 'Save Settings',
+    settingsHeadingGeneral: 'General Preferences',
+    settingsLabelLang: 'System Language',
+    settingsDescLang: 'Switch display language across the interface',
+    settingsLabelTheme: 'Theme Mode',
+    settingsDescTheme: 'Choose light or eye-protection dark mode',
+    settingsThemeLight: '☀️ Light Mode',
+    settingsThemeDark: '🌙 Dark Mode',
+    settingsHeadingPaths: 'Paths Management',
+    settingsLabelSkillsdir: 'Global Skill Library Path',
+    settingsDescSkillsdir: 'Folder storing global Markdown files',
+    settingsLabelScandir: 'Project Scan Starting Path',
+    settingsDescScandir: 'Default folder shown when adding a project',
+    exitProjectMode: 'Exited project configuration mode, returned to global read-only view',
+    confirmRemove: 'Are you sure you want to unlink this project?\nNo files will be deleted from your disk.'
+  }
+};
+
 // Wait for pywebview bridge
 window.addEventListener('pywebviewready', () => {
   init();
@@ -45,11 +182,90 @@ async function fetchConfig() {
     skillsDirPath.textContent = config.skills_dir;
     skillsDirPath.title = config.skills_dir;
     projects = config.projects || [];
+    currentLanguage = config.language || 'zh';
+    currentTheme = config.theme || 'light';
+    defaultScanDir = config.default_scan_dir || '';
+    
+    applyTheme(currentTheme);
+    applyLanguage(currentLanguage);
   } catch (e) {
-    showToast('获取系统配置失败: ' + e, 'error');
+    showToast(currentLanguage === 'zh' ? '获取系统配置失败: ' + e : 'Failed to fetch config: ' + e, 'error');
   }
 }
 
+function applyTheme(theme) {
+  currentTheme = theme;
+  if (theme === 'dark') {
+    document.body.classList.add('dark-theme');
+  } else {
+    document.body.classList.remove('dark-theme');
+  }
+}
+
+function applyLanguage(lang) {
+  currentLanguage = lang;
+  const t = locales[lang];
+  
+  // Sidebar
+  document.querySelector('.brand-title h1').textContent = t.sidebarTitle;
+  document.querySelector('.brand-title p').textContent = t.sidebarSub;
+  document.getElementById('btn-add-project').innerHTML = `<i data-lucide="folder-plus" style="width:15px;height:15px;"></i> ${t.btnAssociate}`;
+  document.getElementById('btn-new-skill').innerHTML = `<i data-lucide="file-plus" style="width:15px;height:15px;"></i> ${t.btnNewSkill}`;
+  document.querySelector('.sidebar-section .section-title h2').textContent = t.headingProjects;
+  document.getElementById('sidebar-settings-text').textContent = t.btnSettings;
+
+  // Main Header / Project View
+  if (!currentProjectPath) {
+    currentProjectTitle.textContent = t.noProjectTitle;
+    currentProjectDesc.textContent = t.noProjectDesc;
+  } else {
+    const proj = projects.find(p => p.path === currentProjectPath);
+    if (proj) {
+      currentProjectTitle.textContent = proj.name;
+    }
+  }
+  
+  // Sync Button Text
+  syncBtn.innerHTML = `<i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> ${t.syncBtn}`;
+  
+  // Stats
+  document.querySelectorAll('.stat-label')[0].textContent = t.statTotal;
+  document.querySelectorAll('.stat-label')[1].textContent = t.statSynced;
+  document.querySelectorAll('.stat-label')[2].textContent = t.statUnsynced;
+
+  // Search Controls
+  document.querySelector('.content-toolbar h3').textContent = t.listHeader;
+  searchInput.placeholder = t.searchPlaceholder;
+  document.getElementById('btn-refresh-skills').title = lang === 'zh' ? '刷新全局技能库' : 'Refresh Global Skills';
+
+  // Modals (Editor)
+  document.querySelectorAll('.modal-tab')[0].textContent = t.editModalTabSource;
+  document.querySelectorAll('.modal-tab')[1].textContent = t.editModalTabPreview;
+  document.querySelectorAll('#editor-modal footer button')[0].textContent = t.editModalCancel;
+  document.querySelectorAll('#editor-modal footer button')[1].innerHTML = `<i data-lucide="save" style="width:16px;height:16px;"></i> ${t.editModalSave}`;
+
+  // Modals (Settings)
+  document.getElementById('settings-modal-title').textContent = t.settingsTitle;
+  document.getElementById('settings-heading-general').textContent = t.settingsHeadingGeneral;
+  document.getElementById('settings-label-lang').textContent = t.settingsLabelLang;
+  document.getElementById('settings-desc-lang').textContent = t.settingsDescLang;
+  document.getElementById('settings-label-theme').textContent = t.settingsLabelTheme;
+  document.getElementById('settings-desc-theme').textContent = t.settingsDescTheme;
+  document.getElementById('settings-theme-option-light').textContent = t.settingsThemeLight;
+  document.getElementById('settings-theme-option-dark').textContent = t.settingsThemeDark;
+  document.getElementById('settings-heading-paths').textContent = t.settingsHeadingPaths;
+  document.getElementById('settings-label-skillsdir').textContent = t.settingsLabelSkillsdir;
+  document.getElementById('settings-desc-skillsdir').textContent = t.settingsDescSkillsdir;
+  document.getElementById('settings-label-scandir').textContent = t.settingsLabelScandir;
+  document.getElementById('settings-desc-scandir').textContent = t.settingsDescScandir;
+  document.getElementById('settings-btn-cancel').textContent = t.settingsCancel;
+  document.getElementById('settings-btn-save').innerHTML = `<i data-lucide="save" style="width:16px;height:16px;"></i> ${t.settingsSave}`;
+
+  // Re-render components to apply dynamic texts
+  renderProjectsList();
+  renderSkillsGrid();
+  lucide.createIcons();
+}
 
 // ------------------------------------------
 // Data Layer (pywebview bridge)
@@ -61,7 +277,7 @@ async function fetchSkills() {
     statTotalSkills.textContent = skills.length;
     renderSkillsGrid();
   } catch (e) {
-    showToast('获取技能列表失败: ' + e, 'error');
+    showToast(locales[currentLanguage].toastLoadFail + e, 'error');
   }
 }
 
@@ -71,7 +287,7 @@ async function fetchProjects() {
     renderProjectsList();
     updateStatistics();
   } catch (e) {
-    showToast('获取项目列表失败: ' + e, 'error');
+    showToast(locales[currentLanguage].toastProjectFail + e, 'error');
   }
 }
 
@@ -105,9 +321,9 @@ function renderProjectsList() {
   if (projects.length === 0) {
     projectList.innerHTML = `
       <div class="empty-state" style="padding:2rem 1rem;">
-        <div class="empty-state-icon">\ud83d\udcc2</div>
-        <h4>暂无关联项目</h4>
-        <p>点击上方按钮选取文件夹</p>
+        <div class="empty-state-icon">📂</div>
+        <h4>${locales[currentLanguage].emptyProjects}</h4>
+        <p>${locales[currentLanguage].emptyProjectsSub}</p>
       </div>`;
     return;
   }
@@ -115,9 +331,8 @@ function renderProjectsList() {
     const item = document.createElement('div');
     item.className = `project-item ${proj.path === currentProjectPath ? 'active' : ''}`;
     const errorBadge = proj.error
-      ? `<span style="font-size:0.65rem;color:#d1242f;font-weight:600;">\u26a0 路径无效</span>`
+      ? `<span style="font-size:0.65rem;color:#d1242f;font-weight:600;">⚠️ ${currentLanguage === 'zh' ? '路径无效' : 'Invalid Path'}</span>`
       : '';
-    // Escape backslashes for onclick
     const escapedPath = proj.path.replace(/\\/g, '\\\\');
     item.innerHTML = `
       <div class="project-details" onclick="handleSelectProject('${escapedPath}')">
@@ -147,9 +362,9 @@ function renderSkillsGrid() {
   if (filtered.length === 0) {
     cardsGrid.innerHTML = `
       <div class="empty-state" style="grid-column:1/-1;">
-        <div class="empty-state-icon">\ud83d\udd0d</div>
-        <h4>未找到匹配的技能</h4>
-        <p>请更换关键词或新建技能</p>
+        <div class="empty-state-icon">🔍</div>
+        <h4>${currentLanguage === 'zh' ? '未找到匹配的技能' : 'No matching skills found'}</h4>
+        <p>${currentLanguage === 'zh' ? '请更换关键词或新建技能' : 'Change keywords or create a new skill'}</p>
       </div>`;
     return;
   }
@@ -171,24 +386,22 @@ function renderSkillsGrid() {
       if (isLocallyEnabled) {
         isChecked = true;
         if (physicalStatus === 'synced') {
-          badgeHTML = `<span class="status-badge synced"><span class="status-dot"></span>已同步</span>`;
+          badgeHTML = `<span class="status-badge synced"><span class="status-dot"></span>${locales[currentLanguage].statusSynced}</span>`;
         } else if (physicalStatus === 'out_of_sync') {
-          badgeHTML = `<span class="status-badge out-of-sync"><span class="status-dot"></span>有更新</span>`;
+          badgeHTML = `<span class="status-badge out-of-sync"><span class="status-dot"></span>${locales[currentLanguage].statusUpdated}</span>`;
         } else {
-          // Enabled locally but unloaded physically -> Pending Mount
-          badgeHTML = `<span class="status-badge pending-mount"><span class="status-dot"></span>待装载</span>`;
+          badgeHTML = `<span class="status-badge pending-mount"><span class="status-dot"></span>${locales[currentLanguage].statusPendingMount}</span>`;
         }
       } else {
         isChecked = false;
         if (physicalStatus === 'synced' || physicalStatus === 'out_of_sync') {
-          // Disabled locally but physically loaded -> Pending Uninstall
-          badgeHTML = `<span class="status-badge pending-unmount"><span class="status-dot"></span>待卸载</span>`;
+          badgeHTML = `<span class="status-badge pending-unmount"><span class="status-dot"></span>${locales[currentLanguage].statusPendingUnmount}</span>`;
         } else {
-          badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>未装载</span>`;
+          badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusUnloaded}</span>`;
         }
       }
     } else {
-      badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>全局只读</span>`;
+      badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusReadonly}</span>`;
     }
 
     const tagsHTML = skill.tags.map(t => `<span class="badge">${t}</span>`).join('');
@@ -196,7 +409,7 @@ function renderSkillsGrid() {
     card.innerHTML = `
       <div class="card-header">
         <div class="skill-meta">
-          <div class="skill-emoji">${skill.emoji || '\ud83d\udcc4'}</div>
+          <div class="skill-emoji">${skill.emoji || '📄'}</div>
           <div class="skill-info">
             <h4 class="skill-title">${skill.title}</h4>
             <span class="skill-tag">${skill.filename}</span>
@@ -207,12 +420,12 @@ function renderSkillsGrid() {
       <p class="card-body">${skill.description}</p>
       <div class="card-tags">${tagsHTML}</div>
       <div class="card-footer">
-        <button class="btn btn-secondary btn-icon" onclick="openEditorModal('${skill.filename}')" title="编辑技能">
-          <i data-lucide="edit-3" style="width:14px;height:14px;margin-right:4px;"></i>编辑技能
+        <button class="btn btn-secondary btn-icon" onclick="openEditorModal('${skill.filename}')" title="${locales[currentLanguage].btnEditSkill}">
+          <i data-lucide="edit-3" style="width:14px;height:14px;margin-right:4px;"></i>${locales[currentLanguage].btnEditSkill}
         </button>
         ${currentProjectPath && activeProj && !activeProj.error ? `
           <label class="switch-label">
-            <span>启用装载</span>
+            <span>${locales[currentLanguage].toggleLabel}</span>
             <label class="switch">
               <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="handleToggleSkill('${skill.filename}', this.checked)">
               <span class="slider"></span>
@@ -233,55 +446,54 @@ async function handlePickProject() {
     const result = await window.pywebview.api.add_project_via_dialog();
     if (!result) return;
     if (result.error) {
-      showToast(result.error, 'warning');
+      showToast(currentLanguage === 'zh' ? '该项目已关联' : 'This project is already linked', 'warning');
       return;
     }
-    showToast(`\u2705 已关联项目: ${result.name}`, 'success');
+    showToast(locales[currentLanguage].toastAssocSuccess + result.name, 'success');
     currentProjectPath = result.path;
     await fetchProjects();
     handleSelectProject(result.path);
   } catch (e) {
-    showToast('关联项目失败: ' + e, 'error');
+    showToast((currentLanguage === 'zh' ? '关联项目失败: ' : 'Failed to link project: ') + e, 'error');
   }
 }
 
 async function handleCreateSkill() {
-  const filename = prompt('请输入新技能文件名 (例如: 代码安全规范.md)');
+  const filename = prompt(currentLanguage === 'zh' ? '请输入新技能文件名 (例如: 代码安全规范.md)' : 'Enter new skill filename (e.g. CodeSafety.md)');
   if (!filename) return;
   try {
     const result = await window.pywebview.api.create_skill(filename);
     if (result.error) {
-      showToast(result.error, 'warning');
+      showToast(currentLanguage === 'zh' ? result.error : 'File already exists', 'warning');
       return;
     }
-    showToast(`\u2705 技能文件已创建: ${result.filename}`, 'success');
+    showToast(locales[currentLanguage].toastCreateSuccess + result.filename, 'success');
     await fetchSkills();
     openEditorModal(result.filename);
   } catch (e) {
-    showToast('创建失败: ' + e, 'error');
+    showToast((currentLanguage === 'zh' ? '创建失败: ' : 'Failed to create skill: ') + e, 'error');
   }
 }
 
 function handleSelectProject(path) {
   if (currentProjectPath === path) {
-    // 点击已激活的项目 -> 取消关联激活，返回全局技能列表只读视图
     currentProjectPath = null;
     enabledSkills.clear();
-    currentProjectTitle.textContent = '请选择一个项目进行配置';
-    currentProjectDesc.textContent = '选择左侧项目后，可在此管理技能装载';
+    currentProjectTitle.textContent = locales[currentLanguage].noProjectTitle;
+    currentProjectDesc.textContent = locales[currentLanguage].noProjectDesc;
     syncBtn.setAttribute('disabled', 'true');
     syncBtn.classList.remove('pulsing-btn', 'active');
     renderProjectsList();
     renderSkillsGrid();
     updateStatistics();
     lucide.createIcons();
-    showToast('已退出项目配置模式，返回全局只读视图', 'success');
+    showToast(locales[currentLanguage].exitProjectMode, 'success');
     return;
   }
 
   const proj = projects.find(p => p.path === path);
   if (!proj) return;
-  if (proj.error) showToast(`项目路径无法访问: ${proj.error}`, 'warning');
+  if (proj.error) showToast(currentLanguage === 'zh' ? `项目路径无法访问: ${proj.error}` : `Project path inaccessible: ${proj.error}`, 'warning');
   currentProjectPath = path;
   enabledSkills.clear();
   Object.entries(proj.skills_status || {}).forEach(([fname, status]) => {
@@ -306,14 +518,14 @@ function handleToggleSkill(filename, isEnabled) {
 
 async function handleDeleteProject(event, path) {
   event.stopPropagation();
-  if (!confirm('确定要移除此项目的关联吗？\n不会删除项目中的任何文件。')) return;
+  if (!confirm(locales[currentLanguage].confirmRemove)) return;
   try {
     await window.pywebview.api.delete_project(path);
-    showToast('项目已移除', 'success');
+    showToast(locales[currentLanguage].toastRemoveSuccess, 'success');
     if (currentProjectPath === path) {
       currentProjectPath = null;
-      currentProjectTitle.textContent = '请选择一个项目进行配置';
-      currentProjectDesc.textContent = '选择左侧项目后，可在此管理技能装载';
+      currentProjectTitle.textContent = locales[currentLanguage].noProjectTitle;
+      currentProjectDesc.textContent = locales[currentLanguage].noProjectDesc;
       syncBtn.setAttribute('disabled', 'true');
       syncBtn.classList.remove('pulsing-btn', 'active');
     }
@@ -321,7 +533,7 @@ async function handleDeleteProject(event, path) {
     renderSkillsGrid();
     updateStatistics();
   } catch (e) {
-    showToast('移除失败: ' + e, 'error');
+    showToast((currentLanguage === 'zh' ? '移除失败: ' : 'Failed to remove: ') + e, 'error');
   }
 }
 
@@ -335,29 +547,23 @@ async function handleSyncSkills() {
     icon.classList.add('spinning');
   }
 
-  // Find the text node inside the button to update the text to "同步中..." without destroying the icon
-  const originalTextNode = Array.from(syncBtn.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
-  const originalText = originalTextNode ? originalTextNode.textContent : ' 一键同步技能';
-  if (originalTextNode) {
-    originalTextNode.textContent = ' 同步中…';
-  }
+  const originalHTML = syncBtn.innerHTML;
+  syncBtn.innerHTML = `<span class="loading-spinner"></span> ${locales[currentLanguage].syncingBtn}`;
 
   try {
     const result = await window.pywebview.api.sync_skills(currentProjectPath, Array.from(enabledSkills));
     if (result.error) throw new Error(result.error);
-    showToast(`✨ 同步完成！已装载 ${result.synced_count} 项技能`, 'success');
+    showToast(locales[currentLanguage].toastSyncSuccess + result.synced_count + (currentLanguage === 'zh' ? ' 项技能' : ' skills'), 'success');
     await fetchProjects();
     handleSelectProject(currentProjectPath);
   } catch (e) {
-    showToast('同步失败: ' + e, 'error');
+    showToast(locales[currentLanguage].toastSyncFail + e, 'error');
   } finally {
+    syncBtn.innerHTML = originalHTML;
     syncBtn.removeAttribute('disabled');
     syncBtn.classList.add('pulsing-btn');
     if (icon) {
       icon.classList.remove('spinning');
-    }
-    if (originalTextNode) {
-      originalTextNode.textContent = originalText;
     }
   }
 }
@@ -377,9 +583,9 @@ async function openEditorModal(filename) {
   tabs[0].classList.add('active');
   tabs[1].classList.remove('active');
   const skill = skills.find(s => s.filename === filename);
-  modalEmoji.textContent = skill ? skill.emoji : '\ud83d\udcc4';
-  modalTitle.textContent = `编辑技能: ${skill ? skill.title : filename}`;
-  markdownTextarea.value = '加载中\u2026';
+  modalEmoji.textContent = skill ? skill.emoji : '📄';
+  modalTitle.textContent = (currentLanguage === 'zh' ? `编辑技能: ` : 'Edit Skill: ') + (skill ? skill.title : filename);
+  markdownTextarea.value = currentLanguage === 'zh' ? '加载中…' : 'Loading...';
   markdownTextarea.setAttribute('disabled', 'true');
   editorModal.classList.add('active');
   try {
@@ -387,7 +593,7 @@ async function openEditorModal(filename) {
     if (data.error) throw new Error(data.error);
     markdownTextarea.value = data.content;
   } catch (e) {
-    showToast('加载失败: ' + e, 'error');
+    showToast((currentLanguage === 'zh' ? '加载失败: ' : 'Failed to load: ') + e, 'error');
     closeEditorModal();
   } finally {
     markdownTextarea.removeAttribute('disabled');
@@ -420,7 +626,7 @@ async function handleSaveSkill() {
   try {
     const result = await window.pywebview.api.save_skill(editingFilename, markdownTextarea.value);
     if (result.error) throw new Error(result.error);
-    showToast('\ud83d\udcc1 全局技能已保存', 'success');
+    showToast(locales[currentLanguage].toastSaveSuccess, 'success');
     closeEditorModal();
     await fetchSkills();
     if (currentProjectPath) {
@@ -428,7 +634,7 @@ async function handleSaveSkill() {
       handleSelectProject(currentProjectPath);
     }
   } catch (e) {
-    showToast('保存失败: ' + e, 'error');
+    showToast((currentLanguage === 'zh' ? '保存失败: ' : 'Failed to save: ') + e, 'error');
   }
 }
 
@@ -460,13 +666,13 @@ async function handleChangeSkillsDir() {
   try {
     const result = await window.pywebview.api.change_skills_dir();
     if (!result) return;
-    showToast('✅ 全局技能库路径已更新', 'success');
+    showToast(locales[currentLanguage].toastPathUpdate, 'success');
     skillsDirPath.textContent = result.skills_dir;
     skillsDirPath.title = result.skills_dir;
     await fetchSkills();
     await fetchProjects();
   } catch (e) {
-    showToast('更改全局技能库失败: ' + e, 'error');
+    showToast((currentLanguage === 'zh' ? '更改全局技能库失败: ' : 'Failed to change skills directory: ') + e, 'error');
   }
 }
 
@@ -480,7 +686,6 @@ async function handleRefreshSkills() {
     if (currentProjectPath) {
       await fetchProjects();
       
-      // Update local state without losing the currently configured path
       const proj = projects.find(p => p.path === currentProjectPath);
       if (proj) {
         enabledSkills.clear();
@@ -494,9 +699,9 @@ async function handleRefreshSkills() {
       renderProjectsList();
       renderSkillsGrid();
     }
-    showToast('全局技能库已成功重扫描刷新 🟢', 'success');
+    showToast(locales[currentLanguage].toastRefreshSuccess, 'success');
   } catch (e) {
-    showToast('刷新技能库失败: ' + e, 'error');
+    showToast((currentLanguage === 'zh' ? '刷新技能库失败: ' : 'Failed to refresh skills: ') + e, 'error');
   } finally {
     if (icon) {
       setTimeout(() => {
@@ -506,3 +711,74 @@ async function handleRefreshSkills() {
   }
 }
 
+// ------------------------------------------
+// Settings Modal Handlers
+// ------------------------------------------
+
+const settingsModal = document.getElementById('settings-modal');
+const settingsLanguage = document.getElementById('settings-language');
+const settingsTheme = document.getElementById('settings-theme');
+const settingsSkillsDir = document.getElementById('settings-skills-dir');
+const settingsScanDir = document.getElementById('settings-scan-dir');
+
+function openSettingsModal() {
+  settingsLanguage.value = currentLanguage;
+  settingsTheme.value = currentTheme;
+  settingsSkillsDir.value = skillsDirPath.textContent;
+  settingsScanDir.value = defaultScanDir;
+  
+  settingsModal.classList.add('active');
+  lucide.createIcons();
+}
+
+function closeSettingsModal() {
+  settingsModal.classList.remove('active');
+}
+
+async function handleSettingsPickSkillsDir() {
+  try {
+    const result = await window.pywebview.api.change_skills_dir();
+    if (!result) return;
+    settingsSkillsDir.value = result.skills_dir;
+    showToast(locales[currentLanguage].toastPathUpdate, 'success');
+  } catch (e) {
+    showToast('Failed to select path: ' + e, 'error');
+  }
+}
+
+async function handleSettingsPickScanDir() {
+  try {
+    const result = await window.pywebview.api.pick_default_scan_dir();
+    if (!result) return;
+    settingsScanDir.value = result.default_scan_dir;
+    showToast(currentLanguage === 'zh' ? '默认扫描起点已更新' : 'Default projects path updated', 'success');
+  } catch (e) {
+    showToast('Failed to select path: ' + e, 'error');
+  }
+}
+
+async function handleSaveSettings() {
+  try {
+    const settings = {
+      skills_dir: settingsSkillsDir.value,
+      language: settingsLanguage.value,
+      theme: settingsTheme.value,
+      default_scan_dir: settingsScanDir.value
+    };
+    const result = await window.pywebview.api.save_settings(settings);
+    
+    currentLanguage = result.language;
+    currentTheme = result.theme;
+    defaultScanDir = result.default_scan_dir;
+    skillsDirPath.textContent = result.skills_dir;
+    skillsDirPath.title = result.skills_dir;
+    
+    applyTheme(currentTheme);
+    applyLanguage(currentLanguage);
+    
+    closeSettingsModal();
+    showToast(locales[currentLanguage].toastSettingsSaved, 'success');
+  } catch (e) {
+    showToast('Failed to save settings: ' + e, 'error');
+  }
+}
