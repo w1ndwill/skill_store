@@ -125,15 +125,4 @@ The compiled `main.exe` will be located in the `dist/` directory. Rename it to `
    - Automatically generate or update a beautiful [**`AGENTS.md`**](AGENTS.md) navigation index file in your project's root folder, allowing local AI agents (such as Cursor, GitHub Copilot, Windsurf) to load and execute the rule immediately.
    - Automatically uninstall and physically delete any unselected rules in the project folder to keep your directory clean.
 
----
 
-## 🚀 Professional GitHub Hosting Advice
-
-To maintain a clean and industry-standard Git repository:
-1. **Source Tracking**: Only track the source files (`main.py`, `static/`, and documentation `README.md`, `README_ZH.md`).
-2. **Local Settings Ignored**: User configuration databases like `config.json` and `projects.json` are automatically ignored to avoid committing personal directory paths to public repositories.
-3. **Executable Distribution**: Large compiled binary files (`AI_Skill_Hub_Manager.exe`) are ignored. **We highly recommend uploading your compiled `AI_Skill_Hub_Manager.exe` as a Release Asset in your GitHub Release page** rather than checking it into the Git source tree.
-
----
-
-*⚡ Powered by Advanced Agentic Coding - Antigravity.*
