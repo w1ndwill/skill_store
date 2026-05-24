@@ -298,23 +298,38 @@ async function handleDeleteProject(event, path) {
 
 async function handleSyncSkills() {
   if (!currentProjectPath) return;
-  const originalHTML = syncBtn.innerHTML;
-  syncBtn.innerHTML = `<span class="loading-spinner"></span> 同步中\u2026`;
   syncBtn.setAttribute('disabled', 'true');
   syncBtn.classList.remove('active');
+  
+  const icon = syncBtn.querySelector('i');
+  if (icon) {
+    icon.classList.add('spinning');
+  }
+
+  // Find the text node inside the button to update the text to "同步中..." without destroying the icon
+  const originalTextNode = Array.from(syncBtn.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+  const originalText = originalTextNode ? originalTextNode.textContent : ' 一键同步技能';
+  if (originalTextNode) {
+    originalTextNode.textContent = ' 同步中…';
+  }
+
   try {
     const result = await window.pywebview.api.sync_skills(currentProjectPath, Array.from(enabledSkills));
     if (result.error) throw new Error(result.error);
-    showToast(`\u2728 同步完成！已装载 ${result.synced_count} 项技能`, 'success');
+    showToast(`✨ 同步完成！已装载 ${result.synced_count} 项技能`, 'success');
     await fetchProjects();
     handleSelectProject(currentProjectPath);
   } catch (e) {
     showToast('同步失败: ' + e, 'error');
   } finally {
-    syncBtn.innerHTML = originalHTML;
     syncBtn.removeAttribute('disabled');
     syncBtn.classList.add('pulsing-btn');
-    lucide.createIcons();
+    if (icon) {
+      icon.classList.remove('spinning');
+    }
+    if (originalTextNode) {
+      originalTextNode.textContent = originalText;
+    }
   }
 }
 
