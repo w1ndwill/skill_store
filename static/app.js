@@ -624,9 +624,14 @@ function renderSkillsGrid() {
         <div class="card-tags">${tagsHTML}</div>
       </div>
       <div class="card-footer">
-        <button class="btn btn-secondary btn-icon" onclick="openEditorModal('${skill.filename}')" title="${locales[currentLanguage].btnEditSkill}">
-          <i data-lucide="edit-3" style="width:14px;height:14px;margin-right:4px;"></i>${locales[currentLanguage].btnEditSkill}
-        </button>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <button class="btn btn-secondary btn-icon" onclick="openEditorModal('${skill.filename}')" title="${locales[currentLanguage].btnEditSkill}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
+            <i data-lucide="edit-3" style="width:14px;height:14px;"></i>${locales[currentLanguage].btnEditSkill}
+          </button>
+          <button class="btn btn-danger-outline btn-icon" onclick="handleDeleteSkill('${skill.filename}')" title="${currentLanguage === 'zh' ? '删除技能' : 'Delete Skill'}" style="padding: 0.5rem; height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center;">
+            <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
+          </button>
+        </div>
         ${currentProjectPath && activeProj && !activeProj.error ? `
           <label class="switch-label">
             <span>${locales[currentLanguage].toggleLabel}</span>
@@ -663,7 +668,13 @@ async function handlePickProject() {
 }
 
 async function handleCreateSkill() {
-  const filename = prompt(currentLanguage === 'zh' ? '请输入新技能文件名 (例如: 代码安全规范.md)' : 'Enter new skill filename (e.g. CodeSafety.md)');
+  const filename = await showCustomDialog({
+    title: currentLanguage === 'zh' ? '新建技能' : 'New Skill',
+    message: currentLanguage === 'zh' ? '请输入新技能文件名 (例如: 代码安全规范.md)' : 'Enter new skill filename (e.g. CodeSafety.md)',
+    emoji: '💡',
+    isPrompt: true,
+    placeholder: 'CodeSafety.md'
+  });
   if (!filename) return;
   try {
     const result = await window.pywebview.api.create_skill(filename);
@@ -722,7 +733,12 @@ function handleToggleSkill(filename, isEnabled) {
 
 async function handleDeleteProject(event, path) {
   event.stopPropagation();
-  if (!confirm(locales[currentLanguage].confirmRemove)) return;
+  const confirmed = await showCustomDialog({
+    title: currentLanguage === 'zh' ? '解除关联' : 'Unlink Project',
+    message: locales[currentLanguage].confirmRemove,
+    emoji: '📂'
+  });
+  if (!confirmed) return;
   try {
     await window.pywebview.api.delete_project(path);
     showToast(locales[currentLanguage].toastRemoveSuccess, 'success');
@@ -984,5 +1000,94 @@ async function handleSaveSettings() {
     showToast(locales[currentLanguage].toastSettingsSaved, 'success');
   } catch (e) {
     showToast('Failed to save settings: ' + e, 'error');
+  }
+}
+
+// ------------------------------------------
+// Custom Dialog Modal System
+// ------------------------------------------
+
+let dialogResolve = null;
+
+function showCustomDialog({ title, message, emoji = '💬', isPrompt = false, placeholder = '', defaultValue = '' }) {
+  return new Promise((resolve) => {
+    dialogResolve = resolve;
+    
+    document.getElementById('dialog-title').textContent = title;
+    document.getElementById('dialog-message').textContent = message;
+    document.getElementById('dialog-emoji').textContent = emoji;
+    
+    const inputContainer = document.getElementById('dialog-input-container');
+    const inputEl = document.getElementById('dialog-input');
+    
+    if (isPrompt) {
+      inputContainer.style.display = 'block';
+      inputEl.value = defaultValue;
+      inputEl.placeholder = placeholder;
+    } else {
+      inputContainer.style.display = 'none';
+    }
+    
+    document.getElementById('dialog-btn-cancel').textContent = locales[currentLanguage].editModalCancel || 'Cancel';
+    document.getElementById('dialog-btn-confirm').textContent = currentLanguage === 'zh' ? '确定' : 'Confirm';
+    
+    const confirmBtn = document.getElementById('dialog-btn-confirm');
+    confirmBtn.onclick = () => {
+      const val = isPrompt ? inputEl.value.trim() : true;
+      closeDialogModal();
+      resolve(val);
+    };
+    
+    document.getElementById('dialog-modal').classList.add('active');
+    
+    if (isPrompt) {
+      setTimeout(() => {
+        inputEl.focus();
+        inputEl.select();
+      }, 50);
+    }
+  });
+}
+
+function closeDialogModal() {
+  document.getElementById('dialog-modal').classList.remove('active');
+  if (dialogResolve) {
+    dialogResolve(null);
+    dialogResolve = null;
+  }
+}
+
+// Keyboard shortcuts for Custom Dialog Modal
+document.getElementById('dialog-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    document.getElementById('dialog-btn-confirm').click();
+  } else if (e.key === 'Escape') {
+    closeDialogModal();
+  }
+});
+
+// ------------------------------------------
+// Delete Skill Feature
+// ------------------------------------------
+
+async function handleDeleteSkill(filename) {
+  const confirmed = await showCustomDialog({
+    title: currentLanguage === 'zh' ? '删除技能' : 'Delete Skill',
+    message: currentLanguage === 'zh' ? `确定要从全局技能库中物理删除 "${filename}" 吗？该操作不可撤销！` : `Are you sure you want to permanently delete "${filename}" from the global library? This cannot be undone!`,
+    emoji: '🗑️'
+  });
+  if (!confirmed) return;
+  
+  try {
+    const result = await window.pywebview.api.delete_skill(filename);
+    if (result.error) throw new Error(result.error);
+    showToast(currentLanguage === 'zh' ? '🗑️ 技能已物理删除' : '🗑️ Skill file permanently deleted', 'success');
+    await fetchSkills();
+    if (currentProjectPath) {
+      await fetchProjects();
+      handleSelectProject(currentProjectPath);
+    }
+  } catch (e) {
+    showToast((currentLanguage === 'zh' ? '删除失败: ' : 'Failed to delete: ') + e, 'error');
   }
 }
