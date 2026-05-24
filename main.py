@@ -785,6 +785,9 @@ if __name__ == "__main__":
         sys.stderr = open(os.devnull, "w")
 
     api = Api()
+    icon_path = os.path.join(APP_DIR, 'app.ico')
+    if not os.path.exists(icon_path):
+        icon_path = os.path.join(BASE_DIR, 'app.ico')
     window = webview.create_window(
         'AI Skill Hub Manager',
         url=os.path.join(BASE_DIR, 'static', 'index.html'),
@@ -795,4 +798,4 @@ if __name__ == "__main__":
         background_color='#f6f8fa'
     )
     api.set_window(window)
-    webview.start(debug=False)
+    webview.start(debug=False, icon=icon_path)
