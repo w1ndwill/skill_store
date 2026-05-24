@@ -53,6 +53,7 @@ const locales = {
     statSynced: '当前已装载',
     statUnsynced: '待更新',
     listHeader: '全局技能列表',
+    listHeaderProject: '项目技能装载配置',
     searchPlaceholder: '搜索技能名称、标签…',
     statusSynced: '已同步',
     statusUpdated: '有更新',
@@ -97,7 +98,8 @@ const locales = {
     settingsLabelScandir: '项目默认扫描起点',
     settingsDescScandir: '点击“关联项目”时，默认打开的初始目录',
     exitProjectMode: '已退出项目配置模式，返回全局只读视图',
-    confirmRemove: '确定要移除此项目的关联吗？\n不会删除项目中的任何文件。'
+    confirmRemove: '确定要移除此项目的关联吗？\n不会删除项目中的任何文件。',
+    defaultDesc: '此技能暂无详细描述信息。'
   },
   en: {
     sidebarTitle: 'AI Skill Hub',
@@ -116,6 +118,7 @@ const locales = {
     statSynced: 'Currently Loaded',
     statUnsynced: 'Pending Update',
     listHeader: 'Global Skills List',
+    listHeaderProject: 'Project Skill Mount Configs',
     searchPlaceholder: 'Search skills, tags...',
     statusSynced: 'Synced',
     statusUpdated: 'Updated',
@@ -160,7 +163,131 @@ const locales = {
     settingsLabelScandir: 'Project Scan Starting Path',
     settingsDescScandir: 'Default folder shown when adding a project',
     exitProjectMode: 'Exited project configuration mode, returned to global read-only view',
-    confirmRemove: 'Are you sure you want to unlink this project?\nNo files will be deleted from your disk.'
+    confirmRemove: 'Are you sure you want to unlink this project?\nNo files will be deleted from your disk.',
+    defaultDesc: 'No detailed description available for this skill.'
+  }
+};
+
+const skillTranslations = {
+  zh: {
+    'Git提交规范.md': {
+      title: 'Git提交规范',
+      description: '遵循 Angular 规范的 Git Commit 消息标准，让项目的版本演进历史清晰、规范且可追溯。'
+    },
+    'frontend_optimization.md': {
+      title: '前端性能优化技能指南',
+      description: '现代 Web 应用全方位性能优化指南，旨在提升用户体验、Lighthouse 评分及核心网页指标。'
+    },
+    'handoff.md': {
+      title: '流程接力与工作交接技能指南',
+      description: 'AI 开发上下文无损交接与接力指南，有效解决长会话记忆衰退及多阶段开发无缝恢复问题。'
+    },
+    'process_optimization.md': {
+      title: '流程优化技能指南',
+      description: '系统化软件开发与系统运行流程优化指南，覆盖本地开发、构建部署及运行时执行效率。'
+    },
+    'python_env_isolation.md': {
+      title: 'Python 虚拟环境与依赖管理规范',
+      description: '指导 AI 助手在开发 Python 项目时自动创建和使用本地专属虚拟环境，杜绝全局环境污染与依赖冲突。'
+    },
+    'run_recording.md': {
+      title: '运行记录与可观测性技能指南',
+      description: '高质量系统运行记录与可观测性指南，涵盖结构化日志分级、异常监控以及诊断审计规范。'
+    },
+    '代码移交标准.md': {
+      title: '代码移交标准',
+      description: '用于保障代码开发完成后，平滑、无缝地移交给其他开发者或运维团队的主动审查与交接清单。'
+    },
+    '前端性能优化规范.md': {
+      title: '前端性能优化规范',
+      description: '涵盖图片延迟加载、虚拟列表、代码分割、静态资源缓存以及打包体积压缩的本地开发与交付指南。'
+    }
+  },
+  en: {
+    'Git提交规范.md': {
+      title: 'Git Commit Guideline',
+      description: 'Follow Angular specs for Git Commit messages, making version history clear, standardized, and traceable.'
+    },
+    'frontend_optimization.md': {
+      title: 'Frontend Performance Optimization Skill Guide',
+      description: 'Comprehensive performance optimization guide for modern web apps, aimed at improving user experience, Lighthouse scores, and Core Web Vitals.'
+    },
+    'handoff.md': {
+      title: 'Handoff & Context Resume Skill Guide',
+      description: 'AI development context handoff and resume guide, effectively solving long session memory decay and multi-stage seamless recovery.'
+    },
+    'process_optimization.md': {
+      title: 'Process Optimization Skill Guide',
+      description: 'Systematic software development and execution process optimization guide, covering local dev, build deployment, and runtime efficiency.'
+    },
+    'python_env_isolation.md': {
+      title: 'Python Virtual Env & Dependency Management',
+      description: 'Guide AI assistants to automatically create and use local virtual environments when developing Python projects, preventing global package conflicts.'
+    },
+    'run_recording.md': {
+      title: 'Run Recording & Logging Skill Guide',
+      description: 'High-quality system logging and observability guide, covering structured log levels, exception monitoring, and diagnostics/auditing.'
+    },
+    '代码移交标准.md': {
+      title: 'Code Handoff Standards',
+      description: 'An active review and handoff checklist to ensure smooth, seamless transition of code to other developers or ops teams.'
+    },
+    '前端性能优化规范.md': {
+      title: 'Frontend Performance Optimization Standards',
+      description: 'Local development and delivery guide covering image lazy loading, virtual lists, code splitting, asset caching, and bundle compression.'
+    }
+  }
+};
+
+const tagTranslations = {
+  zh: {
+    'Git': 'Git',
+    'Collaboration': '协作',
+    'Basic': '基础',
+    'General': '常规',
+    'Python': 'Python',
+    'Env Isolation': '环境隔离',
+    'Team Collaboration': '团队协作',
+    'Workflow': '工作流',
+    'Rules': '规范',
+    'Standards': '规范',
+    'Frontend': '前端',
+    'Optimization': '优化',
+    'Performance': '性能',
+    '协作': '协作',
+    '基础': '基础',
+    '常规': '常规',
+    '环境隔离': '环境隔离',
+    '团队协作': '团队协作',
+    '工作流': '工作流',
+    '规范': '规范',
+    '前端': '前端',
+    '优化': '优化',
+    '性能': '性能'
+  },
+  en: {
+    'Git': 'Git',
+    '协作': 'Collaboration',
+    '基础': 'Basic',
+    '常规': 'General',
+    'Python': 'Python',
+    '环境隔离': 'Env Isolation',
+    '团队协作': 'Team Collaboration',
+    '工作流': 'Workflow',
+    '规范': 'Rules',
+    '前端': 'Frontend',
+    '优化': 'Optimization',
+    '性能': 'Performance',
+    'Collaboration': 'Collaboration',
+    'Basic': 'Basic',
+    'General': 'General',
+    'Env Isolation': 'Env Isolation',
+    'Team Collaboration': 'Team Collaboration',
+    'Workflow': 'Workflow',
+    'Rules': 'Rules',
+    'Frontend': 'Frontend',
+    'Optimization': 'Optimization',
+    'Performance': 'Performance'
   }
 };
 
@@ -233,8 +360,12 @@ function applyLanguage(lang) {
   document.querySelectorAll('.stat-label')[1].textContent = t.statSynced;
   document.querySelectorAll('.stat-label')[2].textContent = t.statUnsynced;
 
-  // Search Controls
-  document.querySelector('.content-toolbar h3').textContent = t.listHeader;
+  // Search Controls & Header Title
+  if (!currentProjectPath) {
+    document.querySelector('.content-toolbar h3').textContent = t.listHeader;
+  } else {
+    document.querySelector('.content-toolbar h3').textContent = t.listHeaderProject;
+  }
   searchInput.placeholder = t.searchPlaceholder;
   document.getElementById('btn-refresh-skills').title = lang === 'zh' ? '刷新全局技能库' : 'Refresh Global Skills';
 
@@ -452,31 +583,46 @@ function renderSkillsGrid() {
       badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusReadonly}</span>`;
     }
 
+    // Apply Dynamic Bilingual Translation Mapping for Skill Content
+    let resolvedTitle = skill.title;
+    let resolvedDesc = skill.description;
+    const trans = skillTranslations[currentLanguage]?.[skill.filename];
+    if (trans) {
+      resolvedTitle = trans.title;
+      resolvedDesc = trans.description;
+    } else if (skill.description === '此技能暂无详细描述信息。') {
+      resolvedDesc = locales[currentLanguage].defaultDesc;
+    }
+
     // Split Chinese and English parts for clean layout
-    let mainTitle = skill.title;
+    let mainTitle = resolvedTitle;
     let subTitle = '';
-    const parenMatch = skill.title.match(/^([^()（）]+)[(（]([^)）]+)[)）]/);
+    const parenMatch = resolvedTitle.match(/^([^()（）]+)[(（]([^)）]+)[)）]/);
     if (parenMatch) {
       mainTitle = parenMatch[1].trim();
       subTitle = parenMatch[2].trim();
     }
 
-    const tagsHTML = resolvedTags.map(t => `<span class="badge">${t}</span>`).join('');
+    // Translate Tags
+    const translatedTags = resolvedTags.map(t => tagTranslations[currentLanguage]?.[t] || t);
+    const tagsHTML = translatedTags.map(t => `<span class="badge">${t}</span>`).join('');
 
     card.innerHTML = `
       <div class="card-header">
         <div class="skill-meta">
           <div class="skill-emoji">${resolvedEmoji}</div>
           <div class="skill-info">
-            <h4 class="skill-title" title="${skill.title}">${mainTitle}</h4>
+            <h4 class="skill-title" title="${resolvedTitle}">${mainTitle}</h4>
             ${subTitle ? `<span class="skill-subtitle" title="${subTitle}">${subTitle}</span>` : ''}
-            <span class="skill-tag">${skill.filename}</span>
           </div>
         </div>
         ${badgeHTML}
       </div>
-      <p class="card-body">${skill.description}</p>
-      <div class="card-tags">${tagsHTML}</div>
+      <p class="card-body" title="${resolvedDesc}">${resolvedDesc}</p>
+      <div class="card-meta-line">
+        <span class="skill-tag" title="${skill.filename}">${skill.filename}</span>
+        <div class="card-tags">${tagsHTML}</div>
+      </div>
       <div class="card-footer">
         <button class="btn btn-secondary btn-icon" onclick="openEditorModal('${skill.filename}')" title="${locales[currentLanguage].btnEditSkill}">
           <i data-lucide="edit-3" style="width:14px;height:14px;margin-right:4px;"></i>${locales[currentLanguage].btnEditSkill}

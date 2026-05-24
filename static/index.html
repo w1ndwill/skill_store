@@ -185,7 +185,7 @@
               <p class="settings-desc" id="settings-desc-lang" style="font-size: 0.75rem; color: var(--text-muted); margin: 0.15rem 0 0 0;">切换整个界面的显示语言</p>
             </div>
             <div class="settings-input-col" style="width: 180px;">
-              <select id="settings-language" class="settings-select" style="width: 100%; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.85rem; cursor: pointer;">
+              <select id="settings-language" class="settings-select">
                 <option value="zh">简体中文 (Chinese)</option>
                 <option value="en">English (英文)</option>
               </select>
@@ -198,7 +198,7 @@
               <p class="settings-desc" id="settings-desc-theme" style="font-size: 0.75rem; color: var(--text-muted); margin: 0.15rem 0 0 0;">选择明亮模式或护眼深色模式</p>
             </div>
             <div class="settings-input-col" style="width: 180px;">
-              <select id="settings-theme" class="settings-select" style="width: 100%; padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-main); font-size: 0.85rem; cursor: pointer;">
+              <select id="settings-theme" class="settings-select">
                 <option value="light" id="settings-theme-option-light">☀️ 明亮模式 (Light)</option>
                 <option value="dark" id="settings-theme-option-dark">🌙 深色模式 (Dark)</option>
               </select>
@@ -216,7 +216,7 @@
               <p class="settings-desc" id="settings-desc-skillsdir" style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">存放全局技能规约 Markdown 文件的目录</p>
             </div>
             <div class="settings-input-col path-picker-group" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
-              <input type="text" id="settings-skills-dir" class="settings-input" style="flex: 1; padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-app); color: var(--text-main); font-size: 0.8rem; font-family: monospace;" readonly>
+              <input type="text" id="settings-skills-dir" class="settings-input" readonly>
               <button class="btn btn-secondary btn-icon" onclick="handleSettingsPickSkillsDir()" title="选择文件夹" style="padding: 0.45rem; display: flex; align-items: center; justify-content: center; height: 32px; width: 32px;">
                 <i data-lucide="folder" style="width:14px;height:14px;"></i>
               </button>
@@ -229,7 +229,7 @@
               <p class="settings-desc" id="settings-desc-scandir" style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">点击“关联项目”时，默认打开的初始目录</p>
             </div>
             <div class="settings-input-col path-picker-group" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
-              <input type="text" id="settings-scan-dir" class="settings-input" style="flex: 1; padding: 0.45rem 0.65rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-app); color: var(--text-main); font-size: 0.8rem; font-family: monospace;" readonly>
+              <input type="text" id="settings-scan-dir" class="settings-input" readonly>
               <button class="btn btn-secondary btn-icon" onclick="handleSettingsPickScanDir()" title="选择文件夹" style="padding: 0.45rem; display: flex; align-items: center; justify-content: center; height: 32px; width: 32px;">
                 <i data-lucide="folder" style="width:14px;height:14px;"></i>
               </button>

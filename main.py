@@ -23,6 +23,93 @@ else:
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 
+SKILL_TRANSLATIONS = {
+    "zh": {
+        "Git提交规范.md": {
+            "title": "Git提交规范",
+            "tags": ["Git", "协作", "基础"],
+            "description": "遵循 Angular 规范的 Git Commit 消息标准，让项目的版本演进历史清晰、规范且可追溯。"
+        },
+        "frontend_optimization.md": {
+            "title": "前端性能优化技能指南",
+            "tags": ["性能", "优化", "前端"],
+            "description": "现代 Web 应用全方位性能优化指南，旨在提升用户体验、Lighthouse 评分及核心网页指标。"
+        },
+        "handoff.md": {
+            "title": "流程接力与工作交接技能指南",
+            "tags": ["交接", "工作流", "常规"],
+            "description": "AI 开发上下文无损交接与接力指南，有效解决长会话记忆衰退及多阶段开发无缝恢复问题。"
+        },
+        "process_optimization.md": {
+            "title": "流程优化技能指南",
+            "tags": ["流程", "优化", "常规"],
+            "description": "系统化软件开发与系统运行流程优化指南，覆盖本地开发、构建部署及运行时执行效率。"
+        },
+        "python_env_isolation.md": {
+            "title": "Python 虚拟环境与依赖管理规范",
+            "tags": ["常规", "Python", "环境隔离"],
+            "description": "指导 AI 助手在开发 Python 项目时自动创建和使用本地专属虚拟环境，杜绝全局环境污染与依赖冲突。"
+        },
+        "run_recording.md": {
+            "title": "运行记录与可观测性技能指南",
+            "tags": ["日志", "可观测性", "常规"],
+            "description": "高质量系统运行记录与可观测性指南，涵盖结构化日志分级、异常监控以及诊断审计规范。"
+        },
+        "代码移交标准.md": {
+            "title": "代码移交标准",
+            "tags": ["团队协作", "工作流", "规范"],
+            "description": "用于保障代码开发完成后，平滑、无缝地移交给其他开发者或运维团队的主动审查与交接清单。"
+        },
+        "前端性能优化规范.md": {
+            "title": "前端性能优化规范",
+            "tags": ["前端", "优化", "性能"],
+            "description": "涵盖图片延迟加载、虚拟列表、代码分割、静态资源缓存以及打包体积压缩的本地开发与交付指南。"
+        }
+    },
+    "en": {
+        "Git提交规范.md": {
+            "title": "Git Commit Guideline",
+            "tags": ["Git", "Collaboration", "Basic"],
+            "description": "Follow Angular specs for Git Commit messages, making version history clear, standardized, and traceable."
+        },
+        "frontend_optimization.md": {
+            "title": "Frontend Performance Optimization Skill Guide",
+            "tags": ["Performance", "Optimization", "Frontend"],
+            "description": "Comprehensive performance optimization guide for modern web apps, aimed at improving user experience, Lighthouse scores, and Core Web Vitals."
+        },
+        "handoff.md": {
+            "title": "Handoff & Context Resume Skill Guide",
+            "tags": ["Handoff", "Context", "Resume"],
+            "description": "AI development context handoff and resume guide, effectively solving long session memory decay and multi-stage seamless recovery."
+        },
+        "process_optimization.md": {
+            "title": "Process Optimization Skill Guide",
+            "tags": ["Process", "Optimization", "Efficiency"],
+            "description": "Systematic software development and execution process optimization guide, covering local dev, build deployment, and runtime efficiency."
+        },
+        "python_env_isolation.md": {
+            "title": "Python Virtual Env & Dependency Management Specification",
+            "tags": ["Python", "Virtual Env", "Isolation"],
+            "description": "Guides AI assistants to automatically create and use local virtual environments when developing Python projects, preventing global package conflicts."
+        },
+        "run_recording.md": {
+            "title": "Run Recording & Logging Skill Guide",
+            "tags": ["Observability", "Logging", "Diagnostics"],
+            "description": "High-quality system logging and observability guide, covering structured log levels, exception monitoring, and diagnostics/auditing."
+        },
+        "代码移交标准.md": {
+            "title": "Code Handoff Standards",
+            "tags": ["Collaboration", "Workflow", "Handoff"],
+            "description": "An active review and handoff checklist to ensure smooth, seamless transition of code to other developers or ops teams."
+        },
+        "前端性能优化规范.md": {
+            "title": "Frontend Performance Optimization Standards",
+            "tags": ["Frontend", "Performance", "Optimization"],
+            "description": "Local development and delivery guide covering image lazy loading, virtual lists, code splitting, asset caching, and bundle compression."
+        }
+    }
+}
+
 
 # ============================================================
 # Helpers
@@ -261,13 +348,31 @@ class Api:
             return {"error": str(e)}
 
     def create_skill(self, filename):
-        """Create a new skill file with a Chinese template."""
+        """Create a new skill file with a dynamic bilingual template based on current settings."""
         if not filename.endswith(".md"):
             filename += ".md"
         fp = os.path.join(self.skills_dir, filename)
         if os.path.exists(fp):
-            return {"error": "该文件已存在"}
-        template = """---
+            return {"error": "该文件已存在" if self.language == "zh" else "This file already exists"}
+        
+        if self.language == "en":
+            template = """---
+title: New Skill Guideline
+emoji: 💡
+tags: Rules, Basic
+description: A brief description of the purpose and development constraints of this skill guideline.
+---
+
+# 💡 New Skill Guideline
+
+Write down the specific development guidelines, design principles, and quality red lines for this skill here.
+
+## 🎯 Core Rules & Details
+- **Rule 1**: ...
+- **Rule 2**: ...
+"""
+        else:
+            template = """---
 title: 新增技能指南
 emoji: 💡
 tags: 规范, 基础
@@ -299,7 +404,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             path = proj["path"]
             entry = {"name": proj["name"], "path": path, "skills_status": {}}
             if not os.path.isdir(path):
-                entry["error"] = "路径不存在"
+                entry["error"] = "路径不存在" if self.language == "zh" else "Path does not exist"
                 result.append(entry)
                 continue
             skills_dir = os.path.join(path, ".agent", "skills")
@@ -357,7 +462,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
     def sync_skills(self, project_path, enabled_skills):
         """Sync selected skills to a project and regenerate AGENTS.md."""
         if not os.path.isdir(project_path):
-            return {"error": "项目路径不存在"}
+            return {"error": "项目路径不存在" if self.language == "zh" else "Project path does not exist"}
 
         target_dir = os.path.join(project_path, ".agent", "skills")
         os.makedirs(target_dir, exist_ok=True)
@@ -381,8 +486,42 @@ description: 简短说明此项技能指南的目的与开发约束规范。
                 except Exception:
                     pass
 
-        # Generate AGENTS.md
-        md = """# 🤖 项目 AI 开发规约与技能索引 (AGENTS.md)
+        # Generate AGENTS.md in active language
+        if self.language == "en":
+            md = """# 🤖 Project AI Development Rules & Skill Index (AGENTS.md)
+
+The AI collaboration rules for this project have been loaded by the **AI Skill Hub Manager** native desktop client. These guideline files are stored in the project's local directory and can be used to provide a unified architecture design specification, development guidelines, and quality red lines for AI tools such as GitHub Copilot, Cursor, Windsurf, and local Agent architectures.
+
+## 🎯 Currently Enabled Development Skills & Rules
+
+| Skill Name | Categories | Description | Local Link |
+| :--- | :--- | :--- | :--- |
+"""
+            if active_metadata:
+                for meta in active_metadata:
+                    filename = meta["filename"]
+                    emoji = meta.get("emoji", "📄")
+                    title = meta.get("title", filename)
+                    tags = meta.get("tags", [])
+                    desc = meta.get("description", "")
+                    
+                    # Apply English translation if available
+                    trans = SKILL_TRANSLATIONS.get("en", {}).get(filename)
+                    if trans:
+                        title = trans.get("title", title)
+                        tags = trans.get("tags", tags)
+                        desc = trans.get("description", desc)
+                    
+                    tags_str = ", ".join(tags)
+                    link = f".agent/skills/{filename}"
+                    desc_escaped = desc.replace("|", "\\|")
+                    md += f"| {emoji} {title} | `{tags_str}` | {desc_escaped} | [{filename}]({link}) |\n"
+            else:
+                md += "| *No skills loaded yet* | - | - | - |\n"
+
+            md += "\n---\n*💡 Tip: This index file is automatically generated and maintained by the AI Skill Hub Manager desktop client. The loaded status is synchronized with the global skill library in real-time.*\n"
+        else:
+            md = """# 🤖 项目 AI 开发规约与技能索引 (AGENTS.md)
 
 本项目的 AI 协同规则已由 **AI Skill Hub Manager** 原生桌面客户端装载。这些规约文件被存放在项目本地目录中，可用于为 GitHub Copilot、Cursor、Windsurf 以及本地 Agent 架构等 AI 工具提供统一的架构设计规范、开发准则与质量红线。
 
@@ -391,18 +530,29 @@ description: 简短说明此项技能指南的目的与开发约束规范。
 | 技能名称 | 分类标签 | 技能简述 | 本地关联链接 |
 | :--- | :--- | :--- | :--- |
 """
-        if active_metadata:
-            for meta in active_metadata:
-                tags_str = ", ".join(meta["tags"])
-                emoji = meta.get("emoji", "📄")
-                title = meta.get("title", meta["filename"])
-                link = f".agent/skills/{meta['filename']}"
-                desc = meta["description"].replace("|", "\\|")
-                md += f"| {emoji} {title} | `{tags_str}` | {desc} | [{meta['filename']}]({link}) |\n"
-        else:
-            md += "| *暂未装载任何技能* | - | - | - |\n"
+            if active_metadata:
+                for meta in active_metadata:
+                    filename = meta["filename"]
+                    emoji = meta.get("emoji", "📄")
+                    title = meta.get("title", filename)
+                    tags = meta.get("tags", [])
+                    desc = meta.get("description", "")
+                    
+                    # Apply Chinese translation if available
+                    trans = SKILL_TRANSLATIONS.get("zh", {}).get(filename)
+                    if trans:
+                        title = trans.get("title", title)
+                        tags = trans.get("tags", tags)
+                        desc = trans.get("description", desc)
+                        
+                    tags_str = ", ".join(tags)
+                    link = f".agent/skills/{filename}"
+                    desc_escaped = desc.replace("|", "\\|")
+                    md += f"| {emoji} {title} | `{tags_str}` | {desc_escaped} | [{filename}]({link}) |\n"
+            else:
+                md += "| *暂未装载任何技能* | - | - | - |\n"
 
-        md += "\n---\n*💡 提示：本索引文件由 AI Skill Hub Manager 桌面客户端自动生成与维护，装载状态与全局技能库实时对齐。*\n"
+            md += "\n---\n*💡 提示：本索引文件由 AI Skill Hub Manager 桌面客户端自动生成与维护，装载状态与全局技能库实时对齐。*\n"
 
         try:
             with open(os.path.join(project_path, "AGENTS.md"), "w", encoding="utf-8") as f:
