@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Skill Hub Manager</title>
+  <link rel="stylesheet" href="index.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Left Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">&#9889;</div>
+        <div class="brand-title">
+          <h1>AI Skill Hub</h1>
+          <p>本地技能可视化管理器</p>
+        </div>
+      </div>
+
+      <!-- Global Skill Library Config -->
+      <div class="skills-dir-config">
+        <div class="config-header">
+          <span class="config-label">全局技能库</span>
+          <button class="btn-config" onclick="handleChangeSkillsDir()" title="更改全局技能库路径">
+            <i data-lucide="settings" style="width:13px;height:13px;"></i>
+          </button>
+        </div>
+        <div class="config-value" id="skills-dir-path" onclick="handleChangeSkillsDir()" title="点击选择新文件夹">加载中…</div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="sidebar-actions">
+        <button class="btn btn-primary" onclick="handlePickProject()" id="btn-add-project">
+          <i data-lucide="folder-plus" style="width:15px;height:15px;"></i>
+          关联项目
+        </button>
+        <button class="btn btn-success" onclick="handleCreateSkill()" id="btn-new-skill">
+          <i data-lucide="file-plus" style="width:15px;height:15px;"></i>
+          新建技能
+        </button>
+      </div>
+
+      <!-- Projects List -->
+      <section class="sidebar-section" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <div class="section-title">
+          <h2>目标项目</h2>
+        </div>
+        <div id="project-list" class="project-list">
+          <div class="empty-state" style="padding:2rem 1rem;">
+            <div class="empty-state-icon">📂</div>
+            <h4>暂无关联项目</h4>
+            <p>点击上方按钮选取文件夹</p>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <!-- Right Main Panel -->
+    <main class="main-panel">
+      <header class="main-header">
+        <div class="header-title">
+          <h2 id="current-project-title">请选择一个项目进行配置</h2>
+          <p id="current-project-desc">选择左侧项目后，可在此管理技能装载</p>
+        </div>
+        <div class="header-actions">
+          <button id="sync-btn" class="btn btn-primary pulsing-btn" onclick="handleSyncSkills()" disabled>
+            <i data-lucide="refresh-cw" style="width:16px;height:16px;"></i>
+            一键同步技能
+          </button>
+        </div>
+      </header>
+
+      <!-- Stats -->
+      <div class="stats-banner">
+        <div class="stat-card">
+          <div class="stat-info">
+            <span class="stat-label">全局技能库</span>
+            <span class="stat-value" id="stat-total-skills">0</span>
+          </div>
+          <div class="stat-icon primary"><i data-lucide="book-open"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-info">
+            <span class="stat-label">当前已装载</span>
+            <span class="stat-value" id="stat-synced-skills">&mdash;</span>
+          </div>
+          <div class="stat-icon success"><i data-lucide="check-circle-2"></i></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-info">
+            <span class="stat-label">待更新</span>
+            <span class="stat-value" id="stat-unsynced-skills">&mdash;</span>
+          </div>
+          <div class="stat-icon warning"><i data-lucide="alert-circle"></i></div>
+        </div>
+      </div>
+
+      <!-- Search + Cards -->
+      <div class="main-content">
+        <div class="content-toolbar">
+          <h3>全局技能列表</h3>
+          <div class="toolbar-controls">
+            <div class="search-box">
+              <i data-lucide="search" style="width:15px;height:15px;color:var(--text-muted);"></i>
+              <input type="text" id="search-input" class="search-input" placeholder="搜索技能名称、标签…" oninput="handleSearch()">
+            </div>
+          </div>
+        </div>
+        <div id="cards-grid" class="cards-grid"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Editor Modal -->
+  <div id="editor-modal" class="modal-overlay">
+    <div class="modal-container">
+      <header class="modal-header">
+        <div class="modal-title-info">
+          <span class="modal-emoji" id="modal-emoji">📄</span>
+          <h3 class="modal-title" id="modal-title">编辑技能</h3>
+        </div>
+        <div class="modal-header-actions">
+          <div class="modal-tabs">
+            <button class="modal-tab active" onclick="switchModalTab('edit')">编辑源码</button>
+            <button class="modal-tab" onclick="switchModalTab('preview')">实时预览</button>
+          </div>
+          <button class="btn btn-secondary btn-icon" onclick="closeEditorModal()">
+            <i data-lucide="x" style="width:18px;height:18px;"></i>
+          </button>
+        </div>
+      </header>
+      <div id="modal-body" class="modal-body tab-edit">
+        <div class="editor-wrapper">
+          <textarea id="markdown-textarea" class="markdown-textarea" placeholder="# 输入技能内容…"></textarea>
+        </div>
+        <div class="preview-wrapper">
+          <div id="markdown-preview" class="markdown-preview"></div>
+        </div>
+      </div>
+      <footer class="modal-header" style="border-top:1px solid var(--border-color);border-bottom:none;justify-content:flex-end;gap:0.75rem;">
+        <button class="btn btn-secondary" onclick="closeEditorModal()">取消</button>
+        <button class="btn btn-primary" onclick="handleSaveSkill()">
+          <i data-lucide="save" style="width:16px;height:16px;"></i>
+          保存并更新
+        </button>
+      </footer>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+  <script src="app.js"></script>
+</body>
+</html>

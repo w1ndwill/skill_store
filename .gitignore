@@ -1,0 +1,18 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
+
+# User configuration databases
+projects.json
+config.json
+
+# Default local skills folder created on startup
+skills/
+
+# Large compiled binaries (should be uploaded to GitHub Releases instead of source control)
+*.exe
