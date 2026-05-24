@@ -10,6 +10,7 @@
 | ⚡ 前端性能优化规范 | `前端, 优化, 性能` | 涵盖图片延迟加载、虚拟列表、代码分割、静态资源缓存以及打包体积压缩的本地开发与交付指南。 | [前端性能优化规范.md](.agent/skills/前端性能优化规范.md) |
 | 📄 前端性能优化技能指南 (Frontend Performance Optimization Skill Guide) | `常规` | 本技能指南旨在指导 AI 助手或开发人员如何对现代 Web 应用进行全方位的前端性能优化。目标是显著提升用户体验，改善 Lighthouse 评分，并优化 **Core Web Vitals（核心网页指标）**。 | [frontend_optimization.md](.agent/skills/frontend_optimization.md) |
 | 📄 流程优化技能指南 (Process Optimization Skill Guide) | `常规` | 本技能指南旨在指导 AI 助手或开发人员如何系统性地分析、诊断并优化软件开发和系统运行中的各项流程。涵盖**开发工作流（Development Workflow）**、**构建与部署流水线（CI/CD & Build Pipeline）**以及**代码与算法执行效率（Runtime Execution & Performance）**三个核心层面的优化。 | [process_optimization.md](.agent/skills/process_optimization.md) |
+| 🐍 Python 虚拟环境与依赖管理规范 | `常规, Python, 环境隔离` | 指导 AI 助手在开发 Python 项目时自动创建和使用本地专属虚拟环境，杜绝全局环境污染与依赖冲突。 | [python_env_isolation.md](.agent/skills/python_env_isolation.md) |
 
 ---
 *💡 提示：本索引文件由 AI Skill Hub Manager 桌面客户端自动生成与维护，装载状态与全局技能库实时对齐。*

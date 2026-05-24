@@ -12,9 +12,10 @@ dist/
 # User configuration databases
 projects.json
 config.json
+.agent/
 
 # Default local skills folder created on startup
-skills/
+/skills/
 
 # Large compiled binaries (should be uploaded to GitHub Releases instead of source control)
 *.exe
