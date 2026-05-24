@@ -634,9 +634,21 @@ body.dark-theme ::-webkit-scrollbar-thumb:hover {
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-title);
-  word-break: break-all;
-  overflow-wrap: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 175px;
   line-height: 1.3;
+}
+
+.skill-subtitle {
+  font-size: 0.725rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 175px;
+  line-height: 1.2;
 }
 
 .skill-tag {

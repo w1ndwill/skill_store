@@ -348,6 +348,49 @@ function renderProjectsList() {
   lucide.createIcons();
 }
 
+function getSmartEmojiAndTags(skill) {
+  let emoji = skill.emoji || '📄';
+  let tags = [...(skill.tags || [])];
+  
+  const text = (skill.title + ' ' + skill.filename + ' ' + skill.description).toLowerCase();
+  
+  // Smart Emoji fallbacks if default page is used
+  if (emoji === '📄' || emoji === '📝' || emoji === '\ud83d\udcc4') {
+    if (text.includes('git') || text.includes('commit') || text.includes('版本')) {
+      emoji = '🌱';
+    } else if (text.includes('性能') || text.includes('优化') || text.includes('performance') || text.includes('speed')) {
+      emoji = '🚀';
+    } else if (text.includes('接力') || text.includes('交接') || text.includes('handoff') || text.includes('resume')) {
+      emoji = '🔄';
+    } else if (text.includes('安全') || text.includes('security') || text.includes('safe') || text.includes('密')) {
+      emoji = '🛡️';
+    } else if (text.includes('规范') || text.includes('guideline') || text.includes('rule') || text.includes('标准') || text.includes('约')) {
+      emoji = '📋';
+    } else if (text.includes('测试') || text.includes('test') || text.includes('jest') || text.includes('unit')) {
+      emoji = '🧪';
+    } else if (text.includes('前端') || text.includes('frontend') || text.includes('css') || text.includes('html')) {
+      emoji = '🎨';
+    }
+  }
+  
+  // Smart automatic Tag cleanup/enforcement
+  if (tags.length === 0 || (tags.length === 1 && (tags[0] === '常规' || tags[0] === 'General' || tags[0] === '常规, 基础'))) {
+    const newTags = [];
+    if (text.includes('git') || text.includes('commit')) newTags.push('Git');
+    if (text.includes('性能') || text.includes('优化') || text.includes('performance')) newTags.push(currentLanguage === 'zh' ? '性能' : 'Performance');
+    if (text.includes('交接') || text.includes('接力') || text.includes('handoff')) newTags.push(currentLanguage === 'zh' ? '交接' : 'Handoff');
+    if (text.includes('安全') || text.includes('security')) newTags.push(currentLanguage === 'zh' ? '安全' : 'Security');
+    if (text.includes('规范') || text.includes('规约') || text.includes('rule')) newTags.push(currentLanguage === 'zh' ? '规范' : 'Rules');
+    if (text.includes('前端') || text.includes('web') || text.includes('css')) newTags.push(currentLanguage === 'zh' ? '前端' : 'Frontend');
+    
+    if (newTags.length > 0) {
+      tags = newTags;
+    }
+  }
+  
+  return { emoji, tags };
+}
+
 function renderSkillsGrid() {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
   let filtered = skills;
@@ -375,6 +418,11 @@ function renderSkillsGrid() {
   filtered.forEach(skill => {
     const card = document.createElement('div');
     card.className = 'skill-card';
+
+    // Apply 100% Local Smart Classifier for Emojis and Tags
+    const smart = getSmartEmojiAndTags(skill);
+    const resolvedEmoji = smart.emoji;
+    const resolvedTags = smart.tags;
 
     let badgeHTML = '';
     let isChecked = false;
@@ -404,14 +452,24 @@ function renderSkillsGrid() {
       badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusReadonly}</span>`;
     }
 
-    const tagsHTML = skill.tags.map(t => `<span class="badge">${t}</span>`).join('');
+    // Split Chinese and English parts for clean layout
+    let mainTitle = skill.title;
+    let subTitle = '';
+    const parenMatch = skill.title.match(/^([^()（）]+)[(（]([^)）]+)[)）]/);
+    if (parenMatch) {
+      mainTitle = parenMatch[1].trim();
+      subTitle = parenMatch[2].trim();
+    }
+
+    const tagsHTML = resolvedTags.map(t => `<span class="badge">${t}</span>`).join('');
 
     card.innerHTML = `
       <div class="card-header">
         <div class="skill-meta">
-          <div class="skill-emoji">${skill.emoji || '📄'}</div>
+          <div class="skill-emoji">${resolvedEmoji}</div>
           <div class="skill-info">
-            <h4 class="skill-title">${skill.title}</h4>
+            <h4 class="skill-title" title="${skill.title}">${mainTitle}</h4>
+            ${subTitle ? `<span class="skill-subtitle" title="${subTitle}">${subTitle}</span>` : ''}
             <span class="skill-tag">${skill.filename}</span>
           </div>
         </div>
