@@ -1050,27 +1050,33 @@ function showCustomDialog({ title, message, emoji = '💬', isPrompt = false, pl
 }
 
 function closeDialogModal() {
-  document.getElementById('dialog-modal').classList.remove('active');
+  const modal = document.getElementById('dialog-modal');
+  if (modal) modal.classList.remove('active');
   if (dialogResolve) {
     dialogResolve(null);
     dialogResolve = null;
   }
 }
 
-// Keyboard shortcuts for Custom Dialog Modal
-document.getElementById('dialog-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    document.getElementById('dialog-btn-confirm').click();
-  } else if (e.key === 'Escape') {
-    closeDialogModal();
-  }
-});
+// Keyboard shortcuts for Custom Dialog Modal (Null-Safe)
+const dialogInput = document.getElementById('dialog-input');
+if (dialogInput) {
+  dialogInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const confirmBtn = document.getElementById('dialog-btn-confirm');
+      if (confirmBtn) confirmBtn.click();
+    } else if (e.key === 'Escape') {
+      closeDialogModal();
+    }
+  });
+}
 
 // ------------------------------------------
 // Delete Skill Feature
 // ------------------------------------------
 
 async function handleDeleteSkill(filename) {
+  console.log('handleDeleteSkill requested for:', filename);
   const confirmed = await showCustomDialog({
     title: currentLanguage === 'zh' ? '删除技能' : 'Delete Skill',
     message: currentLanguage === 'zh' ? `确定要从全局技能库中物理删除 "${filename}" 吗？该操作不可撤销！` : `Are you sure you want to permanently delete "${filename}" from the global library? This cannot be undone!`,
@@ -1091,3 +1097,28 @@ async function handleDeleteSkill(filename) {
     showToast((currentLanguage === 'zh' ? '删除失败: ' : 'Failed to delete: ') + e, 'error');
   }
 }
+
+// ------------------------------------------
+// Explicit Global Window Scope Bindings
+// ------------------------------------------
+window.handleChangeSkillsDir = handleChangeSkillsDir;
+window.handleRefreshSkills = handleRefreshSkills;
+window.openSettingsModal = openSettingsModal;
+window.closeSettingsModal = closeSettingsModal;
+window.handleSettingsPickSkillsDir = handleSettingsPickSkillsDir;
+window.handleSettingsPickScanDir = handleSettingsPickScanDir;
+window.handleSaveSettings = handleSaveSettings;
+window.handlePickProject = handlePickProject;
+window.handleCreateSkill = handleCreateSkill;
+window.handleSelectProject = handleSelectProject;
+window.handleToggleSkill = handleToggleSkill;
+window.handleDeleteProject = handleDeleteProject;
+window.handleSyncSkills = handleSyncSkills;
+window.handleSearch = handleSearch;
+window.openEditorModal = openEditorModal;
+window.closeEditorModal = closeEditorModal;
+window.switchModalTab = switchModalTab;
+window.handleSaveSkill = handleSaveSkill;
+window.closeDialogModal = closeDialogModal;
+window.handleDeleteSkill = handleDeleteSkill;
+window.showCustomDialog = showCustomDialog;
