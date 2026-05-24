@@ -201,6 +201,10 @@ const skillTranslations = {
     '前端性能优化规范.md': {
       title: '前端性能优化规范',
       description: '涵盖图片延迟加载、虚拟列表、代码分割、静态资源缓存以及打包体积压缩的本地开发与交付指南。'
+    },
+    'superpowers-template': {
+      title: 'Superpowers 主控模版',
+      description: 'Superpowers 技能体系的主控模板文件夹，包含全局的 Agent 工作流与核心规划/脑暴/执行规约。'
     }
   },
   en: {
@@ -235,6 +239,10 @@ const skillTranslations = {
     '前端性能优化规范.md': {
       title: 'Frontend Performance Optimization Standards',
       description: 'Local development and delivery guide covering image lazy loading, virtual lists, code splitting, asset caching, and bundle compression.'
+    },
+    'superpowers-template': {
+      title: 'Superpowers Master Template',
+      description: 'Master template folder for Superpowers skill system, containing global Agent workflows and planning/brainstorming/execution rules.'
     }
   }
 };
@@ -263,7 +271,13 @@ const tagTranslations = {
     '规范': '规范',
     '前端': '前端',
     '优化': '优化',
-    '性能': '性能'
+    '性能': '性能',
+    '主控': '主控',
+    '模板': '模板',
+    '项目级': '项目级',
+    'Master': '主控',
+    'Template': '模板',
+    'Project-Level': '项目级'
   },
   en: {
     'Git': 'Git',
@@ -287,7 +301,13 @@ const tagTranslations = {
     'Rules': 'Rules',
     'Frontend': 'Frontend',
     'Optimization': 'Optimization',
-    'Performance': 'Performance'
+    'Performance': 'Performance',
+    '主控': 'Master',
+    '模板': 'Template',
+    '项目级': 'Project-Level',
+    'Master': 'Master',
+    'Template': 'Template',
+    'Project-Level': 'Project-Level'
   }
 };
 
@@ -620,7 +640,7 @@ function renderSkillsGrid() {
       </div>
       <p class="card-body" title="${resolvedDesc}">${resolvedDesc}</p>
       <div class="card-meta-line">
-        <span class="skill-tag" title="${skill.filename}">${skill.filename}</span>
+        <span class="skill-tag" title="${skill.filename}">${skill.is_dir ? '📁 ' : ''}${skill.filename}</span>
         <div class="card-tags">${tagsHTML}</div>
       </div>
       <div class="card-footer">
