@@ -1,6 +1,8 @@
-# Python bytecode
+# Python bytecode & Virtual Environments
 __pycache__/
 *.pyc
+.venv/
+
 
 # PyInstaller build artifacts
 build/
