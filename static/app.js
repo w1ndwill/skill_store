@@ -1054,8 +1054,13 @@ function showCustomDialog({ title, message, emoji = '💬', isPrompt = false, pl
     const confirmBtn = document.getElementById('dialog-btn-confirm');
     confirmBtn.onclick = () => {
       const val = isPrompt ? inputEl.value.trim() : true;
-      closeDialogModal();
-      resolve(val);
+      const resolve = dialogResolve;
+      dialogResolve = null;
+      
+      const modal = document.getElementById('dialog-modal');
+      if (modal) modal.classList.remove('active');
+      
+      if (resolve) resolve(val);
     };
     
     document.getElementById('dialog-modal').classList.add('active');
@@ -1073,8 +1078,9 @@ function closeDialogModal() {
   const modal = document.getElementById('dialog-modal');
   if (modal) modal.classList.remove('active');
   if (dialogResolve) {
-    dialogResolve(null);
+    const resolve = dialogResolve;
     dialogResolve = null;
+    resolve(null);
   }
 }
 
