@@ -347,6 +347,17 @@ class Api:
         except Exception as e:
             return {"error": str(e)}
 
+    def delete_skill(self, filename):
+        """Delete a global skill file physically."""
+        fp = os.path.join(self.skills_dir, filename)
+        try:
+            if os.path.exists(fp):
+                os.remove(fp)
+                return {"ok": True}
+            return {"error": "文件不存在" if self.language == "zh" else "File does not exist"}
+        except Exception as e:
+            return {"error": str(e)}
+
     def create_skill(self, filename):
         """Create a new skill file with a dynamic bilingual template based on current settings."""
         if not filename.endswith(".md"):

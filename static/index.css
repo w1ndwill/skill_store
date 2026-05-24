@@ -1372,3 +1372,35 @@ body.dark-theme .settings-input {
   cursor: default;
 }
 
+/* Premium Danger Outline Button */
+.btn-danger-outline {
+  background: white;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.btn-danger-outline:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.btn-danger-outline:active {
+  transform: scale(0.95);
+}
+
+body.dark-theme .btn-danger-outline {
+  background: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+body.dark-theme .btn-danger-outline:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
