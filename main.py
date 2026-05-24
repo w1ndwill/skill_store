@@ -788,6 +788,27 @@ if __name__ == "__main__":
     icon_path = os.path.join(APP_DIR, 'app.ico')
     if not os.path.exists(icon_path):
         icon_path = os.path.join(BASE_DIR, 'app.ico')
+
+    def _set_window_icon():
+        """Use Win32 API to set window icon for taskbar/dock display."""
+        import ctypes
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = user32.FindWindowW(None, 'AI Skill Hub Manager')
+            if not hwnd:
+                return
+            IMAGE_ICON = 1
+            LR_LOADFROMFILE = 0x00000010
+            WM_SETICON = 0x0080
+            hicon_big = user32.LoadImageW(0, icon_path, IMAGE_ICON, 48, 48, LR_LOADFROMFILE)
+            hicon_small = user32.LoadImageW(0, icon_path, IMAGE_ICON, 16, 16, LR_LOADFROMFILE)
+            if hicon_big:
+                user32.SendMessageW(hwnd, WM_SETICON, 1, hicon_big)
+            if hicon_small:
+                user32.SendMessageW(hwnd, WM_SETICON, 0, hicon_small)
+        except Exception:
+            pass
+
     window = webview.create_window(
         'AI Skill Hub Manager',
         url=os.path.join(BASE_DIR, 'static', 'index.html'),
@@ -798,4 +819,5 @@ if __name__ == "__main__":
         background_color='#f6f8fa'
     )
     api.set_window(window)
-    webview.start(debug=False, icon=icon_path)
+    webview.start(debug=False, func=_set_window_icon)
+
