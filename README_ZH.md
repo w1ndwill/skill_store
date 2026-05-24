@@ -125,15 +125,4 @@ pyinstaller --noconsole --onefile --clean --add-data "static;static" main.py
    - 自动在您项目的根目录下生成或更新一份排版精美的全中文 [**`AGENTS.md`**](AGENTS.md) 导航索引文件，供 Cursor、GitHub Copilot 等 AI 工具一键读取，并完美实现规约生效！
    - 自动卸载并物理删除项目目录中您未勾选的规约文件，保持项目绝对纯净。
 
----
 
-## 🚀 关于 GitHub 托管建议
-
-为了保证代码仓库的极致干净与规范，我们已配置了完善的 `.gitignore` 过滤机制：
-1. **源码管理**：代码仓库仅追踪 `main.py`、`static/` 文件夹及本说明文件。
-2. **本地配置过滤**：用户的 `config.json` 与 `projects.json` 已自动过滤，确保不会将敏感路径或个人开发目录提交至云端。
-3. **打包文件发布**：大型编译好的 EXE 文件已过滤，**建议将其上传至您 GitHub 仓库的 `Releases`（版本发布）中作为附件资产**，方便用户下载，这符合开源界最正规的软件发布流程！
-
----
-
-*⚡ Powered by Advanced Agentic Coding - Antigravity.*
