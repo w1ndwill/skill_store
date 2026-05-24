@@ -147,9 +147,14 @@ def check_dir_sync_status(src_dir: str, dst_root: str) -> str:
 
     for root, dirs, files in os.walk(src_dir):
         for f in files:
-            total_files += 1
             src_file = os.path.join(root, f)
             rel_path = os.path.relpath(src_file, src_dir)
+            
+            # Skip checking root README.md to avoid constant out-of-sync status
+            if rel_path.lower() == "readme.md":
+                continue
+                
+            total_files += 1
             dst_file = os.path.join(dst_root, rel_path)
 
             if os.path.exists(dst_file):
@@ -176,6 +181,11 @@ def copy_dir_recursive(src: str, dst: str):
             src_file = os.path.join(root, f)
             rel_path = os.path.relpath(src_file, src)
             dst_file = os.path.join(dst, rel_path)
+            
+            # Prevent overwriting the project-level README.md if it already exists
+            if rel_path.lower() == "readme.md" and os.path.exists(dst_file):
+                continue
+                
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
             shutil.copy2(src_file, dst_file)
 
@@ -190,6 +200,11 @@ def remove_dir_if_matching(src_dir: str, dst_root: str):
         for f in files:
             src_file = os.path.join(root, f)
             rel_path = os.path.relpath(src_file, src_dir)
+            
+            # Explicitly protect the project-level main README.md from any accidental deletion
+            if rel_path.lower() == "readme.md":
+                continue
+                
             dst_file = os.path.join(dst_root, rel_path)
             if os.path.exists(dst_file) and not os.path.isdir(dst_file):
                 if get_file_md5(src_file) == get_file_md5(dst_file):
