@@ -165,15 +165,27 @@ function renderSkillsGrid() {
     let isChecked = false;
 
     if (currentProjectPath && activeProj && !activeProj.error) {
-      const status = statusMap[skill.filename] || 'unloaded';
-      if (status === 'synced') {
-        badgeHTML = `<span class="status-badge synced"><span class="status-dot"></span>已同步</span>`;
+      const physicalStatus = statusMap[skill.filename] || 'unloaded';
+      const isLocallyEnabled = enabledSkills.has(skill.filename);
+
+      if (isLocallyEnabled) {
         isChecked = true;
-      } else if (status === 'out_of_sync') {
-        badgeHTML = `<span class="status-badge out-of-sync"><span class="status-dot"></span>有更新</span>`;
-        isChecked = true;
+        if (physicalStatus === 'synced') {
+          badgeHTML = `<span class="status-badge synced"><span class="status-dot"></span>已同步</span>`;
+        } else if (physicalStatus === 'out_of_sync') {
+          badgeHTML = `<span class="status-badge out-of-sync"><span class="status-dot"></span>有更新</span>`;
+        } else {
+          // Enabled locally but unloaded physically -> Pending Mount
+          badgeHTML = `<span class="status-badge pending-mount"><span class="status-dot"></span>待装载</span>`;
+        }
       } else {
-        badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>未装载</span>`;
+        isChecked = false;
+        if (physicalStatus === 'synced' || physicalStatus === 'out_of_sync') {
+          // Disabled locally but physically loaded -> Pending Uninstall
+          badgeHTML = `<span class="status-badge pending-unmount"><span class="status-dot"></span>待卸载</span>`;
+        } else {
+          badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>未装载</span>`;
+        }
       }
     } else {
       badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>全局只读</span>`;
@@ -273,6 +285,7 @@ function handleToggleSkill(filename, isEnabled) {
   if (isEnabled) enabledSkills.add(filename);
   else enabledSkills.delete(filename);
   syncBtn.classList.add('active');
+  renderSkillsGrid();
 }
 
 async function handleDeleteProject(event, path) {
