@@ -96,8 +96,11 @@ class Api:
         self._window = None
         # Load configuration on startup (with migration)
         config = self._load_config()
-        self.skills_dir = config["skills_dir"]
-        self.projects = config["projects"]
+        self.skills_dir = config.get("skills_dir")
+        self.projects = config.get("projects", [])
+        self.language = config.get("language", "zh")
+        self.theme = config.get("theme", "light")
+        self.default_scan_dir = config.get("default_scan_dir", "D:\\Project" if os.path.isdir("D:\\") else "C:\\")
 
     def set_window(self, window):
         self._window = window
@@ -106,7 +109,10 @@ class Api:
         default_skills_dir = os.path.join(APP_DIR, "skills")
         default_config = {
             "skills_dir": default_skills_dir,
-            "projects": []
+            "projects": [],
+            "language": "zh",
+            "theme": "light",
+            "default_scan_dir": "D:\\Project" if os.path.isdir("D:\\") else "C:\\"
         }
 
         # Automatic Migration from projects.json if config.json does not exist
@@ -117,7 +123,10 @@ class Api:
                     old_projects = json.load(f)
                 migrated_config = {
                     "skills_dir": r"D:\DevApps\skills", # Keep their old custom path
-                    "projects": old_projects
+                    "projects": old_projects,
+                    "language": "zh",
+                    "theme": "light",
+                    "default_scan_dir": "D:\\Project" if os.path.isdir("D:\\") else "C:\\"
                 }
                 with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                     json.dump(migrated_config, f, ensure_ascii=False, indent=2)
@@ -141,7 +150,10 @@ class Api:
         try:
             config = {
                 "skills_dir": self.skills_dir,
-                "projects": self.projects
+                "projects": self.projects,
+                "language": self.language,
+                "theme": self.theme,
+                "default_scan_dir": self.default_scan_dir
             }
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
@@ -155,7 +167,10 @@ class Api:
         os.makedirs(self.skills_dir, exist_ok=True)
         return {
             "skills_dir": self.skills_dir,
-            "projects": self.projects
+            "projects": self.projects,
+            "language": self.language,
+            "theme": self.theme,
+            "default_scan_dir": self.default_scan_dir
         }
 
     def change_skills_dir(self):
@@ -174,6 +189,42 @@ class Api:
         self._save_config()
         os.makedirs(self.skills_dir, exist_ok=True)
         return {"skills_dir": self.skills_dir}
+
+    def pick_default_scan_dir(self):
+        """Open native folder picker and select Default Projects starting directory."""
+        try:
+            result = self._window.create_file_dialog(
+                webview.FOLDER_DIALOG,
+                directory=self.default_scan_dir if os.path.isdir(self.default_scan_dir) else "C:\\"
+            )
+        except Exception:
+            result = None
+        if not result or len(result) == 0:
+            return None
+        new_path = os.path.normpath(result[0])
+        self.default_scan_dir = new_path
+        self._save_config()
+        return {"default_scan_dir": self.default_scan_dir}
+
+    def save_settings(self, settings):
+        """Save config settings (skills_dir, language, theme, default_scan_dir)."""
+        if "skills_dir" in settings:
+            self.skills_dir = os.path.normpath(settings["skills_dir"])
+            os.makedirs(self.skills_dir, exist_ok=True)
+        if "language" in settings:
+            self.language = settings["language"]
+        if "theme" in settings:
+            self.theme = settings["theme"]
+        if "default_scan_dir" in settings:
+            self.default_scan_dir = os.path.normpath(settings["default_scan_dir"])
+        
+        self._save_config()
+        return {
+            "skills_dir": self.skills_dir,
+            "language": self.language,
+            "theme": self.theme,
+            "default_scan_dir": self.default_scan_dir
+        }
 
     # --- Skills ---
 
@@ -270,14 +321,12 @@ description: 简短说明此项技能指南的目的与开发约束规范。
     def add_project_via_dialog(self):
         """Open native folder picker and add as project."""
         # Determine starting folder
-        start_dir = "C:\\"
+        start_dir = self.default_scan_dir if os.path.isdir(self.default_scan_dir) else "C:\\"
         if self.projects:
             last_path = self.projects[-1]["path"]
             parent = os.path.dirname(last_path)
             if os.path.isdir(parent):
                 start_dir = parent
-        elif os.path.isdir("D:\\"):
-            start_dir = "D:\\"
 
         try:
             result = self._window.create_file_dialog(
