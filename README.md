@@ -40,15 +40,17 @@
 ## 📁 Directory Structure
 
 ```text
-├── main.py              # pywebview backend API & bridge layer
-├── static/              # Frontend SPA (glassmorphism & light theme design)
-│   ├── index.html       # SPA skeleton template
-│   ├── index.css        # UI design system stylesheet
-│   └── app.js           # Frontend data interactions & status check logic
-├── config.json          # Local adaptive configuration database (auto-generated, git ignored)
-├── .gitignore           # Clean Git exclusions list
-├── README.md            # Project manual (English)
-└── README_ZH.md         # Project manual (简体中文)
+├── main.py                      # pywebview backend API & bridge layer
+├── AI_Skill_Hub_Manager.spec    # PyInstaller build configuration
+├── app.ico                      # Application icon
+├── static/                      # Frontend SPA
+│   ├── index.html               # SPA skeleton template
+│   ├── index.css                # UI design system stylesheet
+│   └── app.js                   # Frontend data interactions & status logic
+├── config.json                  # Local config (auto-generated, git ignored)
+├── .gitignore                   # Git exclusions
+├── README.md                    # Project manual (English)
+└── README_ZH.md                 # Project manual (简体中文)
 ```
 
 ---
@@ -95,11 +97,15 @@ pip install pyinstaller
 
 ### 2. Run Compilation
 ```bash
-pyinstaller --noconsole --onefile --clean --add-data "static;static" main.py
+pyinstaller --clean AI_Skill_Hub_Manager.spec
+```
+Or build from scratch without the spec file:
+```bash
+pyinstaller --noconsole --onefile --clean --icon=app.ico --add-data "static;static" --add-data "app.ico;." --name AI_Skill_Hub_Manager main.py
 ```
 
 ### 3. Retrieve Compiled Binary
-The compiled `main.exe` will be located in the `dist/` directory. Rename it to `AI_Skill_Hub_Manager.exe` and place it in your preferred directory for deployment.
+The compiled `AI_Skill_Hub_Manager.exe` will be located in the `dist/` directory. Copy it to your preferred directory for deployment.
 
 ---
 

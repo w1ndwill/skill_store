@@ -293,7 +293,7 @@ class Api:
         self.projects = config.get("projects", [])
         self.language = config.get("language", "zh")
         self.theme = config.get("theme", "light")
-        self.default_scan_dir = config.get("default_scan_dir", "D:\\Project" if os.path.isdir("D:\\") else "C:\\")
+        self.default_scan_dir = config.get("default_scan_dir", os.path.expanduser("~"))
 
     def set_window(self, window):
         self._window = window
@@ -305,7 +305,7 @@ class Api:
             "projects": [],
             "language": "zh",
             "theme": "light",
-            "default_scan_dir": "D:\\Project" if os.path.isdir("D:\\") else "C:\\"
+            "default_scan_dir": os.path.expanduser("~")
         }
 
         # Automatic Migration from projects.json if config.json does not exist
@@ -315,11 +315,11 @@ class Api:
                 with open(old_projects_path, "r", encoding="utf-8") as f:
                     old_projects = json.load(f)
                 migrated_config = {
-                    "skills_dir": r"D:\DevApps\skills", # Keep their old custom path
+                    "skills_dir": default_skills_dir,
                     "projects": old_projects,
                     "language": "zh",
                     "theme": "light",
-                    "default_scan_dir": "D:\\Project" if os.path.isdir("D:\\") else "C:\\"
+                    "default_scan_dir": os.path.expanduser("~")
                 }
                 with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                     json.dump(migrated_config, f, ensure_ascii=False, indent=2)
@@ -603,7 +603,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         if not result or len(result) == 0:
             return None
         path = os.path.normpath(result[0])
-        name = os.path.basename(path) or "未命名项目"
+        name = os.path.basename(path) or ("未命名项目" if self.language == "zh" else "Unnamed Project")
         
         if any(p["path"].lower() == path.lower() for p in self.projects):
             return {"error": "该项目已关联"}
@@ -792,9 +792,16 @@ if __name__ == "__main__":
     def _set_window_icon():
         """Use Win32 API to set window icon for taskbar/dock display."""
         import ctypes
+        import time
         try:
             user32 = ctypes.windll.user32
-            hwnd = user32.FindWindowW(None, 'AI Skill Hub Manager')
+            # Retry a few times since the window may not be ready immediately
+            hwnd = None
+            for _ in range(10):
+                hwnd = user32.FindWindowW(None, 'AI Skill Hub Manager')
+                if hwnd:
+                    break
+                time.sleep(0.3)
             if not hwnd:
                 return
             IMAGE_ICON = 1
