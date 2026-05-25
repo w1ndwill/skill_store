@@ -40,15 +40,17 @@
 ## 📁 目录结构
 
 ```text
-├── main.py              # pywebview 后端逻辑与 API 桥接层
-├── static/              # 前端 SPA (磨砂玻璃与明亮色调设计)
-│   ├── index.html       # SPA 骨架模板
-│   ├── index.css        # UI 样式设计系统
-│   └── app.js           # 前端数据交互与状态判定逻辑
-├── config.json          # 本地自适应动态配置库 (自动生成，git 已忽略)
-├── .gitignore           # 科学合理的 Git 过滤配置
-├── README.md            # 项目说明文档 (英文)
-└── README_ZH.md         # 项目说明文档 (中文)
+├── main.py                      # pywebview 后端逻辑与 API 桥接层
+├── AI_Skill_Hub_Manager.spec    # PyInstaller 编译配置
+├── app.ico                      # 应用图标
+├── static/                      # 前端 SPA
+│   ├── index.html               # SPA 骨架模板
+│   ├── index.css                # UI 样式设计系统
+│   └── app.js                   # 前端数据交互与状态判定逻辑
+├── config.json                  # 本地动态配置 (自动生成，git 已忽略)
+├── .gitignore                   # Git 过滤配置
+├── README.md                    # 项目说明文档 (英文)
+└── README_ZH.md                 # 项目说明文档 (中文)
 ```
 
 ---
@@ -93,13 +95,17 @@ python main.py
 pip install pyinstaller
 ```
 
-### 2. 执行一键编译打包
+### 2. 执行编译打包
 ```bash
-pyinstaller --noconsole --onefile --clean --add-data "static;static" main.py
+pyinstaller --clean AI_Skill_Hub_Manager.spec
+```
+或从零手动构建：
+```bash
+pyinstaller --noconsole --onefile --clean --icon=app.ico --add-data "static;static" --add-data "app.ico;." --name AI_Skill_Hub_Manager main.py
 ```
 
 ### 3. 获取成品
-编译完成后，可在生成的 `dist/` 目录下找到 `main.exe`。将其重命名为 `AI_Skill_Hub_Manager.exe` 即可。
+编译完成后，可在 `dist/` 目录下找到 `AI_Skill_Hub_Manager.exe`，拷贝到您希望的目录即可使用。
 
 ---
 
