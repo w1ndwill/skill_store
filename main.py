@@ -631,6 +631,17 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         active_metadata = []
         global_skills = self.get_skills()
 
+        # Collect all files that belong to enabled folder-based skills to protect them from deletion
+        allowed_folder_files = set()
+        for skill in global_skills:
+            fname = skill["filename"]
+            if skill.get("is_dir", False) and fname in enabled_set:
+                sub_skills_dir = os.path.join(self.skills_dir, fname, ".agent", "skills")
+                if os.path.exists(sub_skills_dir):
+                    for item in os.listdir(sub_skills_dir):
+                        if item.endswith(".md"):
+                            allowed_folder_files.add(item)
+
         # 1. Sync enabled skills (files and folders)
         for fname in enabled_set:
             src = os.path.join(self.skills_dir, fname)
@@ -672,7 +683,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             for item in os.listdir(target_dir):
                 if item.endswith(".md"):
                     base_name, ext = os.path.splitext(item)
-                    is_enabled = (item in enabled_set) or (base_name in enabled_set)
+                    is_enabled = (item in enabled_set) or (base_name in enabled_set) or (item in allowed_folder_files)
                     if not is_enabled:
                         try:
                             os.remove(os.path.join(target_dir, item))
