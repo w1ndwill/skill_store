@@ -38,7 +38,7 @@ SKILL_TRANSLATIONS = {
         "handoff.md": {
             "title": "流程接力与工作交接技能指南",
             "tags": ["交接", "工作流", "常规"],
-            "description": "AI 开发上下文无损交接与接力指南，有效解决长会话记忆衰退及多阶段开发无缝恢复问题。"
+            "description": "本技能指南旨在解决因上下文饱和导致的记忆衰退问题，在切换助手或会话时实现无缝的“无损状态恢复”与“流程接力”。"
         },
         "process_optimization.md": {
             "title": "流程优化技能指南",
@@ -85,7 +85,7 @@ SKILL_TRANSLATIONS = {
         "handoff.md": {
             "title": "Handoff & Context Resume Skill Guide",
             "tags": ["Handoff", "Context", "Resume"],
-            "description": "AI development context handoff and resume guide, effectively solving long session memory decay and multi-stage seamless recovery."
+            "description": "Resolves memory decay from context saturation, implementing seamless lossless state recovery and context handoff between sessions."
         },
         "process_optimization.md": {
             "title": "Process Optimization Skill Guide",
