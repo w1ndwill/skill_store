@@ -730,6 +730,18 @@ function handleSelectProject(path) {
   if (!proj) return;
   if (proj.error) showToast(currentLanguage === 'zh' ? `项目路径无法访问: ${proj.error}` : `Project path inaccessible: ${proj.error}`, 'warning');
   currentProjectPath = path;
+  _loadProjectState(proj);
+}
+
+// Reload the currently selected project's data without toggling selection
+function refreshCurrentProject() {
+  if (!currentProjectPath) return;
+  const proj = projects.find(p => p.path === currentProjectPath);
+  if (!proj) return;
+  _loadProjectState(proj);
+}
+
+function _loadProjectState(proj) {
   enabledSkills.clear();
   Object.entries(proj.skills_status || {}).forEach(([fname, status]) => {
     if (status === 'synced' || status === 'out_of_sync') enabledSkills.add(fname);
@@ -795,7 +807,7 @@ async function handleSyncSkills() {
     if (result.error) throw new Error(result.error);
     showToast(locales[currentLanguage].toastSyncSuccess + result.synced_count + (currentLanguage === 'zh' ? ' 项技能' : ' skills'), 'success');
     await fetchProjects();
-    handleSelectProject(currentProjectPath);
+    refreshCurrentProject();
   } catch (e) {
     showToast(locales[currentLanguage].toastSyncFail + e, 'error');
   } finally {
@@ -871,7 +883,7 @@ async function handleSaveSkill() {
     await fetchSkills();
     if (currentProjectPath) {
       await fetchProjects();
-      handleSelectProject(currentProjectPath);
+      refreshCurrentProject();
     }
   } catch (e) {
     showToast((currentLanguage === 'zh' ? '保存失败: ' : 'Failed to save: ') + e, 'error');
@@ -1117,7 +1129,7 @@ async function handleDeleteSkill(filename) {
     await fetchSkills();
     if (currentProjectPath) {
       await fetchProjects();
-      handleSelectProject(currentProjectPath);
+      refreshCurrentProject();
     }
   } catch (e) {
     showToast((currentLanguage === 'zh' ? '删除失败: ' : 'Failed to delete: ') + e, 'error');
