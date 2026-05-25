@@ -150,8 +150,8 @@ def check_dir_sync_status(src_dir: str, dst_root: str) -> str:
             src_file = os.path.join(root, f)
             rel_path = os.path.relpath(src_file, src_dir)
             
-            # Skip checking root README.md to avoid constant out-of-sync status
-            if rel_path.lower() == "readme.md":
+            # Skip checking root README.md and AGENTS.md to avoid constant out-of-sync status
+            if rel_path.lower() in ("readme.md", "agents.md"):
                 continue
                 
             total_files += 1
@@ -182,8 +182,8 @@ def copy_dir_recursive(src: str, dst: str):
             rel_path = os.path.relpath(src_file, src)
             dst_file = os.path.join(dst, rel_path)
             
-            # Prevent overwriting the project-level README.md if it already exists
-            if rel_path.lower() == "readme.md" and os.path.exists(dst_file):
+            # Prevent overwriting the project-level README.md and AGENTS.md if they already exist
+            if rel_path.lower() in ("readme.md", "agents.md") and os.path.exists(dst_file):
                 continue
                 
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
@@ -201,8 +201,8 @@ def remove_dir_if_matching(src_dir: str, dst_root: str):
             src_file = os.path.join(root, f)
             rel_path = os.path.relpath(src_file, src_dir)
             
-            # Explicitly protect the project-level main README.md from any accidental deletion
-            if rel_path.lower() == "readme.md":
+            # Explicitly protect the project-level main README.md and AGENTS.md from any accidental deletion
+            if rel_path.lower() in ("readme.md", "agents.md"):
                 continue
                 
             dst_file = os.path.join(dst_root, rel_path)
