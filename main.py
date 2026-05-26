@@ -280,6 +280,38 @@ def parse_markdown_metadata(file_path: str) -> dict:
     return metadata
 
 
+def upsert_metadata(entries: list, metadata: dict):
+    """Add metadata once per filename, replacing stale entries when needed."""
+    filename = metadata.get("filename")
+    if not filename:
+        entries.append(metadata)
+        return
+    for idx, item in enumerate(entries):
+        if item.get("filename") == filename:
+            entries[idx] = metadata
+            return
+    entries.append(metadata)
+
+
+def collect_folder_skill_metadata(folder_path: str) -> list:
+    """Return metadata for .agent/skills/*.md files bundled by a folder skill."""
+    bundled_skills_dir = os.path.join(folder_path, ".agent", "skills")
+    if not os.path.isdir(bundled_skills_dir):
+        return []
+
+    metadata = []
+    for item in sorted(os.listdir(bundled_skills_dir)):
+        if not item.endswith(".md"):
+            continue
+        fp = os.path.join(bundled_skills_dir, item)
+        if os.path.isfile(fp):
+            meta = parse_markdown_metadata(fp)
+            meta["filename"] = item
+            meta["is_dir"] = False
+            metadata.append(meta)
+    return metadata
+
+
 # ============================================================
 # pywebview JavaScript API Bridge
 # ============================================================
@@ -542,6 +574,8 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         """Return projects list with per-skill sync status."""
         result = []
         global_skills = self.get_skills()
+        dir_skills = [skill for skill in global_skills if skill.get("is_dir", False)]
+        file_skills = [skill for skill in global_skills if not skill.get("is_dir", False)]
         for proj in self.projects:
             path = proj["path"]
             entry = {"name": proj["name"], "path": path, "skills_status": {}}
@@ -550,34 +584,50 @@ description: 简短说明此项技能指南的目的与开发约束规范。
                 result.append(entry)
                 continue
             
-            # First, check status of all global skills (files & directories) in this project
-            for skill in global_skills:
+            bundled_files = {}
+            bundled_refs = set()
+
+            # First, check folder skills and remember the files they provide.
+            for skill in dir_skills:
                 fname = skill["filename"]
-                is_dir = skill.get("is_dir", False)
-                if is_dir:
-                    global_fp = os.path.join(self.skills_dir, fname)
-                    entry["skills_status"][fname] = check_dir_sync_status(global_fp, path)
-                else:
-                    global_fp = os.path.join(self.skills_dir, fname)
-                    target_fp = os.path.join(path, ".agent", "skills", fname)
-                    if os.path.exists(global_fp):
-                        if os.path.exists(target_fp):
-                            if get_file_md5(global_fp) == get_file_md5(target_fp):
-                                entry["skills_status"][fname] = "synced"
-                            else:
-                                entry["skills_status"][fname] = "out_of_sync"
-                        else:
+                global_fp = os.path.join(self.skills_dir, fname)
+                status = check_dir_sync_status(global_fp, path)
+                entry["skills_status"][fname] = status
+
+                if status != "unloaded":
+                    bundled_refs.add(fname + ".md")
+                    sub_skills_dir = os.path.join(global_fp, ".agent", "skills")
+                    if os.path.isdir(sub_skills_dir):
+                        for item in os.listdir(sub_skills_dir):
+                            if item.endswith(".md"):
+                                bundled_files[item] = os.path.join(sub_skills_dir, item)
+
+            # Then check file skills. If a file is supplied by a loaded folder skill,
+            # do not treat that bundled copy as the standalone global skill being enabled.
+            for skill in file_skills:
+                fname = skill["filename"]
+                global_fp = os.path.join(self.skills_dir, fname)
+                target_fp = os.path.join(path, ".agent", "skills", fname)
+                if os.path.exists(global_fp):
+                    if os.path.exists(target_fp):
+                        if get_file_md5(global_fp) == get_file_md5(target_fp):
+                            entry["skills_status"][fname] = "synced"
+                        elif fname in bundled_files and get_file_md5(bundled_files[fname]) == get_file_md5(target_fp):
                             entry["skills_status"][fname] = "unloaded"
+                        else:
+                            entry["skills_status"][fname] = "out_of_sync"
                     else:
-                        if os.path.exists(target_fp):
-                            entry["skills_status"][fname] = "orphan"
-            
-            # Second, scan the project's own skills dir for any other files not in global
+                        entry["skills_status"][fname] = "unloaded"
+                else:
+                    if os.path.exists(target_fp):
+                        entry["skills_status"][fname] = "orphan"
+
+            # Finally, scan the project's own skills dir for other files not managed by any loaded source.
             skills_dir = os.path.join(path, ".agent", "skills")
             if os.path.exists(skills_dir):
                 for item in os.listdir(skills_dir):
                     if item.endswith(".md"):
-                        if item not in entry["skills_status"]:
+                        if item not in entry["skills_status"] and item not in bundled_files and item not in bundled_refs:
                             entry["skills_status"][item] = "orphan"
                             
             result.append(entry)
@@ -630,55 +680,69 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         enabled_set = set(enabled_skills)
         active_metadata = []
         global_skills = self.get_skills()
+        enabled_global_skills = [skill for skill in global_skills if skill["filename"] in enabled_set]
 
         # Collect all files that belong to enabled folder-based skills to protect them from deletion
         allowed_folder_files = set()
-        for skill in global_skills:
+        for skill in enabled_global_skills:
             fname = skill["filename"]
-            if skill.get("is_dir", False) and fname in enabled_set:
+            if skill.get("is_dir", False):
                 sub_skills_dir = os.path.join(self.skills_dir, fname, ".agent", "skills")
                 if os.path.exists(sub_skills_dir):
                     for item in os.listdir(sub_skills_dir):
                         if item.endswith(".md"):
                             allowed_folder_files.add(item)
 
-        # 1. Sync enabled skills (files and folders)
-        for fname in enabled_set:
+        # 1. Sync enabled folder skills first so explicit file skills can override bundled copies
+        for skill in enabled_global_skills:
+            if not skill.get("is_dir", False):
+                continue
+            fname = skill["filename"]
             src = os.path.join(self.skills_dir, fname)
             if not os.path.exists(src):
                 continue
-            
-            if os.path.isdir(src):
-                # Copy folder contents recursively directly into project root
-                copy_dir_recursive(src, project_path)
-                
-                # Fetch metadata from README.md inside the folder, if exists
-                readme_fp = os.path.join(src, "README.md")
-                if os.path.exists(readme_fp):
-                    meta = parse_markdown_metadata(readme_fp)
-                    # Also write it to target_dir / fname + ".md" for project-side local reference
-                    dst_ref = os.path.join(target_dir, fname + ".md")
-                    shutil.copy2(readme_fp, dst_ref)
-                else:
-                    meta = {
-                        "title": fname,
-                        "emoji": "📦",
-                        "tags": ["主控", "模板", "项目级"] if self.language == "zh" else ["Master", "Template", "Project-Level"],
-                        "description": "主控模板文件夹" if self.language == "zh" else "Master template folder"
-                    }
-                meta["filename"] = fname
-                meta["is_dir"] = True
-                active_metadata.append(meta)
-            else:
-                # Copy file to .agent/skills/
-                dst = os.path.join(target_dir, fname)
-                shutil.copy2(src, dst)
-                
-                meta = parse_markdown_metadata(src)
-                meta["is_dir"] = False
-                active_metadata.append(meta)
 
-        # 2. Remove unselected file-based skills and references of unselected folder skills
+            # Copy folder contents recursively directly into project root
+            copy_dir_recursive(src, project_path)
+
+            # Fetch metadata from README.md inside the folder, if exists
+            readme_fp = os.path.join(src, "README.md")
+            if os.path.exists(readme_fp):
+                meta = parse_markdown_metadata(readme_fp)
+                # Also write it to target_dir / fname + ".md" for project-side local reference
+                dst_ref = os.path.join(target_dir, fname + ".md")
+                shutil.copy2(readme_fp, dst_ref)
+            else:
+                meta = {
+                    "title": fname,
+                    "emoji": "📦",
+                    "tags": ["主控", "模板", "项目级"] if self.language == "zh" else ["Master", "Template", "Project-Level"],
+                    "description": "主控模板文件夹" if self.language == "zh" else "Master template folder"
+                }
+            meta["filename"] = fname
+            meta["is_dir"] = True
+            upsert_metadata(active_metadata, meta)
+
+            for bundled_meta in collect_folder_skill_metadata(src):
+                upsert_metadata(active_metadata, bundled_meta)
+
+        # 2. Sync enabled file skills after folders for deterministic override behavior
+        for skill in enabled_global_skills:
+            if skill.get("is_dir", False):
+                continue
+            fname = skill["filename"]
+            src = os.path.join(self.skills_dir, fname)
+            if not os.path.exists(src):
+                continue
+
+            dst = os.path.join(target_dir, fname)
+            shutil.copy2(src, dst)
+
+            meta = parse_markdown_metadata(src)
+            meta["is_dir"] = False
+            upsert_metadata(active_metadata, meta)
+
+        # 3. Remove unselected file-based skills and references of unselected folder skills
         if os.path.exists(target_dir):
             for item in os.listdir(target_dir):
                 if item.endswith(".md"):
@@ -690,7 +754,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
                         except Exception:
                             pass
 
-        # 3. Safe cleanup of unselected directory-based skills
+        # 4. Safe cleanup of unselected directory-based skills
         for skill in global_skills:
             fname = skill["filename"]
             if skill.get("is_dir", False) and fname not in enabled_set:
@@ -838,4 +902,3 @@ if __name__ == "__main__":
     )
     api.set_window(window)
     webview.start(debug=False, func=_set_window_icon)
-
