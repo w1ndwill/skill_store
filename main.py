@@ -3,7 +3,11 @@ import sys
 import json
 import shutil
 import hashlib
+import time
+import re
 import webview
+import requests
+from ddgs import DDGS
 
 # ============================================================
 # Constants & Config Paths
@@ -132,9 +136,13 @@ def get_file_md5(file_path: str) -> str:
         return hashlib.md5(f.read()).hexdigest()
 
 
-def check_dir_sync_status(src_dir: str, dst_root: str) -> str:
+def check_dir_sync_status(src_dir: str, dst_root: str, skills_dir: str = None) -> str:
     """
     Check the synchronization status of a folder skill in a project.
+    When skills_dir is provided, a destination file that doesn't match the folder's
+    bundled copy is also checked against the standalone global skill file — if it
+    matches the standalone version, it is counted as matched because standalone
+    file skills take precedence over folder-bundled copies during sync.
     Returns:
       "synced": all files in src_dir exist in dst_root and have matching MD5s.
       "out_of_sync": at least one file exists in dst_root but has mismatched MD5 or some files are missing.
@@ -149,16 +157,20 @@ def check_dir_sync_status(src_dir: str, dst_root: str) -> str:
         for f in files:
             src_file = os.path.join(root, f)
             rel_path = os.path.relpath(src_file, src_dir)
-            
+
             # Skip checking root README.md and AGENTS.md to avoid constant out-of-sync status
             if rel_path.lower() in ("readme.md", "agents.md"):
                 continue
-                
+
             total_files += 1
             dst_file = os.path.join(dst_root, rel_path)
 
             if os.path.exists(dst_file):
                 if get_file_md5(src_file) == get_file_md5(dst_file):
+                    matched_files += 1
+                elif skills_dir and _matches_standalone_skill(skills_dir, f, dst_file):
+                    # The project file matches the standalone global skill version
+                    # (which takes precedence over the folder-bundled copy during sync).
                     matched_files += 1
                 else:
                     mismatched_files += 1
@@ -172,6 +184,14 @@ def check_dir_sync_status(src_dir: str, dst_root: str) -> str:
     if matched_files > 0 or mismatched_files > 0:
         return "out_of_sync"
     return "unloaded"
+
+
+def _matches_standalone_skill(skills_dir: str, filename: str, dst_file: str) -> bool:
+    """Return True if dst_file's MD5 matches the standalone file skills_dir/filename."""
+    standalone = os.path.join(skills_dir, filename)
+    if not os.path.isfile(standalone):
+        return False
+    return get_file_md5(standalone) == get_file_md5(dst_file)
 
 
 def copy_dir_recursive(src: str, dst: str):
@@ -326,6 +346,8 @@ class Api:
         self.language = config.get("language", "zh")
         self.theme = config.get("theme", "light")
         self.default_scan_dir = config.get("default_scan_dir", os.path.expanduser("~"))
+        self.deepseek_api_key = config.get("deepseek_api_key", "")
+        self.deepseek_model = config.get("deepseek_model", "deepseek-chat")
 
     def set_window(self, window):
         self._window = window
@@ -378,7 +400,9 @@ class Api:
                 "projects": self.projects,
                 "language": self.language,
                 "theme": self.theme,
-                "default_scan_dir": self.default_scan_dir
+                "default_scan_dir": self.default_scan_dir,
+                "deepseek_api_key": self.deepseek_api_key,
+                "deepseek_model": self.deepseek_model
             }
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
@@ -395,7 +419,10 @@ class Api:
             "projects": self.projects,
             "language": self.language,
             "theme": self.theme,
-            "default_scan_dir": self.default_scan_dir
+            "default_scan_dir": self.default_scan_dir,
+            "deepseek_api_key": "***" if self.deepseek_api_key else "",
+            "deepseek_model": self.deepseek_model,
+            "has_ai_key": bool(self.deepseek_api_key)
         }
 
     def change_skills_dir(self):
@@ -450,6 +477,344 @@ class Api:
             "theme": self.theme,
             "default_scan_dir": self.default_scan_dir
         }
+
+    # --- AI Configuration ---
+
+    def save_ai_config(self, api_key, model="deepseek-chat"):
+        """Save DeepSeek API configuration. Empty api_key means keep existing."""
+        if api_key:
+            self.deepseek_api_key = api_key
+        self.deepseek_model = model or self.deepseek_model
+        self._save_config()
+        return {"ok": True}
+
+    # --- AI Connection Test ---
+
+    def ai_test_connection(self):
+        """Test DeepSeek API connectivity with a minimal request."""
+        if not self.deepseek_api_key:
+            return {"error": "请先配置 API Key" if self.language == "zh" else "Please configure API Key first"}
+
+        start = time.time()
+        try:
+            resp = requests.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.deepseek_api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.deepseek_model,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                    "max_tokens": 10
+                },
+                timeout=15
+            )
+            elapsed = int((time.time() - start) * 1000)
+            if resp.status_code == 200:
+                return {"ok": True, "model": self.deepseek_model, "latency_ms": elapsed}
+            else:
+                err = resp.json().get("error", {}).get("message", f"HTTP {resp.status_code}")
+                return {"error": err}
+        except requests.exceptions.Timeout:
+            return {"error": "连接超时" if self.language == "zh" else "Connection timed out"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # --- AI Web Search ---
+
+    def ai_web_search(self, query):
+        """Search the web and return raw results for the chat context."""
+        results = []
+        try:
+            with DDGS() as ddgs:
+                for r in ddgs.text(query, max_results=5):
+                    results.append({
+                        "title": r.get("title", ""),
+                        "body": r.get("body", "")[:300],
+                        "href": r.get("href", "")
+                    })
+        except Exception:
+            pass
+        return {"results": results}
+
+    # --- AI Chat ---
+
+    def ai_chat(self, messages, mode="chat"):
+        """
+        Chat with DeepSeek.
+        mode='chat': conversational skill advisor.
+        mode='generate': synthesize conversation into a skill .md file.
+        Returns {reply, skill} for generate mode, {reply} for chat mode.
+        """
+        if not self.deepseek_api_key:
+            return {"error": "请先配置 API Key" if self.language == "zh" else "Please configure API Key first"}
+
+        lang = self.language
+
+        if mode == "generate":
+            system_prompt = f"""你是一位资深软件规范专家。根据对话历史，生成一份专业的 AI 开发技能指南（Markdown）。
+
+严格按以下格式输出：
+
+---frontmatter---
+title: <技能标题>
+emoji: <emoji>
+tags: <3-5个标签>
+description: <一句话描述>
+
+## 🎯 核心规范
+<至少3条具体规范>
+
+## 📋 最佳实践
+<具体建议>
+
+## ⚠️ 注意事项
+<需要警惕的问题>
+
+输出语言：{'中文' if lang == 'zh' else 'English'}
+只输出 markdown，别加多余解释。"""
+        else:
+            system_prompt = f"""你是一位资深的软件开发规范顾问。你的任务是和用户对话，帮他们理清需求，制定合适的 AI 开发技能指南。
+
+对话风格：
+- 先理解用户的项目背景和技术栈
+- 如果需求模糊，主动提问澄清（一次最多问2个问题）
+- 给出具体的规范建议，而不是空泛的理论
+- 当用户觉得讨论充分了，告诉他们可以点击"生成技能"按钮
+
+输出语言：{'中文' if lang == 'zh' else 'English'}
+保持回复简洁，一次聚焦1-2个要点。"""
+
+        try:
+            resp = requests.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.deepseek_api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.deepseek_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        *messages
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 4096
+                },
+                timeout=90
+            )
+            if resp.status_code != 200:
+                err = resp.json().get("error", {}).get("message", f"HTTP {resp.status_code}")
+                return {"error": err}
+
+            reply = resp.json()["choices"][0]["message"]["content"]
+
+            if mode == "generate":
+                parsed = self._parse_ai_skill(reply)
+                return {"reply": reply, "skill": parsed}
+            return {"reply": reply}
+
+        except requests.exceptions.Timeout:
+            return {"error": "请求超时" if lang == "zh" else "Request timed out"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # --- AI Search & Generate ---
+
+    def ai_search_skill(self, query):
+        """
+        Search the web for relevant skill guidelines, then use DeepSeek
+        to synthesize a complete skill .md file from the search results.
+        Returns {phase, title, emoji, tags, description, content} or {error}.
+        """
+        if not self.deepseek_api_key:
+            return {"error": "请先在系统设置中配置 DeepSeek API Key" if self.language == "zh" else "Please configure your DeepSeek API Key in Settings first"}
+
+        lang = self.language
+        lang_hint = "中文" if lang == "zh" else "English"
+
+        # ── Phase 1: Web Search ──
+        search_results = []
+        try:
+            with DDGS() as ddgs:
+                # Search for relevant skill guidelines
+                search_query = f"site:github.com OR site:dev.to OR site:medium.com {query} guidelines best practices"
+                results = list(ddgs.text(search_query, max_results=5))
+                for r in results:
+                    search_results.append({
+                        "title": r.get("title", ""),
+                        "body": r.get("body", "")[:300],
+                        "href": r.get("href", "")
+                    })
+        except Exception as e:
+            # If search fails, still try AI generation without search context
+            search_results = []
+
+        # ── Phase 2: AI Generation ──
+        search_context = ""
+        if search_results:
+            search_context = "\n\n".join([
+                f"### {r['title']}\n{r['body']}\nSource: {r['href']}"
+                for r in search_results
+            ])
+        else:
+            search_context = "（未找到相关搜索结果，请基于你的知识生成）" if lang == "zh" else "(No search results found, please generate based on your knowledge)"
+
+        system_prompt = f"""你是一位资深的软件开发规范专家。你的任务是根据用户的描述，生成一份专业、实用的 AI 开发技能指南（Markdown 格式）。
+
+输出必须严格按以下格式：
+
+---frontmatter---
+title: <简洁的技能标题>
+emoji: <一个最贴切的emoji>
+tags: <3-5个分类标签，逗号分隔>
+description: <一句话描述这个技能的用途>
+
+## 🎯 核心规范
+<具体的开发指南、规范条目，至少3条，用markdown列表>
+
+## 📋 最佳实践
+<建议和技巧>
+
+## ⚠️ 注意事项
+<需要特别警惕的问题>
+
+要求：
+- 输出语言：{lang_hint}
+- 内容要具体、可执行，不要空泛的理论
+- 如果搜索结果中有参考内容，融入其中
+- 格式干净，不输出多余的解释"""
+
+        user_prompt = f"""用户需求：{query}
+
+以下是在线搜索结果（供参考）：
+
+{search_context}
+
+请根据以上信息，生成一份完整的技能规范文件。只输出 markdown 内容。"""
+
+        try:
+            response = requests.post(
+                "https://api.deepseek.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.deepseek_api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.deepseek_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 4096
+                },
+                timeout=60
+            )
+            if response.status_code != 200:
+                error_msg = response.json().get("error", {}).get("message", response.text)
+                return {"error": f"DeepSeek API 错误: {error_msg}"}
+
+            ai_content = response.json()["choices"][0]["message"]["content"]
+
+            # Parse AI output
+            parsed = self._parse_ai_skill(ai_content)
+            return {
+                "phase": "done",
+                "title": parsed["title"],
+                "emoji": parsed["emoji"],
+                "tags": parsed["tags"],
+                "description": parsed["description"],
+                "content": parsed["content"]
+            }
+
+        except requests.exceptions.Timeout:
+            return {"error": "AI 请求超时，请重试" if lang == "zh" else "AI request timed out, please retry"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def _parse_ai_skill(self, raw_text):
+        """Parse AI-generated markdown into structured skill data."""
+        content = raw_text.strip()
+        title = "AI 生成技能" if self.language == "zh" else "AI Generated Skill"
+        emoji = "🤖"
+        tags = ["AI生成"] if self.language == "zh" else ["AI-Generated"]
+        description = ""
+
+        # Try to parse frontmatter block
+        fm_match = re.match(r'---frontmatter---\s*\n(.*?)\n---', content, re.DOTALL)
+        if fm_match:
+            fm_text = fm_match.group(1)
+            for line in fm_text.splitlines():
+                line = line.strip()
+                if line.startswith("title:"):
+                    title = line.split(":", 1)[1].strip()
+                elif line.startswith("emoji:"):
+                    emoji = line.split(":", 1)[1].strip()
+                elif line.startswith("tags:"):
+                    tags = [t.strip() for t in line.split(":", 1)[1].split(",") if t.strip()]
+                elif line.startswith("description:"):
+                    description = line.split(":", 1)[1].strip()
+            # Remove frontmatter block from content, keep the rest as body
+            content = content[fm_match.end():].strip()
+        else:
+            # Fallback: extract first h1 as title, first paragraph as description
+            lines = content.splitlines()
+            for line in lines:
+                s = line.strip()
+                if s.startswith("# "):
+                    title = s.lstrip("#").strip()
+                    break
+            # Use first non-empty paragraph after title as description
+            found_title = False
+            for line in lines:
+                s = line.strip()
+                if not s:
+                    continue
+                if s.startswith("# ") and not found_title:
+                    found_title = True
+                    continue
+                if found_title and not s.startswith("#"):
+                    description = s[:200]
+                    break
+
+        return {
+            "title": title,
+            "emoji": emoji,
+            "tags": tags[:6],
+            "description": description,
+            "content": content
+        }
+
+    def ai_save_skill(self, skill_data):
+        """Save an AI-generated skill to the global library."""
+        filename = skill_data.get("filename", "")
+        content = skill_data.get("content", "")
+        if not filename or not content:
+            return {"error": "Missing filename or content"}
+
+        # Ensure .md extension
+        if not filename.endswith(".md"):
+            filename += ".md"
+
+        fp = os.path.join(self.skills_dir, filename)
+        # If exists, append a numeric suffix
+        if os.path.exists(fp):
+            base = filename[:-3] if filename.endswith(".md") else filename
+            counter = 1
+            while os.path.exists(fp):
+                filename = f"{base}_{counter}.md"
+                fp = os.path.join(self.skills_dir, filename)
+                counter += 1
+
+        try:
+            os.makedirs(self.skills_dir, exist_ok=True)
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(content)
+            return {"ok": True, "filename": filename}
+        except Exception as e:
+            return {"error": str(e)}
 
     # --- Skills ---
 
@@ -591,7 +956,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             for skill in dir_skills:
                 fname = skill["filename"]
                 global_fp = os.path.join(self.skills_dir, fname)
-                status = check_dir_sync_status(global_fp, path)
+                status = check_dir_sync_status(global_fp, path, self.skills_dir)
                 entry["skills_status"][fname] = status
 
                 if status != "unloaded":
