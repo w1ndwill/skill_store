@@ -1058,7 +1058,7 @@ async function handleSaveSettings() {
 }
 
 // ------------------------------------------
-// AI Chat Modal
+// AI Chat Modal (with session management)
 // ------------------------------------------
 
 const aiModal = document.getElementById('ai-modal');
@@ -1068,31 +1068,124 @@ const aiSendBtn = document.getElementById('ai-send-btn');
 const aiSkillPreview = document.getElementById('ai-skill-preview');
 const aiSkillContent = document.getElementById('ai-skill-content');
 const aiWebSearchToggle = document.getElementById('ai-web-search-toggle');
+const aiSessionList = document.getElementById('ai-session-list');
 
-let aiChatHistory = []; // {role, content}
+let aiChatHistory = [];
 let aiIsLoading = false;
+let currentSessionId = null;
+let allSessions = [];
 
-function openAIModal() {
-  aiChatHistory = [];
-  aiGeneratedSkill = null;
+async function openAIModal() {
   aiIsLoading = false;
-  aiChatMessages.innerHTML = `
-    <div class="ai-chat-empty">
-      <div style="font-size:3rem;margin-bottom:0.75rem;">✨</div>
-      <h4 style="font-weight:700;margin-bottom:0.35rem;color:var(--text-primary);">AI 技能顾问</h4>
-      <p style="color:var(--text-tertiary);font-size:0.8rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
-    </div>`;
+  aiGeneratedSkill = null;
   aiSkillPreview.style.display = 'none';
-  aiChatInput.value = '';
-  aiSendBtn.removeAttribute('disabled');
   aiModal.classList.add('active');
+  await loadSessionList();
   lucide.createIcons();
   setTimeout(() => aiChatInput.focus(), 200);
 }
 
 function closeAIModal() {
+  saveCurrentSession();
   aiModal.classList.remove('active');
 }
+
+async function loadSessionList() {
+  try {
+    allSessions = await window.pywebview.api.chat_list_sessions();
+  } catch (e) { allSessions = []; }
+  renderSessionList();
+  // Auto-select most recent or create new
+  if (allSessions.length > 0) {
+    switchToSession(allSessions[0].id);
+  } else {
+    createNewSession();
+  }
+}
+
+function renderSessionList() {
+  aiSessionList.innerHTML = '';
+  allSessions.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'ai-session-item' + (s.id === currentSessionId ? ' active' : '');
+    div.onclick = () => { saveCurrentSession(); switchToSession(s.id); };
+    div.innerHTML = `
+      <div class="ai-session-item-title">${escapeHtml(s.title || '未命名')}</div>
+      <div class="ai-session-item-meta">${s.msg_count || 0} 条消息</div>
+      <button class="ai-session-del" onclick="event.stopPropagation();deleteSession('${s.id}')" title="删除">×</button>`;
+    aiSessionList.appendChild(div);
+  });
+}
+
+async function switchToSession(sid) {
+  saveCurrentSession(); // save current before switching
+  currentSessionId = sid;
+  aiChatHistory = [];
+  aiSkillPreview.style.display = 'none';
+  aiGeneratedSkill = null;
+
+  try {
+    const r = await window.pywebview.api.chat_load_session(sid);
+    if (r.session && r.session.messages) {
+      aiChatHistory = r.session.messages;
+    }
+  } catch (e) { /* ignore */ }
+
+  renderSessionList();
+  renderChatHistory();
+}
+
+async function createNewSession() {
+  saveCurrentSession();
+  currentSessionId = 's_' + Date.now();
+  aiChatHistory = [];
+  aiSkillPreview.style.display = 'none';
+  aiGeneratedSkill = null;
+  allSessions.unshift({ id: currentSessionId, title: '新会话', msg_count: 0 });
+  renderSessionList();
+  renderChatHistory();
+}
+
+async function deleteSession(sid) {
+  try { await window.pywebview.api.chat_delete_session(sid); } catch (e) {}
+  allSessions = allSessions.filter(s => s.id !== sid);
+  if (sid === currentSessionId) {
+    currentSessionId = null;
+    aiChatHistory = [];
+  }
+  renderSessionList();
+  if (allSessions.length > 0 && !currentSessionId) {
+    switchToSession(allSessions[0].id);
+  } else if (allSessions.length === 0) {
+    createNewSession();
+  }
+  renderChatHistory();
+}
+
+function saveCurrentSession() {
+  if (!currentSessionId || aiChatHistory.length === 0) return;
+  const title = aiChatHistory.find(m => m.role === 'user')?.content?.slice(0, 30) || '未命名';
+  window.pywebview.api.chat_save_session(currentSessionId, title, aiChatHistory).catch(() => {});
+}
+
+function renderChatHistory() {
+  aiChatMessages.innerHTML = '';
+  if (aiChatHistory.length === 0) {
+    aiChatMessages.innerHTML = `
+      <div class="ai-chat-empty">
+        <div style="font-size:2.5rem;margin-bottom:0.5rem;">✨</div>
+        <h4 style="font-weight:700;margin-bottom:0.25rem;color:var(--text-primary);">AI 技能顾问</h4>
+        <p style="color:var(--text-tertiary);font-size:0.78rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
+      </div>`;
+  } else {
+    aiChatHistory.forEach(m => {
+      appendChatBubble(m.role, m.content);
+    });
+  }
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+}
+
+// --- Chat interaction ---
 
 function handleChatKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -1105,16 +1198,13 @@ async function sendAIMessage() {
   const text = aiChatInput.value.trim();
   if (!text || aiIsLoading) return;
 
-  // Clear empty state
   const emptyEl = aiChatMessages.querySelector('.ai-chat-empty');
   if (emptyEl) emptyEl.remove();
 
-  // Append user message
   appendChatBubble('user', text);
   aiChatInput.value = '';
   aiChatHistory.push({ role: 'user', content: text });
 
-  // If web search is enabled, first search then inject results
   if (aiWebSearchToggle.checked) {
     try {
       const sr = await window.pywebview.api.ai_web_search(text);
@@ -1123,12 +1213,10 @@ async function sendAIMessage() {
           sr.results.map(r => `- [${r.title}](${r.href}): ${r.body.slice(0, 200)}`).join('\n');
         aiChatHistory.push({ role: 'user', content: ctx });
       }
-    } catch (e) { /* search failed silently */ }
+    } catch (e) {}
   }
 
-  // Show typing indicator
   const typingId = showTypingIndicator();
-
   aiIsLoading = true;
   aiSendBtn.setAttribute('disabled', 'true');
 
@@ -1137,18 +1225,19 @@ async function sendAIMessage() {
       aiChatHistory.map(m => ({ role: m.role, content: m.content })),
       'chat'
     );
-
     removeTypingIndicator(typingId);
-
     if (result.error) {
       appendChatBubble('ai', '❌ ' + result.error);
     } else {
       appendChatBubble('ai', result.reply);
       aiChatHistory.push({ role: 'assistant', content: result.reply });
     }
+    saveCurrentSession();
+    await loadSessionList();
+    renderSessionList();
   } catch (e) {
     removeTypingIndicator(typingId);
-    appendChatBubble('ai', '❌ ' + (currentLanguage === 'zh' ? '请求失败: ' : 'Request failed: ') + e);
+    appendChatBubble('ai', '❌ ' + (e.message || e));
   } finally {
     aiIsLoading = false;
     aiSendBtn.removeAttribute('disabled');
@@ -1156,20 +1245,21 @@ async function sendAIMessage() {
   }
 }
 
+async function handleNewSession() {
+  createNewSession();
+  aiChatInput.focus();
+}
+
 async function handleAIGenerateSkill() {
   if (aiChatHistory.length === 0 || aiIsLoading) return;
-
   const typingId = showTypingIndicator();
   aiIsLoading = true;
-
   try {
     const result = await window.pywebview.api.ai_chat(
       aiChatHistory.map(m => ({ role: m.role, content: m.content })),
       'generate'
     );
-
     removeTypingIndicator(typingId);
-
     if (result.error) {
       appendChatBubble('ai', '❌ ' + result.error);
     } else if (result.skill) {
@@ -1177,11 +1267,14 @@ async function handleAIGenerateSkill() {
       aiSkillContent.innerHTML = marked.parse(aiGeneratedSkill.content || '');
       aiSkillPreview.style.display = 'block';
       aiChatHistory.push({ role: 'assistant', content: '✅ 技能已生成，请在下方预览并保存' });
-      appendChatBubble('ai', '✅ 技能已生成！你可以在下方预览，满意后点击 **保存技能**。');
+      appendChatBubble('ai', '✅ 技能已生成！你可以在下方预览，满意后点击 **保存**。');
+      saveCurrentSession();
+      await loadSessionList();
+      renderSessionList();
     }
   } catch (e) {
     removeTypingIndicator(typingId);
-    appendChatBubble('ai', '❌ ' + (currentLanguage === 'zh' ? '生成失败: ' : 'Generation failed: ') + e);
+    appendChatBubble('ai', '❌ ' + (e.message || e));
   } finally {
     aiIsLoading = false;
   }
@@ -1190,35 +1283,25 @@ async function handleAIGenerateSkill() {
 async function handleAISave() {
   if (!aiGeneratedSkill) return;
   let fname = (aiGeneratedSkill.title || 'ai_skill')
-    .replace(/[\\/:*?"<>|]/g, '')
-    .replace(/\s+/g, '_')
-    .slice(0, 60);
+    .replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_').slice(0, 60);
   if (!fname) fname = 'ai_generated_skill';
   fname += '.md';
-
   try {
-    const result = await window.pywebview.api.ai_save_skill({
-      filename: fname,
-      content: aiGeneratedSkill.content
-    });
-    if (result.error) throw new Error(result.error);
-    showToast(
-      (currentLanguage === 'zh' ? '✅ AI 技能已保存: ' : '✅ AI skill saved: ') + result.filename,
-      'success'
-    );
+    const r = await window.pywebview.api.ai_save_skill({ filename: fname, content: aiGeneratedSkill.content });
+    if (r.error) throw new Error(r.error);
+    showToast((currentLanguage === 'zh' ? '✅ 已保存: ' : '✅ Saved: ') + r.filename, 'success');
     aiSkillPreview.style.display = 'none';
     aiGeneratedSkill = null;
     await fetchSkills();
     if (currentProjectPath) { await fetchProjects(); refreshCurrentProject(); }
   } catch (e) {
-    showToast((currentLanguage === 'zh' ? '保存失败: ' : 'Failed to save: ') + e, 'error');
+    showToast((currentLanguage === 'zh' ? '保存失败: ' : 'Failed: ') + e, 'error');
   }
 }
 
 async function handleAIRegenerate() {
   aiSkillPreview.style.display = 'none';
   aiGeneratedSkill = null;
-  // Remove last assistant message if it was about generation
   if (aiChatHistory.length > 0 && aiChatHistory[aiChatHistory.length - 1].role === 'assistant') {
     aiChatHistory.pop();
   }
@@ -1446,3 +1529,5 @@ window.handleAISave = handleAISave;
 window.handleAIRegenerate = handleAIRegenerate;
 window.handleAITestConnection = handleAITestConnection;
 window.toggleApiKeyVisibility = toggleApiKeyVisibility;
+window.handleNewSession = handleNewSession;
+window.deleteSession = deleteSession;

@@ -150,7 +150,7 @@
 
   <!-- Settings Modal -->
   <div id="settings-modal" class="modal-overlay">
-    <div class="modal-container modal-settings-container" style="max-width: 600px;">
+    <div class="modal-container modal-settings-container">
       <header class="modal-header">
         <div class="modal-title-info">
           <span class="modal-emoji">⚙️</span>
@@ -160,104 +160,100 @@
           <i data-lucide="x" style="width:18px;height:18px;"></i>
         </button>
       </header>
-      <div class="modal-body settings-body" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem;">
-        
+      <div class="modal-body settings-body">
+
         <!-- Section 1: General Preferences -->
-        <div class="settings-group" style="display: flex; flex-direction: column; gap: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem;">
-          <h4 id="settings-heading-general" style="font-size: 0.95rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem;">通用偏好 / General</h4>
-          
-          <div class="settings-row" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-            <div class="settings-label-col" style="flex: 1;">
-              <label for="settings-language" id="settings-label-lang" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">系统语言 (Language)</label>
-              <p class="settings-desc" id="settings-desc-lang" style="font-size: 0.75rem; color: var(--text-muted); margin: 0.15rem 0 0 0;">切换整个界面的显示语言</p>
-            </div>
-            <div class="settings-input-col" style="width: 180px;">
+        <div>
+          <div class="settings-section-header" id="settings-heading-general">通用偏好</div>
+          <div class="settings-section">
+            <div class="settings-field">
+              <div class="settings-field-label">
+                <span id="settings-label-lang">系统语言</span>
+                <span class="settings-field-desc" id="settings-desc-lang">切换整个界面的显示语言</span>
+              </div>
               <select id="settings-language" class="settings-select">
-                <option value="zh">简体中文 (Chinese)</option>
-                <option value="en">English (英文)</option>
+                <option value="zh">简体中文</option>
+                <option value="en">English</option>
               </select>
             </div>
-          </div>
-          
-          <div class="settings-row" style="display: flex; justify-content: space-between; align-items: center; gap: 1rem;">
-            <div class="settings-label-col" style="flex: 1;">
-              <label for="settings-theme" id="settings-label-theme" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">界面主题 (Theme)</label>
-              <p class="settings-desc" id="settings-desc-theme" style="font-size: 0.75rem; color: var(--text-muted); margin: 0.15rem 0 0 0;">选择明亮模式或护眼深色模式</p>
-            </div>
-            <div class="settings-input-col" style="width: 180px;">
+            <div class="settings-field">
+              <div class="settings-field-label">
+                <span id="settings-label-theme">界面主题</span>
+                <span class="settings-field-desc" id="settings-desc-theme">选择明亮模式或护眼深色模式</span>
+              </div>
               <select id="settings-theme" class="settings-select">
-                <option value="light" id="settings-theme-option-light">☀️ 明亮模式 (Light)</option>
-                <option value="dark" id="settings-theme-option-dark">🌙 深色模式 (Dark)</option>
+                <option value="light" id="settings-theme-option-light">☀️ 明亮</option>
+                <option value="dark" id="settings-theme-option-dark">🌙 深色</option>
               </select>
             </div>
           </div>
         </div>
 
         <!-- Section 2: Path Settings -->
-        <div class="settings-group" style="display: flex; flex-direction: column; gap: 1rem;">
-          <h4 id="settings-heading-paths" style="font-size: 0.95rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem;">路径管理 / Paths</h4>
-          
-          <div class="settings-row" style="display: flex; flex-direction: column; gap: 0.4rem;">
-            <div class="settings-label-col">
-              <label id="settings-label-skillsdir" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">全局技能库路径</label>
-              <p class="settings-desc" id="settings-desc-skillsdir" style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">存放全局技能规约 Markdown 文件的目录</p>
+        <div>
+          <div class="settings-section-header" id="settings-heading-paths">路径管理</div>
+          <div class="settings-section">
+            <div class="settings-field vertical">
+              <div class="settings-field-label">
+                <span id="settings-label-skillsdir">全局技能库路径</span>
+                <span class="settings-field-desc" id="settings-desc-skillsdir">存放全局技能规约 Markdown 文件的目录</span>
+              </div>
+              <div class="settings-field-control">
+                <input type="text" id="settings-skills-dir" class="settings-input" readonly>
+                <button class="btn btn-secondary btn-icon settings-folder-btn" onclick="handleSettingsPickSkillsDir()" title="选择文件夹">
+                  <i data-lucide="folder" style="width:14px;height:14px;"></i>
+                </button>
+              </div>
             </div>
-            <div class="settings-input-col path-picker-group" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
-              <input type="text" id="settings-skills-dir" class="settings-input" readonly>
-              <button class="btn btn-secondary btn-icon" onclick="handleSettingsPickSkillsDir()" title="选择文件夹" style="padding: 0.45rem; display: flex; align-items: center; justify-content: center; height: 32px; width: 32px;">
-                <i data-lucide="folder" style="width:14px;height:14px;"></i>
-              </button>
-            </div>
-          </div>
-
-          <div class="settings-row" style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.25rem;">
-            <div class="settings-label-col">
-              <label id="settings-label-scandir" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">项目默认扫描起点</label>
-              <p class="settings-desc" id="settings-desc-scandir" style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">点击“关联项目”时，默认打开的初始目录</p>
-            </div>
-            <div class="settings-input-col path-picker-group" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
-              <input type="text" id="settings-scan-dir" class="settings-input" readonly>
-              <button class="btn btn-secondary btn-icon" onclick="handleSettingsPickScanDir()" title="选择文件夹" style="padding: 0.45rem; display: flex; align-items: center; justify-content: center; height: 32px; width: 32px;">
-                <i data-lucide="folder" style="width:14px;height:14px;"></i>
-              </button>
+            <div class="settings-field vertical">
+              <div class="settings-field-label">
+                <span id="settings-label-scandir">项目默认扫描起点</span>
+                <span class="settings-field-desc" id="settings-desc-scandir">点击"关联项目"时，默认打开的初始目录</span>
+              </div>
+              <div class="settings-field-control">
+                <input type="text" id="settings-scan-dir" class="settings-input" readonly>
+                <button class="btn btn-secondary btn-icon settings-folder-btn" onclick="handleSettingsPickScanDir()" title="选择文件夹">
+                  <i data-lucide="folder" style="width:14px;height:14px;"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Section 3: AI Configuration -->
-        <div class="settings-group" style="display: flex; flex-direction: column; gap: 1rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
-          <h4 id="settings-heading-ai" style="font-size: 0.95rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem;">AI 配置 / AI Config</h4>
-
-          <div class="settings-row" style="display: flex; flex-direction: column; gap: 0.4rem;">
-            <div class="settings-label-col">
-              <label id="settings-label-apikey" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">DeepSeek API Key</label>
-              <p class="settings-desc" id="settings-desc-apikey" style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">用于 AI 搜索和生成技能内容 · <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--accent);">获取 Key</a></p>
+        <div>
+          <div class="settings-section-header" id="settings-heading-ai">AI 配置</div>
+          <div class="settings-section">
+            <div class="settings-field vertical">
+              <div class="settings-field-label">
+                <span id="settings-label-apikey">DeepSeek API Key</span>
+                <span class="settings-field-desc" id="settings-desc-apikey">用于 AI 搜索和生成技能内容 · <a href="https://platform.deepseek.com/api_keys" target="_blank">获取 Key</a></span>
+              </div>
+              <div class="settings-field-control">
+                <input type="password" id="settings-apikey" class="settings-input" placeholder="sk-...">
+                <button class="btn btn-secondary btn-icon settings-folder-btn" onclick="toggleApiKeyVisibility()" title="显示/隐藏">
+                  <i data-lucide="eye" style="width:14px;height:14px;" id="apikey-eye-icon"></i>
+                </button>
+              </div>
             </div>
-            <div class="settings-input-col" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
-              <input type="password" id="settings-apikey" class="settings-input" placeholder="sk-...">
-              <button class="btn btn-secondary btn-icon" onclick="toggleApiKeyVisibility()" title="显示/隐藏" style="padding: 0.45rem; display: flex; align-items: center; justify-content: center; height: 32px; width: 32px; flex-shrink: 0;">
-                <i data-lucide="eye" style="width:14px;height:14px;" id="apikey-eye-icon"></i>
-              </button>
+            <div class="settings-field vertical">
+              <div class="settings-field-label">
+                <span id="settings-label-aimodel">AI 模型</span>
+                <span class="settings-field-desc" id="settings-desc-aimodel">输入模型名，如 deepseek-chat、deepseek-reasoner</span>
+              </div>
+              <div class="settings-field-control">
+                <input type="text" id="settings-aimodel" class="settings-input" placeholder="deepseek-chat">
+                <button class="btn btn-ai-primary settings-test-btn" onclick="handleAITestConnection()" id="btn-test-connection">
+                  <i data-lucide="zap" style="width:13px;height:13px;"></i> 测试连接
+                </button>
+              </div>
+              <div id="test-result" style="display:none; font-size:0.72rem; padding:0.35rem 0.6rem; border-radius:var(--radius-sm);"></div>
             </div>
-          </div>
-
-          <div class="settings-row" style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.25rem;">
-            <div class="settings-label-col">
-              <label for="settings-aimodel" id="settings-label-aimodel" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">AI 模型</label>
-              <p class="settings-desc" id="settings-desc-aimodel" style="font-size: 0.75rem; color: var(--text-muted); margin: 0.15rem 0 0 0;">输入模型名，如 deepseek-chat、deepseek-reasoner、deepseek-v4</p>
-            </div>
-            <div class="settings-input-col" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
-              <input type="text" id="settings-aimodel" class="settings-input" style="flex:1;" placeholder="deepseek-chat">
-              <button class="btn btn-ai-primary" onclick="handleAITestConnection()" id="btn-test-connection" style="padding: 0.45rem 0.85rem; font-size: 0.75rem; white-space: nowrap; height: 32px;">
-                <i data-lucide="zap" style="width:13px;height:13px;"></i> 测试连接
-              </button>
-            </div>
-            <div id="test-result" style="display:none; font-size:0.75rem; padding:0.4rem 0.6rem; border-radius:var(--radius-sm);"></div>
           </div>
         </div>
 
       </div>
-      <footer class="modal-header" style="border-top:1px solid var(--border-color);border-bottom:none;justify-content:flex-end;gap:0.75rem;">
+      <footer class="settings-footer">
         <button class="btn btn-secondary" onclick="closeSettingsModal()" id="settings-btn-cancel">取消</button>
         <button class="btn btn-primary" onclick="handleSaveSettings()" id="settings-btn-save">
           <i data-lucide="save" style="width:16px;height:16px;"></i>
@@ -268,61 +264,76 @@
   </div>
 
   <!-- AI Chat Modal -->
-  <div id="ai-modal" class="modal-overlay">
-    <div class="modal-container" style="max-width: 760px; height: 88vh;">
-      <header class="modal-header">
-        <div class="modal-title-info">
-          <span class="modal-emoji">✨</span>
-          <h3 class="modal-title" id="ai-modal-title">AI 技能顾问</h3>
-        </div>
-        <div style="display:flex;align-items:center;gap:0.6rem;">
-          <label class="switch-label" style="margin-right:0.5rem;" title="联网搜索">
-            <span style="font-size:0.7rem;">🔍 联网</span>
-            <label class="switch" style="width:30px;height:18px;">
-              <input type="checkbox" id="ai-web-search-toggle">
-              <span class="slider"></span>
-            </label>
-          </label>
-          <button class="btn btn-secondary btn-icon" onclick="handleAIGenerateSkill()" id="ai-btn-generate" title="生成技能" style="padding:0.35rem 0.65rem;font-size:0.72rem;display:inline-flex;align-items:center;gap:4px;">
-            <i data-lucide="file-text" style="width:14px;height:14px;"></i> 生成技能
-          </button>
-          <button class="btn btn-secondary btn-icon" onclick="closeAIModal()">
-            <i data-lucide="x" style="width:18px;height:18px;"></i>
-          </button>
-        </div>
-      </header>
 
-      <!-- Chat Messages -->
-      <div class="ai-chat-messages" id="ai-chat-messages">
-        <div class="ai-chat-empty">
-          <div style="font-size:3rem;margin-bottom:0.75rem;">✨</div>
-          <h4 style="font-weight:700;margin-bottom:0.35rem;color:var(--text-primary);">AI 技能顾问</h4>
-          <p style="color:var(--text-tertiary);font-size:0.8rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
+  <div id="ai-modal" class="modal-overlay">
+    <div class="modal-container" style="max-width: 900px; height: 88vh; flex-direction: row;">
+      <!-- Session List Panel -->
+      <div class="ai-session-panel" id="ai-session-panel">
+        <div class="ai-session-header">
+          <span>会话列表</span>
+          <button class="btn btn-secondary btn-icon" onclick="handleNewSession()" title="新建会话" style="padding:0.2rem;width:26px;height:26px;">
+            <i data-lucide="plus" style="width:14px;height:14px;"></i>
+          </button>
         </div>
+        <div class="ai-session-list" id="ai-session-list"></div>
       </div>
 
-      <!-- Skill Preview (shown after generation) -->
-      <div id="ai-skill-preview" style="display:none;border-top:1px solid var(--border);padding:1rem 1.5rem;max-height:40vh;overflow-y:auto;background:var(--bg-app);">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
-          <span style="font-size:0.75rem;font-weight:600;color:var(--text-tertiary);">📄 生成的技能预览</span>
-          <div style="display:flex;gap:0.5rem;">
-            <button class="btn btn-secondary btn-icon" onclick="handleAIRegenerate()" style="font-size:0.7rem;padding:0.3rem 0.6rem;">
-              <i data-lucide="refresh-cw" style="width:12px;height:12px;"></i> 重新生成
+      <!-- Chat Area -->
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
+        <header class="modal-header" style="padding: 0.7rem 1rem;">
+          <div class="modal-title-info">
+            <span class="modal-emoji">✨</span>
+            <h3 class="modal-title" id="ai-modal-title">AI 技能顾问</h3>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <label class="switch-label" style="margin-right:0.25rem;" title="联网搜索">
+              <span style="font-size:0.65rem;">🔍</span>
+              <label class="switch" style="width:28px;height:16px;">
+                <input type="checkbox" id="ai-web-search-toggle">
+                <span class="slider"></span>
+              </label>
+            </label>
+            <button class="btn btn-secondary btn-icon" onclick="handleAIGenerateSkill()" id="ai-btn-generate" title="生成技能" style="padding:0.3rem 0.55rem;font-size:0.7rem;display:inline-flex;align-items:center;gap:3px;">
+              <i data-lucide="file-text" style="width:13px;height:13px;"></i> 生成
             </button>
-            <button class="btn btn-primary btn-icon" onclick="handleAISave()" style="font-size:0.7rem;padding:0.3rem 0.8rem;">
-              <i data-lucide="download" style="width:12px;height:12px;"></i> 保存技能
+            <button class="btn btn-secondary btn-icon" onclick="closeAIModal()">
+              <i data-lucide="x" style="width:16px;height:16px;"></i>
             </button>
           </div>
-        </div>
-        <div id="ai-skill-content" class="markdown-preview" style="font-size:0.8rem;"></div>
-      </div>
+        </header>
 
-      <!-- Input Area -->
-      <div class="ai-chat-input-area">
-        <textarea id="ai-chat-input" class="ai-chat-textarea" placeholder="描述你的需求，例如：我需要一个团队级的 React 代码审查规范..." rows="1" onkeydown="handleChatKeydown(event)"></textarea>
-        <button class="btn btn-ai-primary" onclick="sendAIMessage()" id="ai-send-btn" style="padding:0.55rem 0.9rem;">
-          <i data-lucide="send" style="width:15px;height:15px;"></i>
-        </button>
+        <!-- Chat Messages -->
+        <div class="ai-chat-messages" id="ai-chat-messages">
+          <div class="ai-chat-empty">
+            <div style="font-size:2.5rem;margin-bottom:0.5rem;">✨</div>
+            <h4 style="font-weight:700;margin-bottom:0.25rem;color:var(--text-primary);">AI 技能顾问</h4>
+            <p style="color:var(--text-tertiary);font-size:0.78rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
+          </div>
+        </div>
+
+        <!-- Skill Preview -->
+        <div id="ai-skill-preview" style="display:none;border-top:1px solid var(--border);padding:0.75rem 1rem;max-height:35vh;overflow-y:auto;background:var(--bg-app);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.6rem;">
+            <span style="font-size:0.72rem;font-weight:600;color:var(--text-tertiary);">📄 生成的技能预览</span>
+            <div style="display:flex;gap:0.4rem;">
+              <button class="btn btn-secondary btn-icon" onclick="handleAIRegenerate()" style="font-size:0.68rem;padding:0.25rem 0.5rem;">
+                <i data-lucide="refresh-cw" style="width:11px;height:11px;"></i> 重新生成
+              </button>
+              <button class="btn btn-primary btn-icon" onclick="handleAISave()" style="font-size:0.68rem;padding:0.25rem 0.65rem;">
+                <i data-lucide="download" style="width:11px;height:11px;"></i> 保存
+              </button>
+            </div>
+          </div>
+          <div id="ai-skill-content" class="markdown-preview" style="font-size:0.78rem;"></div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="ai-chat-input-area">
+          <textarea id="ai-chat-input" class="ai-chat-textarea" placeholder="描述你的需求..." rows="1" onkeydown="handleChatKeydown(event)"></textarea>
+          <button class="btn btn-ai-primary" onclick="sendAIMessage()" id="ai-send-btn" style="padding:0.5rem 0.8rem;">
+            <i data-lucide="send" style="width:14px;height:14px;"></i>
+          </button>
+        </div>
       </div>
     </div>
   </div>
