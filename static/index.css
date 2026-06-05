@@ -7,98 +7,105 @@
 @import url('https://fonts.loli.net/css2?family=Plus+Jakarta+Sans:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;450&display=swap');
 
 :root {
-  /* ── Surface Layers ── */
-  --bg-root:          #f8f7f5;
-  --bg-app:           #f4f3f0;
+  /* ── Surface Layers (Apple-inspired) ── */
+  --bg-root:          #f5f5f7;
+  --bg-app:           #f2f2f7;
   --bg-surface:       #ffffff;
-  --bg-sidebar:       #fafaf7;
-  --bg-hover:         #efeeea;
-  --bg-active:        #e9e8e3;
+  --bg-sidebar:       #f9f9fb;
+  --bg-hover:         #e8e8ed;
+  --bg-active:        #dddde3;
 
   /* ── Text ── */
-  --text-primary:     #17181a;
-  --text-secondary:   #595c62;
-  --text-tertiary:    #8d9096;
+  --text-primary:     #1d1d1f;
+  --text-secondary:   #6e6e73;
+  --text-tertiary:    #86868b;
   --text-inverse:     #ffffff;
 
-  /* ── Accent: Slate Blue ── */
-  --accent:           #475569;
-  --accent-hover:     #334155;
-  --accent-soft:      #eef1f4;
-  --accent-ring:      rgba(71, 85, 105, 0.08);
+  /* ── Accent: Apple Blue ── */
+  --accent:           #007aff;
+  --accent-hover:     #0062cc;
+  --accent-soft:      #e8f1ff;
+  --accent-ring:      rgba(0, 122, 255, 0.15);
 
   /* ── Semantic ── */
-  --green:            #3f8c5f;
-  --green-soft:       #eaf4ee;
-  --amber:            #9e7a1c;
-  --amber-soft:       #faf4e2;
-  --rose:             #c05b5b;
-  --rose-soft:        #faebeb;
-  --slate:            #b0b4b9;
+  --green:            #34c759;
+  --green-soft:       #e8f8ed;
+  --amber:            #ff9500;
+  --amber-soft:       #fff4e0;
+  --rose:             #ff3b30;
+  --rose-soft:        #ffe5e3;
+  --slate:            #aeaeb2;
 
   /* ── Borders ── */
-  --border:           #e7e4df;
-  --border-light:     #f0ede9;
-  --border-hairline:  #ece9e4;
+  --border:           #d2d2d7;
+  --border-light:     #e5e5ea;
+  --border-hairline:  #e5e5ea;
 
-  /* ── Shadows (elevation system) ── */
+  /* ── Shadows (Apple elevation system) ── */
   --elevation-0:      0 0 0 0 transparent;
-  --elevation-1:      0 1px 2px rgba(0,0,0,.025);
-  --elevation-2:      0 2px 6px rgba(0,0,0,.04),0 1px 3px rgba(0,0,0,.03);
-  --elevation-3:      0 6px 16px rgba(0,0,0,.05),0 2px 4px rgba(0,0,0,.03);
-  --elevation-4:      0 14px 32px rgba(0,0,0,.07),0 4px 8px rgba(0,0,0,.04);
-  --overlay-shadow:   0 20px 50px rgba(0,0,0,.12);
+  --elevation-1:      0 0.5px 1px rgba(0,0,0,.04), 0 0 0.5px rgba(0,0,0,.02);
+  --elevation-2:      0 2px 8px rgba(0,0,0,.06), 0 0.5px 1px rgba(0,0,0,.04);
+  --elevation-3:      0 8px 24px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.03);
+  --elevation-4:      0 16px 40px rgba(0,0,0,.1), 0 4px 8px rgba(0,0,0,.05);
+  --overlay-shadow:   0 24px 60px rgba(0,0,0,.16), 0 8px 16px rgba(0,0,0,.08);
 
-  /* ── Radii ── */
-  --radius-sm:        5px;
-  --radius-md:        8px;
-  --radius-lg:        14px;
+  /* ── Radii (Apple-scale) ── */
+  --radius-sm:        8px;
+  --radius-md:        12px;
+  --radius-lg:        16px;
   --radius-full:      999px;
 
   /* ── Typography ── */
-  --font-sans:  'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-mono:  'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  --font-sans:  -apple-system, 'SF Pro Display', system-ui, 'Plus Jakarta Sans', 'Helvetica Neue', sans-serif;
+  --font-mono:  'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
 
-  /* ── Easing ── */
-  --ease-out:         cubic-bezier(0.16, 1, 0.3, 1);
+  /* ── Easing (Apple-smooth) ── */
+  --ease-out:         cubic-bezier(0.25, 0.46, 0.45, 0.94);
   --ease-spring:      cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-smooth:      cubic-bezier(0.4, 0, 0.2, 1);
 
   /* ── Timing ── */
   --dur-instant:      80ms;
-  --dur-fast:         140ms;
-  --dur-normal:       220ms;
-  --dur-slow:         350ms;
-  --dur-glacial:      500ms;
+  --dur-fast:         150ms;
+  --dur-normal:       250ms;
+  --dur-slow:         400ms;
+  --dur-glacial:      550ms;
 }
 
 /* ── Dark Theme ── */
 body.dark-theme {
-  --bg-root:          #141413;
-  --bg-app:           #191918;
-  --bg-surface:       #1f1f1d;
-  --bg-sidebar:       #171716;
-  --bg-hover:         #262522;
-  --bg-active:        #2c2c28;
+  --bg-root:          #000000;
+  --bg-app:           #1c1c1e;
+  --bg-surface:       #2c2c2e;
+  --bg-sidebar:       #1c1c1e;
+  --bg-hover:         #3a3a3c;
+  --bg-active:        #48484a;
 
-  --text-primary:     #e9e6df;
-  --text-secondary:   #a4a19a;
-  --text-tertiary:    #706e68;
+  --text-primary:     #f5f5f7;
+  --text-secondary:   #98989d;
+  --text-tertiary:    #636366;
 
-  --accent:           #8899ae;
-  --accent-hover:     #9eaec0;
-  --accent-soft:      #1c2128;
-  --accent-ring:      rgba(136,153,174,0.1);
+  --accent:           #0a84ff;
+  --accent-hover:     #409cff;
+  --accent-soft:      #0a2744;
+  --accent-ring:      rgba(10, 132, 255, 0.2);
 
-  --border:           #2a2824;
-  --border-light:     #22201c;
-  --border-hairline:  #24221e;
+  --green:            #30d158;
+  --green-soft:       #0a2e14;
+  --amber:            #ff9f0a;
+  --amber-soft:       #2e1e00;
+  --rose:             #ff453a;
+  --rose-soft:        #3b1210;
 
-  --elevation-1:      0 1px 2px rgba(0,0,0,.18);
-  --elevation-2:      0 2px 8px rgba(0,0,0,.25);
-  --elevation-3:      0 6px 18px rgba(0,0,0,.35);
-  --elevation-4:      0 14px 36px rgba(0,0,0,.4);
-  --overlay-shadow:   0 20px 60px rgba(0,0,0,.55);
+  --border:           #38383a;
+  --border-light:     #2c2c2e;
+  --border-hairline:  #38383a;
+
+  --elevation-1:      0 1px 2px rgba(0,0,0,.3);
+  --elevation-2:      0 2px 8px rgba(0,0,0,.4);
+  --elevation-3:      0 8px 24px rgba(0,0,0,.5);
+  --elevation-4:      0 16px 40px rgba(0,0,0,.55);
+  --overlay-shadow:   0 24px 60px rgba(0,0,0,.7);
 }
 
 /* 2. Reset & Base */
@@ -500,7 +507,7 @@ body.dark-theme .badge{background:var(--bg-active)}
 .switch input{opacity:0;width:0;height:0}
 .slider{
   position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;
-  background-color:#cecbc5;
+  background-color:#e5e5ea;
   transition:background .25s var(--ease-smooth);
   border-radius:34px;
 }
@@ -513,7 +520,7 @@ body.dark-theme .badge{background:var(--bg-active)}
 input:checked+.slider{background-color:var(--accent)}
 input:checked+.slider::before{
   transform:translateX(14px);
-  box-shadow:0 2px 6px rgba(71,85,105,.25);
+  box-shadow:0 2px 6px rgba(0,122,255,.25);
 }
 
 /* ============================================
@@ -694,35 +701,120 @@ body.dark-theme .btn-danger-outline:hover{background:var(--rose-soft)}
   border-radius:0 var(--radius-sm) var(--radius-sm) 0;
 }
 
-/* ── Settings Modal ── */
-.modal-settings-container{max-width:540px;height:auto}
-.settings-body{padding:1.4rem;display:flex;flex-direction:column;gap:1.15rem}
-.settings-group{display:flex;flex-direction:column;gap:.85rem}
-.settings-group h4{font-size:.82rem;font-weight:700;color:var(--text-primary)}
-.settings-row{display:flex;justify-content:space-between;align-items:center;gap:.85rem}
-.settings-label-col{flex:1}
-.settings-label-col label{
-  font-size:.78rem;font-weight:600;color:var(--text-primary);display:block;
+/* ── Settings Modal — Apple Style ── */
+.modal-settings-container{max-width:560px;height:auto}
+.settings-body{
+  padding:1.25rem 1.5rem;
+  display:flex;flex-direction:column;gap:1.25rem;
+  overflow-y:auto;max-height:68vh;
 }
+
+/* Apple grouped card sections */
+.settings-section-header{
+  font-size:.72rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.03em;
+  color:var(--text-tertiary);
+  padding:0 .75rem;margin-bottom:.4rem;
+}
+.settings-section{
+  border-radius:var(--radius-md);
+  overflow:hidden;
+  background:var(--bg-surface);
+  border:.5px solid var(--border-light);
+  box-shadow:var(--elevation-1);
+}
+body.dark-theme .settings-section{
+  background:var(--bg-surface);
+  border-color:var(--border);
+}
+
+/* Apple settings field rows */
+.settings-field{
+  display:flex;align-items:center;
+  justify-content:space-between;
+  padding:.75rem 1rem;gap:1rem;
+  transition:background var(--dur-fast);
+}
+.settings-field:not(:last-child){
+  border-bottom:.5px solid var(--border-light);
+}
+body.dark-theme .settings-field:not(:last-child){
+  border-bottom-color:var(--border);
+}
+.settings-field.vertical{
+  flex-direction:column;align-items:stretch;gap:.45rem;
+}
+
+/* Field label */
+.settings-field-label{
+  display:flex;flex-direction:column;gap:.08rem;
+  flex:1;min-width:0;
+}
+.settings-field-label span:first-child{
+  font-size:.82rem;font-weight:500;color:var(--text-primary);
+}
+.settings-field-desc{
+  font-size:.68rem;color:var(--text-tertiary);font-weight:400;
+}
+.settings-field-desc a{
+  color:var(--accent);text-decoration:none;
+}
+.settings-field-desc a:hover{text-decoration:underline}
+
+/* Field control row */
+.settings-field-control{
+  display:flex;gap:.4rem;align-items:center;width:100%;
+}
+
+/* Apple-style inputs & selects */
 .settings-select,.settings-input{
-  width:100%;padding:.45rem .65rem;border-radius:var(--radius-sm);
-  border:1px solid var(--border);background:var(--bg-surface);
-  color:var(--text-primary);font-size:.78rem;font-weight:450;
+  padding:.5rem .75rem;
+  border-radius:var(--radius-sm);
+  border:1px solid var(--border-light);
+  background:var(--bg-app);
+  color:var(--text-primary);
+  font-size:.8rem;font-weight:400;
   font-family:var(--font-sans);
   transition:border-color var(--dur-fast),box-shadow var(--dur-fast);
+  height:36px;
 }
-.settings-select{cursor:pointer}
-.settings-input{font-family:var(--font-mono);font-size:.7rem}
+.settings-select{cursor:pointer;min-width:160px}
+.settings-input{font-family:var(--font-mono);font-size:.72rem;width:100%;flex:1}
 .settings-select:focus,.settings-input:focus{
   outline:none;border-color:var(--accent);
-  box-shadow:0 0 0 3px var(--accent-ring);
+  box-shadow:0 0 0 3.5px var(--accent-ring);
 }
-.settings-desc{font-size:.69rem;color:var(--text-tertiary);margin:.15rem 0 0 0;font-weight:450}
-.path-picker-group{display:flex;gap:.45rem;align-items:center;width:100%}
 
-body.dark-theme .settings-select{background:var(--bg-surface)}
-body.dark-theme .settings-select option{background:var(--bg-surface);color:var(--text-primary)}
-body.dark-theme .settings-input{background:var(--bg-app)}
+body.dark-theme .settings-select,
+body.dark-theme .settings-input{
+  background:var(--bg-app);border-color:var(--border);
+}
+body.dark-theme .settings-select option{
+  background:var(--bg-surface);color:var(--text-primary);
+}
+
+/* Folder picker & test connection buttons in settings */
+.settings-folder-btn{
+  padding:.45rem!important;height:36px!important;width:36px!important;
+  display:inline-flex!important;align-items:center!important;
+  justify-content:center!important;flex-shrink:0;
+  border-radius:var(--radius-sm)!important;
+}
+.settings-test-btn{
+  padding:.45rem .85rem!important;font-size:.72rem!important;
+  white-space:nowrap;height:36px!important;flex-shrink:0;
+  border-radius:var(--radius-sm)!important;
+}
+
+/* Settings modal footer */
+.settings-footer{
+  border-top:1px solid var(--border-light);
+  border-bottom:none;
+  display:flex;align-items:center;
+  justify-content:flex-end;
+  gap:.75rem;padding:.85rem 1.5rem;
+  flex-shrink:0;
+}
 
 /* ============================================
    10. Toast — Slide-in Spring
@@ -777,12 +869,64 @@ body.dark-theme .settings-input{background:var(--bg-app)}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ============================================
-   13. AI Chat
+   13. AI Chat — Session Panel
+   ============================================ */
+
+.ai-session-panel {
+  width: 200px; min-width: 180px;
+  border-right: 1px solid var(--border-hairline);
+  background: var(--bg-sidebar);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.ai-session-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.6rem 0.7rem;
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+}
+.ai-session-list {
+  flex: 1; overflow-y: auto; padding: 0.3rem;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.ai-session-item {
+  display: flex; align-items: center;
+  padding: 0.5rem 0.6rem; border-radius: var(--radius-sm);
+  cursor: pointer; position: relative;
+  transition: background var(--dur-fast);
+  gap: 0.4rem;
+}
+.ai-session-item:hover { background: var(--bg-hover); }
+.ai-session-item.active { background: var(--accent-soft); }
+
+.ai-session-item-title {
+  flex: 1; font-size: 0.73rem; font-weight: 540;
+  color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ai-session-item-meta {
+  font-size: 0.6rem; color: var(--text-tertiary);
+  white-space: nowrap; flex-shrink: 0;
+}
+.ai-session-del {
+  background: none; border: none;
+  color: var(--text-tertiary); cursor: pointer;
+  font-size: 1rem; line-height: 1; padding: 0 2px;
+  opacity: 0; transition: opacity var(--dur-fast), color var(--dur-fast);
+  flex-shrink: 0;
+}
+.ai-session-item:hover .ai-session-del { opacity: 1; }
+.ai-session-del:hover { color: var(--rose); }
+
+/* ============================================
+   14. AI Chat — Messages
    ============================================ */
 
 /* AI button */
 .btn-ai {
-  background: linear-gradient(135deg, var(--accent), #5b6e8a);
+  background: linear-gradient(135deg, var(--accent), #3d9dff);
   color: white; border: none;
   box-shadow: var(--elevation-1);
   font-weight: 600; font-size: 0.75rem;
@@ -793,12 +937,12 @@ body.dark-theme .settings-input{background:var(--bg-app)}
 .btn-ai:hover {
   transform: translateY(-1px);
   box-shadow: var(--elevation-2);
-  background: linear-gradient(135deg, var(--accent-hover), #4a5d78);
+  background: linear-gradient(135deg, var(--accent-hover), #2b8ae6);
 }
 .btn-ai:active { transform: scale(.965); }
 
 .btn-ai-primary {
-  background: linear-gradient(135deg, var(--accent), #5b6e8a);
+  background: linear-gradient(135deg, var(--accent), #3d9dff);
   color: white; border: none;
   box-shadow: var(--elevation-1);
   font-weight: 600; border-radius: var(--radius-sm);
@@ -809,7 +953,7 @@ body.dark-theme .settings-input{background:var(--bg-app)}
 .btn-ai-primary:hover {
   transform: translateY(-1px);
   box-shadow: var(--elevation-2);
-  background: linear-gradient(135deg, var(--accent-hover), #4a5d78);
+  background: linear-gradient(135deg, var(--accent-hover), #2b8ae6);
 }
 .btn-ai-primary:disabled { opacity:.5; cursor:not-allowed; pointer-events:none; }
 

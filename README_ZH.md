@@ -1,22 +1,21 @@
 # AI Skill Hub Manager v2.0
 
-一款 Windows 桌面小工具，用来管理 AI 开发规范文件。写好一份规范，一键同步到所有项目，Cursor、Copilot、Claude 等工具会自动读取。
+一款 Windows 桌面小工具，用来管理 AI 开发规范文件。写好一份规范，一键同步到所有项目，Cursor、Copilot、Windsurf、Claude 等工具会自动读取。
 
-## 能做什么
+## 核心功能
 
-- **管理技能库** — 把编码规范、设计原则、质量红线写成 Markdown 文件，统一管理和编辑
-- **一键同步** — 选择项目文件夹，勾选需要的技能，点同步。工具会把文件拷贝到 `.agent/skills/` 并自动生成 `AGENTS.md` 索引
-- **状态追踪** — 基于 MD5 对比，一眼看出哪些已同步、哪些有更新、哪些待处理
-- **AI 辅助** — 描述你想要的规范，内置的 AI 助手会搜索网络并生成完整的技能文件（需要 DeepSeek API Key）
-- **中英双语** — 界面完整支持中文和英文，一键切换
+- **Apple 质感 UI** — 借鉴 macOS 设计语言，采用卡片分组式设置布局，全面支持深色模式，交互动效流畅细腻。
+- **统一管理技能库** — 把编码规范、设计原则、质量红线编写成 Markdown 文件，在应用内进行统一管理与编辑。
+- **一键同步项目** — 自由选择项目文件夹，勾选需要的技能一键同步。工具会自动将文件拷贝至 `.agent/skills/` 并生成 `AGENTS.md` 索引文件。
+- **状态实时追踪** — 基于 MD5 值对比，一眼直观辨别各技能的同步状态（已同步、有更新、待移除）。
+- **AI 技能顾问** — 支持通过对话式 LLM（如 DeepSeek 等）联网搜索并直接生成技能文件。支持多会话历史记录持久化保存。
+- **零安装与本地化** — 本地内置 Lucide 图标与 Marked 渲染器，不启动本地 Web 服务器，无端口监听，安全纯净。
 
-## 怎么用
+## 快速开始
 
-去 [Releases](https://github.com/w1ndwill/skill_store/releases) 下载 `AI_Skill_Hub_Manager.exe`，双击运行。无需安装。
+在 [Releases](https://github.com/w1ndwill/skill_store/releases) 页面下载 `AI_Skill_Hub_Manager.exe` 双击即可运行，无需安装。
 
-首次启动会在 exe 旁边自动创建 `skills/` 文件夹。把你的 `.md` 技能文件放进去，或者在应用里新建。
-
-AI 功能需要在设置里填 DeepSeek API Key，然后点侧边栏的 "AI 搜索" 按钮就能用了。想用什么模型都可以自己填（比如 `deepseek-chat`、`deepseek-reasoner` 等）。
+首次启动时，程序会在同级目录下自动创建 `skills/` 文件夹。将你的 `.md` 规范文件放入该文件夹，或直接在应用内新建即可。
 
 ## 从源码运行
 
@@ -27,19 +26,18 @@ pip install pywebview ddgs requests
 python main.py
 ```
 
-打包成独立 exe：
+使用 PyInstaller 打包成单文件 exe：
 
 ```bash
 pip install pyinstaller
-pyinstaller --clean --noconsole --onefile --icon=app.ico --add-data "static;static" --add-data "app.ico;." --hidden-import=ddgs --hidden-import=requests --hidden-import=lxml --hidden-import=httpx --hidden-import=h2 --name AI_Skill_Hub_Manager main.py
+pyinstaller AI_Skill_Hub_Manager.spec
 ```
 
 ## 技术栈
 
-- Python + pywebview（WebView2 内核），不监听端口，不需要网络
-- 前端纯 HTML/CSS/JS，图标用 Lucide，Markdown 渲染用 Marked
-- AI 对话接 DeepSeek API，联网搜索用 DuckDuckGo
-- PyInstaller 打包成单文件 exe
+- **后端**：Python + `pywebview`（使用系统原生 WebView2 内核）— 无 Electron 冗余，不占用网络端口。
+- **前端**：HTML5, CSS3 (Vanilla), JavaScript (ES6)。
+- **AI 与搜索**：DeepSeek API（支持自定义模型名称） + DuckDuckGo Search。
 
 ## 目录结构
 
@@ -47,15 +45,14 @@ pyinstaller --clean --noconsole --onefile --icon=app.ico --add-data "static;stat
 ├── main.py              # 后端：API 桥接、文件读写、AI 集成
 ├── static/
 │   ├── index.html       # 界面骨架
-│   ├── index.css        # 样式
-│   ├── app.js           # 前端逻辑
-│   ├── lucide.min.js    # 图标库（本地打包）
-│   └── marked.min.js    # Markdown 渲染（本地打包）
+│   ├── index.css        # 样式与设计系统
+│   ├── app.js           # 前端业务逻辑
+│   ├── lucide.min.js    # 本地图标库
+│   └── marked.min.js    # 本地 Markdown 渲染器
 ├── app.ico              # 应用图标
-├── config.json          # 用户配置（自动生成，不上传 git）
 └── .gitignore
 ```
 
-## License
+## 开源协议
 
 MIT

@@ -5,12 +5,13 @@ import shutil
 import hashlib
 import time
 import re
+import uuid
 import webview
 import requests
 from ddgs import DDGS
 
 # ============================================================
-# Constants & Config Paths
+# Helpers
 # ============================================================
 
 # Resolve base directory (supports PyInstaller --onefile)
@@ -619,6 +620,77 @@ description: <一句话描述>
             return {"error": "请求超时" if lang == "zh" else "Request timed out"}
         except Exception as e:
             return {"error": str(e)}
+
+    # --- Chat Sessions (persistent) ---
+
+    @property
+    def _sessions_path(self):
+        return os.path.join(APP_DIR, "chat_sessions.json")
+
+    def _load_sessions(self):
+        if not os.path.exists(self._sessions_path):
+            return []
+        try:
+            with open(self._sessions_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+    def _save_sessions(self, sessions):
+        try:
+            with open(self._sessions_path, "w", encoding="utf-8") as f:
+                json.dump(sessions, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def chat_list_sessions(self):
+        """Return session list without full messages (just id/title/time)."""
+        sessions = self._load_sessions()
+        return [{
+            "id": s["id"],
+            "title": s.get("title", "新会话"),
+            "created_at": s.get("created_at", ""),
+            "updated_at": s.get("updated_at", ""),
+            "msg_count": len(s.get("messages", []))
+        } for s in sessions]
+
+    def chat_load_session(self, session_id):
+        """Load a single session with full messages."""
+        sessions = self._load_sessions()
+        for s in sessions:
+            if s["id"] == session_id:
+                return {"session": s}
+        return {"error": "Session not found"}
+
+    def chat_save_session(self, session_id, title, messages):
+        """Create or update a session."""
+        sessions = self._load_sessions()
+        now = time.strftime("%Y-%m-%dT%H:%M:%S")
+        found = False
+        for s in sessions:
+            if s["id"] == session_id:
+                s["title"] = title or s.get("title", "未命名会话")
+                s["messages"] = messages
+                s["updated_at"] = now
+                found = True
+                break
+        if not found:
+            sessions.append({
+                "id": session_id,
+                "title": title or "新会话" if self.language == "zh" else "New Chat",
+                "created_at": now,
+                "updated_at": now,
+                "messages": messages
+            })
+        self._save_sessions(sessions)
+        return {"ok": True, "id": session_id}
+
+    def chat_delete_session(self, session_id):
+        """Delete a session by id."""
+        sessions = self._load_sessions()
+        sessions = [s for s in sessions if s["id"] != session_id]
+        self._save_sessions(sessions)
+        return {"ok": True}
 
     # --- AI Search & Generate ---
 

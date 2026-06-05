@@ -1,22 +1,23 @@
 # AI Skill Hub Manager v2.0
 
-A Windows desktop tool for managing AI development guidelines. Write your coding rules once, sync them to any project with one click, and let your AI coding tools (Copilot, Cursor, Claude) pick them up automatically.
+A Windows desktop tool for managing AI development guidelines. Write your coding rules once, sync them to any project with one click, and let your AI coding tools (Copilot, Cursor, Windsurf, Claude) pick them up automatically.
 
-## What it does
+## Key Features
 
-- **Manage skill files** — a library of Markdown files that define coding standards, design rules, and quality guidelines for AI assistants
-- **Sync to projects** — pick a project folder, select which skills to enable, hit sync. The tool copies them into `.agent/skills/` and generates an `AGENTS.md` index
-- **Track changes** — MD5-based status indicators show which skills are synced, outdated, or pending changes at a glance
-- **AI-powered search** — describe what you need in plain language, and the built-in chat assistant searches the web and generates a complete skill file for you (requires DeepSeek API key)
-- **Bilingual** — full Chinese and English UI with one-click switching
+- **Apple-Style UI** — A clean, modern user interface inspired by macOS, featuring native-feeling card-grouped settings, a dark theme, and smooth transitions.
+- **Manage Skill Files** — A unified library of Markdown files that define coding standards, design rules, and quality guidelines for AI assistants.
+- **One-Click Sync** — Select a project folder, choose which skills to enable, and sync. The tool copies them to `.agent/skills/` and automatically generates an `AGENTS.md` index file.
+- **Track Changes** — MD5-based status indicators show at a glance which skills are synced, outdated, or pending removal.
+- **AI Skill Assistant** — Chat with an LLM (such as DeepSeek) to research the web and generate complete skill files from simple descriptions. Includes persistent chat session history.
+- **Zero Installation & Offline First** — Bundles Lucide icons and Marked parser locally. It does not open local ports or run a local web server (using native WebViews).
 
-## Quick start
+## Quick Start
 
-Download `AI_Skill_Hub_Manager.exe` from the [Releases](https://github.com/w1ndwill/skill_store/releases) page and double-click to run. Nothing to install.
+Download `AI_Skill_Hub_Manager.exe` from the [Releases](https://github.com/w1ndwill/skill_store/releases) page and run it. 
 
-On first launch it creates a `skills/` folder next to the executable. Put your `.md` skill files there, or create new ones from the app.
+On first launch, it will create a `skills/` folder next to the executable. Put your `.md` skill files there, or create them directly inside the app.
 
-## Building from source
+## Building from Source
 
 ```bash
 git clone https://github.com/w1ndwill/skill_store.git
@@ -25,32 +26,30 @@ pip install pywebview ddgs requests
 python main.py
 ```
 
-To compile into a standalone `.exe`:
+To compile into a standalone `.exe` using PyInstaller:
 
 ```bash
 pip install pyinstaller
-pyinstaller --clean --noconsole --onefile --icon=app.ico --add-data "static;static" --add-data "app.ico;." --hidden-import=ddgs --hidden-import=requests --hidden-import=lxml --hidden-import=httpx --hidden-import=h2 --name AI_Skill_Hub_Manager main.py
+pyinstaller AI_Skill_Hub_Manager.spec
 ```
 
-## Tech stack
+## Tech Stack
 
-- **Backend**: Python with `pywebview` (WebView2) — no Electron, no network ports
-- **Frontend**: Plain HTML/CSS/JS, Lucide icons, Marked for Markdown rendering
-- **AI**: DeepSeek API for chat and skill generation, DuckDuckGo for web search
-- **Packaging**: PyInstaller single-file `.exe`
+- **Backend**: Python + `pywebview` (native WebView2) — no Electron, no background network servers.
+- **Frontend**: HTML5, CSS3 (Vanilla), JavaScript (ES6).
+- **AI & Search**: DeepSeek API (with custom model support) + DuckDuckGo Search API.
 
-## Project structure
+## Project Structure
 
 ```
-├── main.py              # Backend: API bridge, file I/O, AI integration
+├── main.py              # Backend bridge, file I/O, AI integrations
 ├── static/
-│   ├── index.html       # UI skeleton
-│   ├── index.css        # Styles
-│   ├── app.js           # Frontend logic
-│   ├── lucide.min.js    # Icons (bundled locally)
-│   └── marked.min.js    # Markdown renderer (bundled locally)
-├── app.ico              # Application icon
-├── config.json          # User settings (auto-generated, git-ignored)
+│   ├── index.html       # UI Layout
+│   ├── index.css        # Styles & Design System
+│   ├── app.js           # Frontend client logic
+│   ├── lucide.min.js    # Bundled icons
+│   └── marked.min.js    # Bundled Markdown parser
+├── app.ico              # App icon
 └── .gitignore
 ```
 
