@@ -9,7 +9,6 @@ A Windows desktop tool for managing AI development guidelines. Write your coding
 - **Status Tracking** — Tracks synchronization status using MD5 hashes to identify updated, synced, or outdated files.
 - **AI-Assisted Generation** — Chat with LLMs (like DeepSeek) to search the web and generate new skill files. Includes multi-session history support.
 - **Local Runtime** — Runs offline using native WebViews without starting a local server or opening network ports. Features local Lucide icons and Marked parser.
-- **Dark Mode** — Toggle between light and dark themes.
 
 ## Quick Start
 
