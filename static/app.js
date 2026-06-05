@@ -12,6 +12,9 @@ let editingFilename = null;
 let currentLanguage = 'zh';
 let currentTheme = 'light';
 let defaultScanDir = '';
+let deepseekApiKey = '';
+let deepseekModel = 'deepseek-chat';
+let aiGeneratedSkill = null; // cached AI result
 
 // DOM cache
 const projectList = document.getElementById('project-list');
@@ -19,9 +22,6 @@ const cardsGrid = document.getElementById('cards-grid');
 const syncBtn = document.getElementById('sync-btn');
 const currentProjectTitle = document.getElementById('current-project-title');
 const currentProjectDesc = document.getElementById('current-project-desc');
-const statTotalSkills = document.getElementById('stat-total-skills');
-const statSyncedSkills = document.getElementById('stat-synced-skills');
-const statUnsyncedSkills = document.getElementById('stat-unsynced-skills');
 const editorModal = document.getElementById('editor-modal');
 const modalTitle = document.getElementById('modal-title');
 const modalEmoji = document.getElementById('modal-emoji');
@@ -31,6 +31,7 @@ const markdownPreview = document.getElementById('markdown-preview');
 const toastContainer = document.getElementById('toast-container');
 const searchInput = document.getElementById('search-input');
 const skillsDirPath = document.getElementById('skills-dir-path');
+const toolbarStats = document.getElementById('toolbar-stats');
 
 // ------------------------------------------
 // Bilingual i18n Dictionary
@@ -50,7 +51,7 @@ const locales = {
     syncBtn: '一键同步技能',
     syncingBtn: '同步中…',
     statTotal: '全局技能库',
-    statSynced: '当前已装载',
+    statSynced: '已装载',
     statUnsynced: '待更新',
     listHeader: '全局技能列表',
     listHeaderProject: '项目技能装载配置',
@@ -332,7 +333,9 @@ async function fetchConfig() {
     currentLanguage = config.language || 'zh';
     currentTheme = config.theme || 'light';
     defaultScanDir = config.default_scan_dir || '';
-    
+    deepseekModel = config.deepseek_model || 'deepseek-chat';
+    // API key is masked as "***" if set; actual value only used via save_ai_config
+
     applyTheme(currentTheme);
     applyLanguage(currentLanguage);
   } catch (e) {
@@ -375,11 +378,6 @@ function applyLanguage(lang) {
   // Sync Button Text
   syncBtn.innerHTML = `<i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> ${t.syncBtn}`;
   
-  // Stats
-  document.querySelectorAll('.stat-label')[0].textContent = t.statTotal;
-  document.querySelectorAll('.stat-label')[1].textContent = t.statSynced;
-  document.querySelectorAll('.stat-label')[2].textContent = t.statUnsynced;
-
   // Search Controls & Header Title
   if (!currentProjectPath) {
     document.querySelector('.content-toolbar h3').textContent = t.listHeader;
@@ -415,6 +413,7 @@ function applyLanguage(lang) {
   // Re-render components to apply dynamic texts
   renderProjectsList();
   renderSkillsGrid();
+  updateStatistics();
   lucide.createIcons();
 }
 
@@ -425,7 +424,6 @@ function applyLanguage(lang) {
 async function fetchSkills() {
   try {
     skills = await window.pywebview.api.get_skills();
-    statTotalSkills.textContent = skills.length;
     renderSkillsGrid();
   } catch (e) {
     showToast(locales[currentLanguage].toastLoadFail + e, 'error');
@@ -444,23 +442,23 @@ async function fetchProjects() {
 
 function updateStatistics() {
   if (!currentProjectPath) {
-    statSyncedSkills.textContent = '\u2014';
-    statUnsyncedSkills.textContent = '\u2014';
+    toolbarStats.style.display = 'none';
     return;
   }
   const proj = projects.find(p => p.path === currentProjectPath);
-  if (!proj || proj.error) {
-    statSyncedSkills.textContent = '0';
-    statUnsyncedSkills.textContent = '0';
-    return;
-  }
   let synced = 0, unsynced = 0;
-  Object.values(proj.skills_status || {}).forEach(s => {
-    if (s === 'synced') synced++;
-    if (s === 'out_of_sync') unsynced++;
-  });
-  statSyncedSkills.textContent = synced;
-  statUnsyncedSkills.textContent = unsynced;
+  if (proj && !proj.error) {
+    Object.values(proj.skills_status || {}).forEach(s => {
+      if (s === 'synced') synced++;
+      if (s === 'out_of_sync') unsynced++;
+    });
+  }
+  const t = locales[currentLanguage];
+  toolbarStats.innerHTML = `
+    <span><span class="toolbar-stat-dot synced"></span>${synced} ${t.statSynced}</span>
+    <span>·</span>
+    <span><span class="toolbar-stat-dot unsynced"></span>${unsynced} ${t.statUnsynced}</span>`;
+  toolbarStats.style.display = 'flex';
 }
 
 // ------------------------------------------
@@ -566,9 +564,10 @@ function renderSkillsGrid() {
   const activeProj = currentProjectPath ? projects.find(p => p.path === currentProjectPath) : null;
   const statusMap = activeProj ? (activeProj.skills_status || {}) : {};
 
-  filtered.forEach(skill => {
+  filtered.forEach((skill, index) => {
     const card = document.createElement('div');
     card.className = 'skill-card';
+    card.style.transitionDelay = `${index * 35}ms`;
 
     // Apply 100% Local Smart Classifier for Emojis and Tags
     const smart = getSmartEmojiAndTags(skill);
@@ -664,6 +663,14 @@ function renderSkillsGrid() {
     cardsGrid.appendChild(card);
   });
   lucide.createIcons();
+
+  // Staggered card entrance animation
+  requestAnimationFrame(() => {
+    const cards = cardsGrid.querySelectorAll('.skill-card');
+    cards.forEach((card, i) => {
+      setTimeout(() => card.classList.add('visible'), i * 40);
+    });
+  });
 }
 
 // ------------------------------------------
@@ -978,7 +985,11 @@ function openSettingsModal() {
   settingsTheme.value = currentTheme;
   settingsSkillsDir.value = skillsDirPath.textContent;
   settingsScanDir.value = defaultScanDir;
-  
+  document.getElementById('settings-aimodel').value = deepseekModel;
+  // API key field: leave empty placeholder — user must re-enter to change
+  document.getElementById('settings-apikey').value = '';
+  document.getElementById('settings-apikey').type = 'password';
+
   settingsModal.classList.add('active');
   lucide.createIcons();
 }
@@ -1018,21 +1029,287 @@ async function handleSaveSettings() {
       default_scan_dir: settingsScanDir.value
     };
     const result = await window.pywebview.api.save_settings(settings);
-    
+
+    // Save AI config separately if API key changed
+    const apiKeyInput = document.getElementById('settings-apikey');
+    const modelInput = document.getElementById('settings-aimodel');
+    const newModel = modelInput.value.trim() || deepseekModel;
+    if (apiKeyInput.value.trim()) {
+      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), newModel);
+    } else if (newModel !== deepseekModel) {
+      await window.pywebview.api.save_ai_config('', newModel);
+    }
+    deepseekModel = newModel;
+
     currentLanguage = result.language;
     currentTheme = result.theme;
     defaultScanDir = result.default_scan_dir;
     skillsDirPath.textContent = result.skills_dir;
     skillsDirPath.title = result.skills_dir;
-    
+
     applyTheme(currentTheme);
     applyLanguage(currentLanguage);
-    
+
     closeSettingsModal();
     showToast(locales[currentLanguage].toastSettingsSaved, 'success');
   } catch (e) {
     showToast('Failed to save settings: ' + e, 'error');
   }
+}
+
+// ------------------------------------------
+// AI Chat Modal
+// ------------------------------------------
+
+const aiModal = document.getElementById('ai-modal');
+const aiChatMessages = document.getElementById('ai-chat-messages');
+const aiChatInput = document.getElementById('ai-chat-input');
+const aiSendBtn = document.getElementById('ai-send-btn');
+const aiSkillPreview = document.getElementById('ai-skill-preview');
+const aiSkillContent = document.getElementById('ai-skill-content');
+const aiWebSearchToggle = document.getElementById('ai-web-search-toggle');
+
+let aiChatHistory = []; // {role, content}
+let aiIsLoading = false;
+
+function openAIModal() {
+  aiChatHistory = [];
+  aiGeneratedSkill = null;
+  aiIsLoading = false;
+  aiChatMessages.innerHTML = `
+    <div class="ai-chat-empty">
+      <div style="font-size:3rem;margin-bottom:0.75rem;">✨</div>
+      <h4 style="font-weight:700;margin-bottom:0.35rem;color:var(--text-primary);">AI 技能顾问</h4>
+      <p style="color:var(--text-tertiary);font-size:0.8rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
+    </div>`;
+  aiSkillPreview.style.display = 'none';
+  aiChatInput.value = '';
+  aiSendBtn.removeAttribute('disabled');
+  aiModal.classList.add('active');
+  lucide.createIcons();
+  setTimeout(() => aiChatInput.focus(), 200);
+}
+
+function closeAIModal() {
+  aiModal.classList.remove('active');
+}
+
+function handleChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendAIMessage();
+  }
+}
+
+async function sendAIMessage() {
+  const text = aiChatInput.value.trim();
+  if (!text || aiIsLoading) return;
+
+  // Clear empty state
+  const emptyEl = aiChatMessages.querySelector('.ai-chat-empty');
+  if (emptyEl) emptyEl.remove();
+
+  // Append user message
+  appendChatBubble('user', text);
+  aiChatInput.value = '';
+  aiChatHistory.push({ role: 'user', content: text });
+
+  // If web search is enabled, first search then inject results
+  if (aiWebSearchToggle.checked) {
+    try {
+      const sr = await window.pywebview.api.ai_web_search(text);
+      if (sr.results && sr.results.length > 0) {
+        const ctx = '以下是最新网络搜索结果（供参考）：\n' +
+          sr.results.map(r => `- [${r.title}](${r.href}): ${r.body.slice(0, 200)}`).join('\n');
+        aiChatHistory.push({ role: 'user', content: ctx });
+      }
+    } catch (e) { /* search failed silently */ }
+  }
+
+  // Show typing indicator
+  const typingId = showTypingIndicator();
+
+  aiIsLoading = true;
+  aiSendBtn.setAttribute('disabled', 'true');
+
+  try {
+    const result = await window.pywebview.api.ai_chat(
+      aiChatHistory.map(m => ({ role: m.role, content: m.content })),
+      'chat'
+    );
+
+    removeTypingIndicator(typingId);
+
+    if (result.error) {
+      appendChatBubble('ai', '❌ ' + result.error);
+    } else {
+      appendChatBubble('ai', result.reply);
+      aiChatHistory.push({ role: 'assistant', content: result.reply });
+    }
+  } catch (e) {
+    removeTypingIndicator(typingId);
+    appendChatBubble('ai', '❌ ' + (currentLanguage === 'zh' ? '请求失败: ' : 'Request failed: ') + e);
+  } finally {
+    aiIsLoading = false;
+    aiSendBtn.removeAttribute('disabled');
+    aiChatInput.focus();
+  }
+}
+
+async function handleAIGenerateSkill() {
+  if (aiChatHistory.length === 0 || aiIsLoading) return;
+
+  const typingId = showTypingIndicator();
+  aiIsLoading = true;
+
+  try {
+    const result = await window.pywebview.api.ai_chat(
+      aiChatHistory.map(m => ({ role: m.role, content: m.content })),
+      'generate'
+    );
+
+    removeTypingIndicator(typingId);
+
+    if (result.error) {
+      appendChatBubble('ai', '❌ ' + result.error);
+    } else if (result.skill) {
+      aiGeneratedSkill = result.skill;
+      aiSkillContent.innerHTML = marked.parse(aiGeneratedSkill.content || '');
+      aiSkillPreview.style.display = 'block';
+      aiChatHistory.push({ role: 'assistant', content: '✅ 技能已生成，请在下方预览并保存' });
+      appendChatBubble('ai', '✅ 技能已生成！你可以在下方预览，满意后点击 **保存技能**。');
+    }
+  } catch (e) {
+    removeTypingIndicator(typingId);
+    appendChatBubble('ai', '❌ ' + (currentLanguage === 'zh' ? '生成失败: ' : 'Generation failed: ') + e);
+  } finally {
+    aiIsLoading = false;
+  }
+}
+
+async function handleAISave() {
+  if (!aiGeneratedSkill) return;
+  let fname = (aiGeneratedSkill.title || 'ai_skill')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 60);
+  if (!fname) fname = 'ai_generated_skill';
+  fname += '.md';
+
+  try {
+    const result = await window.pywebview.api.ai_save_skill({
+      filename: fname,
+      content: aiGeneratedSkill.content
+    });
+    if (result.error) throw new Error(result.error);
+    showToast(
+      (currentLanguage === 'zh' ? '✅ AI 技能已保存: ' : '✅ AI skill saved: ') + result.filename,
+      'success'
+    );
+    aiSkillPreview.style.display = 'none';
+    aiGeneratedSkill = null;
+    await fetchSkills();
+    if (currentProjectPath) { await fetchProjects(); refreshCurrentProject(); }
+  } catch (e) {
+    showToast((currentLanguage === 'zh' ? '保存失败: ' : 'Failed to save: ') + e, 'error');
+  }
+}
+
+async function handleAIRegenerate() {
+  aiSkillPreview.style.display = 'none';
+  aiGeneratedSkill = null;
+  // Remove last assistant message if it was about generation
+  if (aiChatHistory.length > 0 && aiChatHistory[aiChatHistory.length - 1].role === 'assistant') {
+    aiChatHistory.pop();
+  }
+  await handleAIGenerateSkill();
+}
+
+// --- Connection Test ---
+
+async function handleAITestConnection() {
+  const btn = document.getElementById('btn-test-connection');
+  const resultDiv = document.getElementById('test-result');
+  const origHTML = btn.innerHTML;
+
+  btn.innerHTML = '<div class="loading-spinner" style="width:14px;height:14px;"></div>';
+  btn.setAttribute('disabled', 'true');
+  resultDiv.style.display = 'none';
+
+  try {
+    // Save the model first (it might have changed)
+    const modelInput = document.getElementById('settings-aimodel');
+    const apiKeyInput = document.getElementById('settings-apikey');
+    if (apiKeyInput.value.trim()) {
+      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), modelInput.value.trim() || 'deepseek-chat');
+    } else {
+      await window.pywebview.api.save_ai_config('', modelInput.value.trim() || 'deepseek-chat');
+    }
+
+    const result = await window.pywebview.api.ai_test_connection();
+    resultDiv.style.display = 'block';
+    if (result.ok) {
+      resultDiv.style.background = 'var(--green-soft)';
+      resultDiv.style.color = 'var(--green)';
+      resultDiv.textContent = (currentLanguage === 'zh'
+        ? `✅ 连接成功！模型: ${result.model}，延迟: ${result.latency_ms}ms`
+        : `✅ Connected! Model: ${result.model}, Latency: ${result.latency_ms}ms`);
+    } else {
+      resultDiv.style.background = 'var(--rose-soft)';
+      resultDiv.style.color = 'var(--rose)';
+      resultDiv.textContent = '❌ ' + result.error;
+    }
+  } catch (e) {
+    resultDiv.style.display = 'block';
+    resultDiv.style.background = 'var(--rose-soft)';
+    resultDiv.style.color = 'var(--rose)';
+    resultDiv.textContent = '❌ ' + e;
+  } finally {
+    btn.innerHTML = origHTML;
+    btn.removeAttribute('disabled');
+    lucide.createIcons();
+  }
+}
+
+function toggleApiKeyVisibility() {
+  const input = document.getElementById('settings-apikey');
+  const icon = document.getElementById('apikey-eye-icon');
+  if (input.type === 'password') {
+    input.type = 'text';
+    if (icon) icon.setAttribute('data-lucide', 'eye-off');
+  } else {
+    input.type = 'password';
+    if (icon) icon.setAttribute('data-lucide', 'eye');
+  }
+  lucide.createIcons();
+}
+
+// --- Chat UI Helpers ---
+
+function appendChatBubble(role, text) {
+  const div = document.createElement('div');
+  div.className = `ai-chat-bubble ai-chat-${role}`;
+  div.innerHTML = `<div class="ai-chat-bubble-content">${marked.parse(text)}</div>`;
+  aiChatMessages.appendChild(div);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  lucide.createIcons();
+}
+
+let _typingCounter = 0;
+function showTypingIndicator() {
+  const id = ++_typingCounter;
+  const div = document.createElement('div');
+  div.className = 'ai-chat-bubble ai-chat-ai';
+  div.id = `typing-${id}`;
+  div.innerHTML = '<div class="ai-chat-bubble-content"><div class="ai-typing"><span></span><span></span><span></span></div></div>';
+  aiChatMessages.appendChild(div);
+  aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  return id;
+}
+
+function removeTypingIndicator(id) {
+  const el = document.getElementById(`typing-${id}`);
+  if (el) el.remove();
 }
 
 // ------------------------------------------
@@ -1160,3 +1437,12 @@ window.handleSaveSkill = handleSaveSkill;
 window.closeDialogModal = closeDialogModal;
 window.handleDeleteSkill = handleDeleteSkill;
 window.showCustomDialog = showCustomDialog;
+window.openAIModal = openAIModal;
+window.closeAIModal = closeAIModal;
+window.sendAIMessage = sendAIMessage;
+window.handleChatKeydown = handleChatKeydown;
+window.handleAIGenerateSkill = handleAIGenerateSkill;
+window.handleAISave = handleAISave;
+window.handleAIRegenerate = handleAIRegenerate;
+window.handleAITestConnection = handleAITestConnection;
+window.toggleApiKeyVisibility = toggleApiKeyVisibility;

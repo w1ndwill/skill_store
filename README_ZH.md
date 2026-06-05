@@ -1,127 +1,61 @@
-# ⚡ AI Skill Hub Manager (v1.0.0 正式版)
+# AI Skill Hub Manager v2.0
 
-> 🚀 **一款本地运行的 Windows 原生 AI 规约与技能可视化管理工具。**
+一款 Windows 桌面小工具，用来管理 AI 开发规范文件。写好一份规范，一键同步到所有项目，Cursor、Copilot、Claude 等工具会自动读取。
 
-**AI Skill Hub Manager** 可以帮助开发团队高效管理本地的 AI 规约与开发指南文件（如 Markdown 格式的代码规范、设计原则与质量红线），支持一键将选定的规约同步分发至不同的开发项目中，并自动生成项目级的 `AGENTS.md` 索引文件，以便 Cursor、GitHub Copilot、Windsurf 等 AI 协同工具精准读取和遵守。
+## 能做什么
 
----
+- **管理技能库** — 把编码规范、设计原则、质量红线写成 Markdown 文件，统一管理和编辑
+- **一键同步** — 选择项目文件夹，勾选需要的技能，点同步。工具会把文件拷贝到 `.agent/skills/` 并自动生成 `AGENTS.md` 索引
+- **状态追踪** — 基于 MD5 对比，一眼看出哪些已同步、哪些有更新、哪些待处理
+- **AI 辅助** — 描述你想要的规范，内置的 AI 助手会搜索网络并生成完整的技能文件（需要 DeepSeek API Key）
+- **中英双语** — 界面完整支持中文和英文，一键切换
 
-## 🌎 语言版本 / Language Versions
+## 怎么用
 
-- [English README](README.md)
-- [简体中文 README](README_ZH.md)
+去 [Releases](https://github.com/w1ndwill/skill_store/releases) 下载 `AI_Skill_Hub_Manager.exe`，双击运行。无需安装。
 
----
+首次启动会在 exe 旁边自动创建 `skills/` 文件夹。把你的 `.md` 技能文件放进去，或者在应用里新建。
 
-## 🎨 核心特性
+AI 功能需要在设置里填 DeepSeek API Key，然后点侧边栏的 "AI 搜索" 按钮就能用了。想用什么模型都可以自己填（比如 `deepseek-chat`、`deepseek-reasoner` 等）。
 
-- 📦 **100% 独立单文件运行 (.exe)**：
-  - 基于 `pywebview` 引擎直接读取本地静态资源包，不监听任何本地网络端口，零网络依赖。
-  - 双击即可秒级拉起原生清爽窗口，无黑窗口控制台闪烁。
-- ⚙️ **自适应路径系统**：
-  - **开箱即用**：首次启动程序会自动在同级目录下新建默认的 `skills/` 全局技能库文件夹。
-  - **自定义库路径**：支持在 UI 中直观地一键切换、选取自定义全局技能库（D 盘、C 盘、用户文档目录等），彻底适配不同的系统环境。
-- 📂 **智能项目选取与状态哈希审计**：
-  - 点击“关联项目”一键唤起 Windows 原生文件夹选择框，0 键盘输入，防错防呆。
-  - 精准进行项目备份与全局库文件哈希审计，实时展示状态指示灯：
-    - 🟢 **已同步**：本地备份与全局文件哈希值一致。
-    - 🟡 **有更新**：全局文件被编辑修改过，项目端需要同步。
-    - 🔵 **待装载**：已开启装载开关，等待一键同步。
-    - 🔴 **待卸载**：已关闭装载开关，等待一键同步卸载。
-    - ⚪ **未装载**：项目内暂无此技能规约。
-- 📝 **等宽 Markdown 模态编辑器**：
-  - 点击“编辑技能”直接唤起自带编辑框，模态置顶保护，支持实时渲染预览。
-- 🎨 **精细化交互动效**：
-  - 现代化数据看板、圆角卡片流与 iOS 风格滑动开关。
-  - 支持按钮物理按压缩放反馈、开关阻尼弹性过渡、齿轮旋动等精致微动效。
+## 从源码运行
 
----
-
-## 📁 目录结构
-
-```text
-├── main.py                      # pywebview 后端逻辑与 API 桥接层
-├── AI_Skill_Hub_Manager.spec    # PyInstaller 编译配置
-├── app.ico                      # 应用图标
-├── static/                      # 前端 SPA
-│   ├── index.html               # SPA 骨架模板
-│   ├── index.css                # UI 样式设计系统
-│   └── app.js                   # 前端数据交互与状态判定逻辑
-├── config.json                  # 本地动态配置 (自动生成，git 已忽略)
-├── .gitignore                   # Git 过滤配置
-├── README.md                    # 项目说明文档 (英文)
-└── README_ZH.md                 # 项目说明文档 (中文)
-```
-
----
-
-## 💻 安装说明
-
-### 方式 A：直接运行成品 (推荐)
-1. 前往 GitHub 的 **Releases** 页面下载最新版的 `AI_Skill_Hub_Manager.exe`。
-2. 将 `.exe` 放置在您电脑上的任意文件夹。
-3. 双击 `AI_Skill_Hub_Manager.exe` 即可启动运行。
-4. *注意：首次运行会在同级目录下自动生成 `config.json` 配置文件与 `skills/` 默认全局技能库文件夹。*
-
-### 方式 B：从源码本地安装运行
-
-#### 1. 克隆仓库
 ```bash
 git clone https://github.com/w1ndwill/skill_store.git
 cd skill_store
-```
-
-#### 2. 安装 Python 环境
-确保您的 Windows 系统已安装 Python 3.10 或以上版本。
-
-#### 3. 安装依赖库
-```bash
-pip install pywebview
-```
-
-#### 4. 启动程序
-```bash
+pip install pywebview ddgs requests
 python main.py
 ```
 
----
+打包成独立 exe：
 
-## 🛠️ 二次打包与编译指南
-
-如果您修改了前端资产（HTML/CSS/JS），并需要重新编译打包为独立的单文件 `.exe` 时，请按如下步骤操作：
-
-### 1. 安装打包工具
 ```bash
 pip install pyinstaller
+pyinstaller --clean --noconsole --onefile --icon=app.ico --add-data "static;static" --add-data "app.ico;." --hidden-import=ddgs --hidden-import=requests --hidden-import=lxml --hidden-import=httpx --hidden-import=h2 --name AI_Skill_Hub_Manager main.py
 ```
 
-### 2. 执行编译打包
-```bash
-pyinstaller --clean AI_Skill_Hub_Manager.spec
+## 技术栈
+
+- Python + pywebview（WebView2 内核），不监听端口，不需要网络
+- 前端纯 HTML/CSS/JS，图标用 Lucide，Markdown 渲染用 Marked
+- AI 对话接 DeepSeek API，联网搜索用 DuckDuckGo
+- PyInstaller 打包成单文件 exe
+
+## 目录结构
+
 ```
-或从零手动构建：
-```bash
-pyinstaller --noconsole --onefile --clean --icon=app.ico --add-data "static;static" --add-data "app.ico;." --name AI_Skill_Hub_Manager main.py
+├── main.py              # 后端：API 桥接、文件读写、AI 集成
+├── static/
+│   ├── index.html       # 界面骨架
+│   ├── index.css        # 样式
+│   ├── app.js           # 前端逻辑
+│   ├── lucide.min.js    # 图标库（本地打包）
+│   └── marked.min.js    # Markdown 渲染（本地打包）
+├── app.ico              # 应用图标
+├── config.json          # 用户配置（自动生成，不上传 git）
+└── .gitignore
 ```
 
-### 3. 获取成品
-编译完成后，可在 `dist/` 目录下找到 `AI_Skill_Hub_Manager.exe`，拷贝到您希望的目录即可使用。
+## License
 
----
-
-## 🕹️ 详细使用说明
-
-### 第一步：设置全局技能库
-1. 打开软件后，在左侧侧边栏的 **“全局技能库”** 卡片中，可以看到当前的加载路径。
-2. 点击卡片右侧的 ⚙️ 设置按钮，在弹出的系统对话框中选中目标文件夹即可切换路径。
-3. 您可以点击上方 **“新建技能”** 按钮快速创建新规约，系统会生成规范模版并自动拉起编辑器。
-
-### 第二步：关联开发项目
-1. 点击左侧侧边栏上方的 **“关联项目”** 按钮。
-2. 选择您正在开发的任何项目根目录（例如 `D:\Project\my-app`）。
-3. 关联成功后，选中该项目，右侧会即时刷新该项目相对于全局技能库的装载状态。
-
-### 第三步：一键同步与自动索引
-1. 通过卡片右下角的 **“启用装载”** 开关，勾选当前项目需要启用的技能规约。
-2. 状态指示灯会即时显示“待装载”或“待卸载”的脉冲动效。
-3. 点击右上角的 **“一键同步技能”** 按钮，系统会执行拷贝同步，并自动在您项目根目录下更新排版精美的中文 `AGENTS.md` 导航索引文件，同时自动清理未勾选的文件，保持项目目录整洁。
+MIT

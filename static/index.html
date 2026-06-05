@@ -6,8 +6,8 @@
   <title>AI Skill Hub Manager</title>
   <link rel="icon" href="data:;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAAAAPw=">
   <link rel="stylesheet" href="index.css">
-  <script src="https://unpkg.com/lucide@latest"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="lucide.min.js"></script>
+  <script src="marked.min.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -41,6 +41,10 @@
         <button class="btn btn-success" onclick="handleCreateSkill()" id="btn-new-skill">
           <i data-lucide="file-plus" style="width:15px;height:15px;"></i>
           新建技能
+        </button>
+        <button class="btn btn-ai" onclick="openAIModal()" id="btn-ai-search" style="flex:1; padding:0.5rem 0.5rem; font-size:0.75rem;">
+          <i data-lucide="sparkles" style="width:15px;height:15px;"></i>
+          AI 搜索
         </button>
       </div>
 
@@ -82,41 +86,23 @@
         </div>
       </header>
 
-      <!-- Stats -->
-      <div class="stats-banner">
-        <div class="stat-card">
-          <div class="stat-info">
-            <span class="stat-label">全局技能库</span>
-            <span class="stat-value" id="stat-total-skills">0</span>
-          </div>
-          <div class="stat-icon primary"><i data-lucide="book-open"></i></div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-info">
-            <span class="stat-label">当前已装载</span>
-            <span class="stat-value" id="stat-synced-skills">&mdash;</span>
-          </div>
-          <div class="stat-icon success"><i data-lucide="check-circle-2"></i></div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-info">
-            <span class="stat-label">待更新</span>
-            <span class="stat-value" id="stat-unsynced-skills">&mdash;</span>
-          </div>
-          <div class="stat-icon warning"><i data-lucide="alert-circle"></i></div>
-        </div>
-      </div>
-
       <!-- Search + Cards -->
       <div class="main-content">
         <div class="content-toolbar">
-          <h3>全局技能列表</h3>
+          <div class="content-toolbar-left">
+            <h3>全局技能列表</h3>
+            <div class="toolbar-stats" id="toolbar-stats" style="display:none;">
+              <span><span class="toolbar-stat-dot synced"></span><span id="stat-synced">0</span> 已装载</span>
+              <span>·</span>
+              <span><span class="toolbar-stat-dot unsynced"></span><span id="stat-unsynced">0</span> 待更新</span>
+            </div>
+          </div>
           <div class="toolbar-controls">
-            <button class="btn btn-secondary btn-icon" id="btn-refresh-skills" onclick="handleRefreshSkills()" title="刷新全局技能库" style="margin-right: 8px; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0;">
-              <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i>
+            <button class="btn btn-secondary btn-icon" id="btn-refresh-skills" onclick="handleRefreshSkills()" title="刷新全局技能库" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;">
+              <i data-lucide="refresh-cw" style="width:13px;height:13px;"></i>
             </button>
             <div class="search-box">
-              <i data-lucide="search" style="width:15px;height:15px;color:var(--text-muted);"></i>
+              <i data-lucide="search" style="width:14px;height:14px;color:var(--text-tertiary);"></i>
               <input type="text" id="search-input" class="search-input" placeholder="搜索技能名称、标签…" oninput="handleSearch()">
             </div>
           </div>
@@ -238,6 +224,38 @@
           </div>
         </div>
 
+        <!-- Section 3: AI Configuration -->
+        <div class="settings-group" style="display: flex; flex-direction: column; gap: 1rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+          <h4 id="settings-heading-ai" style="font-size: 0.95rem; font-weight: 600; color: var(--text-main); margin-bottom: 0.25rem;">AI 配置 / AI Config</h4>
+
+          <div class="settings-row" style="display: flex; flex-direction: column; gap: 0.4rem;">
+            <div class="settings-label-col">
+              <label id="settings-label-apikey" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">DeepSeek API Key</label>
+              <p class="settings-desc" id="settings-desc-apikey" style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">用于 AI 搜索和生成技能内容 · <a href="https://platform.deepseek.com/api_keys" target="_blank" style="color:var(--accent);">获取 Key</a></p>
+            </div>
+            <div class="settings-input-col" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
+              <input type="password" id="settings-apikey" class="settings-input" placeholder="sk-...">
+              <button class="btn btn-secondary btn-icon" onclick="toggleApiKeyVisibility()" title="显示/隐藏" style="padding: 0.45rem; display: flex; align-items: center; justify-content: center; height: 32px; width: 32px; flex-shrink: 0;">
+                <i data-lucide="eye" style="width:14px;height:14px;" id="apikey-eye-icon"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-row" style="display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.25rem;">
+            <div class="settings-label-col">
+              <label for="settings-aimodel" id="settings-label-aimodel" style="font-size: 0.875rem; font-weight: 500; color: var(--text-main); display: block;">AI 模型</label>
+              <p class="settings-desc" id="settings-desc-aimodel" style="font-size: 0.75rem; color: var(--text-muted); margin: 0.15rem 0 0 0;">输入模型名，如 deepseek-chat、deepseek-reasoner、deepseek-v4</p>
+            </div>
+            <div class="settings-input-col" style="display: flex; gap: 0.5rem; align-items: center; width: 100%;">
+              <input type="text" id="settings-aimodel" class="settings-input" style="flex:1;" placeholder="deepseek-chat">
+              <button class="btn btn-ai-primary" onclick="handleAITestConnection()" id="btn-test-connection" style="padding: 0.45rem 0.85rem; font-size: 0.75rem; white-space: nowrap; height: 32px;">
+                <i data-lucide="zap" style="width:13px;height:13px;"></i> 测试连接
+              </button>
+            </div>
+            <div id="test-result" style="display:none; font-size:0.75rem; padding:0.4rem 0.6rem; border-radius:var(--radius-sm);"></div>
+          </div>
+        </div>
+
       </div>
       <footer class="modal-header" style="border-top:1px solid var(--border-color);border-bottom:none;justify-content:flex-end;gap:0.75rem;">
         <button class="btn btn-secondary" onclick="closeSettingsModal()" id="settings-btn-cancel">取消</button>
@@ -246,6 +264,66 @@
           保存配置
         </button>
       </footer>
+    </div>
+  </div>
+
+  <!-- AI Chat Modal -->
+  <div id="ai-modal" class="modal-overlay">
+    <div class="modal-container" style="max-width: 760px; height: 88vh;">
+      <header class="modal-header">
+        <div class="modal-title-info">
+          <span class="modal-emoji">✨</span>
+          <h3 class="modal-title" id="ai-modal-title">AI 技能顾问</h3>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.6rem;">
+          <label class="switch-label" style="margin-right:0.5rem;" title="联网搜索">
+            <span style="font-size:0.7rem;">🔍 联网</span>
+            <label class="switch" style="width:30px;height:18px;">
+              <input type="checkbox" id="ai-web-search-toggle">
+              <span class="slider"></span>
+            </label>
+          </label>
+          <button class="btn btn-secondary btn-icon" onclick="handleAIGenerateSkill()" id="ai-btn-generate" title="生成技能" style="padding:0.35rem 0.65rem;font-size:0.72rem;display:inline-flex;align-items:center;gap:4px;">
+            <i data-lucide="file-text" style="width:14px;height:14px;"></i> 生成技能
+          </button>
+          <button class="btn btn-secondary btn-icon" onclick="closeAIModal()">
+            <i data-lucide="x" style="width:18px;height:18px;"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Chat Messages -->
+      <div class="ai-chat-messages" id="ai-chat-messages">
+        <div class="ai-chat-empty">
+          <div style="font-size:3rem;margin-bottom:0.75rem;">✨</div>
+          <h4 style="font-weight:700;margin-bottom:0.35rem;color:var(--text-primary);">AI 技能顾问</h4>
+          <p style="color:var(--text-tertiary);font-size:0.8rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
+        </div>
+      </div>
+
+      <!-- Skill Preview (shown after generation) -->
+      <div id="ai-skill-preview" style="display:none;border-top:1px solid var(--border);padding:1rem 1.5rem;max-height:40vh;overflow-y:auto;background:var(--bg-app);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+          <span style="font-size:0.75rem;font-weight:600;color:var(--text-tertiary);">📄 生成的技能预览</span>
+          <div style="display:flex;gap:0.5rem;">
+            <button class="btn btn-secondary btn-icon" onclick="handleAIRegenerate()" style="font-size:0.7rem;padding:0.3rem 0.6rem;">
+              <i data-lucide="refresh-cw" style="width:12px;height:12px;"></i> 重新生成
+            </button>
+            <button class="btn btn-primary btn-icon" onclick="handleAISave()" style="font-size:0.7rem;padding:0.3rem 0.8rem;">
+              <i data-lucide="download" style="width:12px;height:12px;"></i> 保存技能
+            </button>
+          </div>
+        </div>
+        <div id="ai-skill-content" class="markdown-preview" style="font-size:0.8rem;"></div>
+      </div>
+
+      <!-- Input Area -->
+      <div class="ai-chat-input-area">
+        <textarea id="ai-chat-input" class="ai-chat-textarea" placeholder="描述你的需求，例如：我需要一个团队级的 React 代码审查规范..." rows="1" onkeydown="handleChatKeydown(event)"></textarea>
+        <button class="btn btn-ai-primary" onclick="sendAIMessage()" id="ai-send-btn" style="padding:0.55rem 0.9rem;">
+          <i data-lucide="send" style="width:15px;height:15px;"></i>
+        </button>
+      </div>
     </div>
   </div>
 
