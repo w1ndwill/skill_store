@@ -227,6 +227,15 @@
           <div class="settings-section">
             <div class="settings-field vertical">
               <div class="settings-field-label">
+                <span id="settings-label-apibase">API 接口地址 (Base URL)</span>
+                <span class="settings-field-desc" id="settings-desc-apibase">自定义 OpenAI 兼容接口，例如：官方 https://api.deepseek.com/v1，本地 Ollama 填 http://localhost:11434/v1，SiliconFlow 填 https://api.siliconflow.cn/v1</span>
+              </div>
+              <div class="settings-field-control">
+                <input type="text" id="settings-apibase" class="settings-input" placeholder="https://api.deepseek.com/v1">
+              </div>
+            </div>
+            <div class="settings-field vertical">
+              <div class="settings-field-label">
                 <span id="settings-label-apikey">DeepSeek API Key</span>
                 <span class="settings-field-desc" id="settings-desc-apikey">用于 AI 搜索和生成技能内容 · <a href="https://platform.deepseek.com/api_keys" target="_blank">获取 Key</a></span>
               </div>
