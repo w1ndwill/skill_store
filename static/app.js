@@ -15,6 +15,7 @@ let defaultScanDir = '';
 let deepseekApiKey = '';
 let deepseekModel = 'deepseek-chat';
 let aiGeneratedSkill = null; // cached AI result
+let activeCategoryFilter = null; // active category filter (null = show all)
 
 // DOM cache
 const projectList = document.getElementById('project-list');
@@ -32,6 +33,7 @@ const toastContainer = document.getElementById('toast-container');
 const searchInput = document.getElementById('search-input');
 const skillsDirPath = document.getElementById('skills-dir-path');
 const toolbarStats = document.getElementById('toolbar-stats');
+const categoryFilterBar = document.getElementById('category-filter-bar');
 
 // ------------------------------------------
 // Bilingual i18n Dictionary
@@ -173,77 +175,145 @@ const skillTranslations = {
   zh: {
     'Git提交规范.md': {
       title: 'Git提交规范',
+      category: 'Development',
       description: '遵循 Angular 规范的 Git Commit 消息标准，让项目的版本演进历史清晰、规范且可追溯。'
     },
     'frontend_optimization.md': {
       title: '前端性能优化技能指南',
+      category: 'Development',
       description: '现代 Web 应用全方位性能优化指南，旨在提升用户体验、Lighthouse 评分及核心网页指标。'
     },
     'handoff.md': {
       title: '流程接力与工作交接技能指南',
+      category: 'Workflow',
       description: 'AI 开发上下文无损交接与接力指南，有效解决长会话记忆衰退及多阶段开发无缝恢复问题。'
     },
     'process_optimization.md': {
       title: '流程优化技能指南',
+      category: 'Workflow',
       description: '系统化软件开发与系统运行流程优化指南，覆盖本地开发、构建部署及运行时执行效率。'
     },
     'python_env_isolation.md': {
       title: 'Python 虚拟环境与依赖管理规范',
+      category: 'Development',
       description: '指导 AI 助手在开发 Python 项目时自动创建和使用本地专属虚拟环境，杜绝全局环境污染与依赖冲突。'
     },
     'run_recording.md': {
       title: '运行记录与可观测性技能指南',
+      category: 'Development',
       description: '高质量系统运行记录与可观测性指南，涵盖结构化日志分级、异常监控以及诊断审计规范。'
     },
     '代码移交标准.md': {
       title: '代码移交标准',
+      category: 'Workflow',
       description: '用于保障代码开发完成后，平滑、无缝地移交给其他开发者或运维团队的主动审查与交接清单。'
     },
     '前端性能优化规范.md': {
       title: '前端性能优化规范',
+      category: 'Development',
       description: '涵盖图片延迟加载、虚拟列表、代码分割、静态资源缓存以及打包体积压缩的本地开发与交付指南。'
     },
     'superpowers-template': {
       title: 'Superpowers 主控模版',
-      description: 'Superpowers 技能体系的主控模板文件夹，包含全局的 Agent 工作流与核心规划/脑暴/执行规约。'
+      category: 'Workflow',
+      description: 'Superpowers 技能体系的主控模板文件夹，包含全局 of Agent 工作流与核心规划/脑暴/执行规约。'
+    },
+    'brainstorm.md': {
+      title: 'Superpowers 头脑风暴技能',
+      category: 'Workflow',
+      description: 'Superpowers 体系的第一阶段：头脑风暴，确保在做出设计决策前充分分析问题空间。'
+    },
+    'planning.md': {
+      title: 'Superpowers 规划技能',
+      category: 'Workflow',
+      description: 'Superpowers 体系的第二阶段：规划，确保在实现前有详尽的步骤路线图。'
+    },
+    'tdd_execution.md': {
+      title: 'Superpowers TDD 执行技能',
+      category: 'Development',
+      description: 'Superpowers 体系的第三阶段：测试驱动执行，确保实现过程规范、增量可追踪。'
+    },
+    'verification.md': {
+      title: 'Superpowers 验证技能',
+      category: 'Development',
+      description: 'Superpowers 体系的第四阶段：验证，确保产出物达到高质量工程标准。'
+    },
+    'codegraph_analysis.md': {
+      title: '代码图谱静态分析与依赖图构建',
+      category: 'Development',
+      description: '指导 AI 助手如何高效分析复杂代码库、提取文件与组件间的耦合关系，并绘制高清晰度的代码拓扑图谱。'
     }
   },
   en: {
     'Git提交规范.md': {
       title: 'Git Commit Guideline',
+      category: 'Development',
       description: 'Follow Angular specs for Git Commit messages, making version history clear, standardized, and traceable.'
     },
     'frontend_optimization.md': {
       title: 'Frontend Performance Optimization Skill Guide',
+      category: 'Development',
       description: 'Comprehensive performance optimization guide for modern web apps, aimed at improving user experience, Lighthouse scores, and Core Web Vitals.'
     },
     'handoff.md': {
       title: 'Handoff & Context Resume Skill Guide',
-      description: 'AI development context handoff and resume guide, effectively solving long session memory decay and multi-stage seamless recovery.'
+      category: 'Workflow',
+      description: 'Resolves memory decay from context saturation, implementing seamless lossless state recovery and context handoff between sessions.'
     },
     'process_optimization.md': {
       title: 'Process Optimization Skill Guide',
+      category: 'Workflow',
       description: 'Systematic software development and execution process optimization guide, covering local dev, build deployment, and runtime efficiency.'
     },
     'python_env_isolation.md': {
       title: 'Python Virtual Env & Dependency Management',
+      category: 'Development',
       description: 'Guide AI assistants to automatically create and use local virtual environments when developing Python projects, preventing global package conflicts.'
     },
     'run_recording.md': {
       title: 'Run Recording & Logging Skill Guide',
+      category: 'Development',
       description: 'High-quality system logging and observability guide, covering structured log levels, exception monitoring, and diagnostics/auditing.'
     },
     '代码移交标准.md': {
       title: 'Code Handoff Standards',
+      category: 'Workflow',
       description: 'An active review and handoff checklist to ensure smooth, seamless transition of code to other developers or ops teams.'
     },
     '前端性能优化规范.md': {
       title: 'Frontend Performance Optimization Standards',
+      category: 'Development',
       description: 'Local development and delivery guide covering image lazy loading, virtual lists, code splitting, asset caching, and bundle compression.'
     },
     'superpowers-template': {
       title: 'Superpowers Master Template',
+      category: 'Workflow',
       description: 'Master template folder for Superpowers skill system, containing global Agent workflows and planning/brainstorming/execution rules.'
+    },
+    'brainstorm.md': {
+      title: 'Superpowers Brainstorming Skill',
+      category: 'Workflow',
+      description: 'Phase 1 of Superpowers: Brainstorming, ensuring thorough problem analysis before design decisions.'
+    },
+    'planning.md': {
+      title: 'Superpowers Planning Skill',
+      category: 'Workflow',
+      description: 'Phase 2 of Superpowers: Planning, ensuring a documented step-by-step roadmap before implementation.'
+    },
+    'tdd_execution.md': {
+      title: 'Superpowers TDD Execution Skill',
+      category: 'Development',
+      description: 'Phase 3 of Superpowers: Test-driven execution, ensuring disciplined and trackable implementation.'
+    },
+    'verification.md': {
+      title: 'Superpowers Verification Skill',
+      category: 'Development',
+      description: 'Phase 4 of Superpowers: Verification, ensuring output meets high-quality engineering standards.'
+    },
+    'codegraph_analysis.md': {
+      title: 'Code Graph Static Analysis & Dependency Mapping',
+      category: 'Development',
+      description: 'Guides AI assistants in efficiently analyzing complex codebases, extracting coupling relationships, and drawing code topology graphs.'
     }
   }
 };
@@ -309,6 +379,25 @@ const tagTranslations = {
     'Master': 'Master',
     'Template': 'Template',
     'Project-Level': 'Project-Level'
+  }
+};
+
+const categoryTranslations = {
+  zh: {
+    'Development': '编程开发',
+    'Workflow': '工作流程',
+    'Uncategorized': '未分类',
+    '编程开发': '编程开发',
+    '工作流程': '工作流程',
+    '未分类': '未分类'
+  },
+  en: {
+    '编程开发': 'Development',
+    '工作流程': 'Workflow',
+    '未分类': 'Uncategorized',
+    'Development': 'Development',
+    'Workflow': 'Workflow',
+    'Uncategorized': 'Uncategorized'
   }
 };
 
@@ -412,6 +501,7 @@ function applyLanguage(lang) {
 
   // Re-render components to apply dynamic texts
   renderProjectsList();
+  renderCategoryFilterBar();
   renderSkillsGrid();
   updateStatistics();
   lucide.createIcons();
@@ -424,6 +514,7 @@ function applyLanguage(lang) {
 async function fetchSkills() {
   try {
     skills = await window.pywebview.api.get_skills();
+    renderCategoryFilterBar();
     renderSkillsGrid();
   } catch (e) {
     showToast(locales[currentLanguage].toastLoadFail + e, 'error');
@@ -540,13 +631,80 @@ function getSmartEmojiAndTags(skill) {
   return { emoji, tags };
 }
 
+// Get canonical category name (e.g. 'Development', 'Workflow', 'Uncategorized', or raw custom string)
+function getCanonicalCategory(skill) {
+  let cat = skill.category;
+  
+  // Check translation dictionary for override
+  const trans = skillTranslations['zh']?.[skill.filename];
+  if (trans && trans.category) {
+    cat = trans.category;
+  }
+  
+  if (!cat) {
+    cat = skill.is_dir ? 'Workflow' : 'Uncategorized';
+  }
+  
+  // Normalize known Chinese categories to canonical English keys
+  if (cat === '编程开发') return 'Development';
+  if (cat === '工作流程') return 'Workflow';
+  if (cat === '未分类') return 'Uncategorized';
+  
+  return cat;
+}
+
+// Translate canonical category to current language for UI
+function getLocalizedCategory(canonicalCat) {
+  return categoryTranslations[currentLanguage]?.[canonicalCat] || canonicalCat;
+}
+
+// Render dynamic category pills
+function renderCategoryFilterBar() {
+  if (!categoryFilterBar) return;
+  
+  // Extract all unique canonical categories from currently loaded skills
+  const categoriesSet = new Set();
+  skills.forEach(skill => {
+    categoriesSet.add(getCanonicalCategory(skill));
+  });
+  
+  const uniqueCanonicalCategories = Array.from(categoriesSet).sort();
+  
+  const allLabel = currentLanguage === 'zh' ? '全部' : 'All';
+  let html = `<button class="category-pill ${activeCategoryFilter === null ? 'active' : ''}" onclick="handleSelectCategory(null)">${allLabel}</button>`;
+  
+  uniqueCanonicalCategories.forEach(canonicalCat => {
+    const localizedLabel = getLocalizedCategory(canonicalCat);
+    const isActive = activeCategoryFilter === canonicalCat;
+    html += `<button class="category-pill ${isActive ? 'active' : ''}" onclick="handleSelectCategory('${canonicalCat.replace(/'/g, "\\'")}')">${localizedLabel}</button>`;
+  });
+  
+  categoryFilterBar.innerHTML = html;
+}
+
+// Handle category select
+window.handleSelectCategory = function(canonicalCat) {
+  activeCategoryFilter = canonicalCat;
+  renderCategoryFilterBar();
+  renderSkillsGrid();
+};
+
 function renderSkillsGrid() {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
   let filtered = skills;
+  
+  // Filter by Search Query
   if (query) {
-    filtered = skills.filter(s => {
+    filtered = filtered.filter(s => {
       const text = [s.title, s.description, s.filename, ...s.tags].join(' ').toLowerCase();
       return text.includes(query);
+    });
+  }
+  
+  // Filter by Category
+  if (activeCategoryFilter) {
+    filtered = filtered.filter(s => {
+      return getCanonicalCategory(s) === activeCategoryFilter;
     });
   }
 

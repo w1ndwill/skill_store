@@ -5,6 +5,7 @@ A Windows desktop tool for managing AI development guidelines. Write your coding
 ## Key Features
 
 - **Skill Management** — Write coding standards, design rules, and quality guidelines as Markdown files, and manage them in a unified library.
+- **Skill Categorization** — Categorize skills (e.g., Development, Workflow, or custom groups like Office, Design) for dynamic filtering and structured index output.
 - **One-Click Sync** — Select a project folder, choose the required skills, and copy them to `.agent/skills/` while automatically generating an `AGENTS.md` index.
 - **Status Tracking** — Tracks synchronization status using MD5 hashes to identify updated, synced, or outdated files.
 - **AI-Assisted Generation** — Chat with LLMs (like DeepSeek) to search the web and generate new skill files. Includes multi-session history support.
