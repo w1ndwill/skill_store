@@ -14,6 +14,7 @@ let currentTheme = 'light';
 let defaultScanDir = '';
 let deepseekApiKey = '';
 let deepseekModel = 'deepseek-chat';
+let apiBase = 'https://api.deepseek.com/v1';
 let aiGeneratedSkill = null; // cached AI result
 let activeCategoryFilter = null; // active category filter (null = show all)
 
@@ -100,6 +101,14 @@ const locales = {
     settingsDescSkillsdir: '存放全局技能规约 Markdown 文件的目录',
     settingsLabelScandir: '项目默认扫描起点',
     settingsDescScandir: '点击“关联项目”时，默认打开的初始目录',
+    settingsHeadingAI: 'AI 与大模型配置',
+    settingsLabelApibase: 'API 接口地址 (Base URL)',
+    settingsDescApibase: '自定义 OpenAI 兼容接口，例如：官方 https://api.deepseek.com/v1，本地 Ollama 填 http://localhost:11434/v1，SiliconFlow 填 https://api.siliconflow.cn/v1',
+    settingsLabelApikey: 'API 密钥 (API Key)',
+    settingsDescApikey: '用于 AI 智能编写和辅助生成技能内容',
+    settingsLabelAimodel: 'AI 模型名称 (Model)',
+    settingsDescAimodel: '输入你要调用的模型，如 deepseek-chat, qwen2.5:7b, gpt-4o 等',
+    btnTestConnection: '测试连接',
     exitProjectMode: '已退出项目配置模式，返回全局只读视图',
     confirmRemove: '确定要移除此项目的关联吗？\n不会删除项目中的任何文件。',
     defaultDesc: '此技能暂无详细描述信息。'
@@ -165,6 +174,14 @@ const locales = {
     settingsDescSkillsdir: 'Folder storing global Markdown files',
     settingsLabelScandir: 'Project Scan Starting Path',
     settingsDescScandir: 'Default folder shown when adding a project',
+    settingsHeadingAI: 'AI & Large Model Configs',
+    settingsLabelApibase: 'API Base URL',
+    settingsDescApibase: 'Custom OpenAI-compatible base URL. e.g. DeepSeek: https://api.deepseek.com/v1, local Ollama: http://localhost:11434/v1, SiliconFlow: https://api.siliconflow.cn/v1',
+    settingsLabelApikey: 'API Key',
+    settingsDescApikey: 'Used for AI generation and search-assisted writing',
+    settingsLabelAimodel: 'AI Model Name',
+    settingsDescAimodel: 'Enter target model name, e.g. deepseek-chat, qwen2.5:7b, gpt-4o',
+    btnTestConnection: 'Test Link',
     exitProjectMode: 'Exited project configuration mode, returned to global read-only view',
     confirmRemove: 'Are you sure you want to unlink this project?\nNo files will be deleted from your disk.',
     defaultDesc: 'No detailed description available for this skill.'
@@ -423,6 +440,7 @@ async function fetchConfig() {
     currentTheme = config.theme || 'light';
     defaultScanDir = config.default_scan_dir || '';
     deepseekModel = config.deepseek_model || 'deepseek-chat';
+    apiBase = config.api_base || 'https://api.deepseek.com/v1';
     // API key is masked as "***" if set; actual value only used via save_ai_config
 
     applyTheme(currentTheme);
@@ -498,6 +516,16 @@ function applyLanguage(lang) {
   document.getElementById('settings-desc-scandir').textContent = t.settingsDescScandir;
   document.getElementById('settings-btn-cancel').textContent = t.settingsCancel;
   document.getElementById('settings-btn-save').innerHTML = `<i data-lucide="save" style="width:16px;height:16px;"></i> ${t.settingsSave}`;
+
+  // Modals (Settings AI Section)
+  document.getElementById('settings-heading-ai').textContent = t.settingsHeadingAI;
+  document.getElementById('settings-label-apibase').textContent = t.settingsLabelApibase;
+  document.getElementById('settings-desc-apibase').textContent = t.settingsDescApibase;
+  document.getElementById('settings-label-apikey').textContent = t.settingsLabelApikey;
+  document.getElementById('settings-desc-apikey').textContent = t.settingsDescApikey;
+  document.getElementById('settings-label-aimodel').textContent = t.settingsLabelAimodel;
+  document.getElementById('settings-desc-aimodel').textContent = t.settingsDescAimodel;
+  document.getElementById('btn-test-connection').innerHTML = `<i data-lucide="zap" style="width:13px;height:13px;"></i> ${t.btnTestConnection}`;
 
   // Re-render components to apply dynamic texts
   renderProjectsList();
@@ -1144,6 +1172,7 @@ function openSettingsModal() {
   settingsSkillsDir.value = skillsDirPath.textContent;
   settingsScanDir.value = defaultScanDir;
   document.getElementById('settings-aimodel').value = deepseekModel;
+  document.getElementById('settings-apibase').value = apiBase;
   // API key field: leave empty placeholder — user must re-enter to change
   document.getElementById('settings-apikey').value = '';
   document.getElementById('settings-apikey').type = 'password';
@@ -1188,16 +1217,18 @@ async function handleSaveSettings() {
     };
     const result = await window.pywebview.api.save_settings(settings);
 
-    // Save AI config separately if API key changed
+    // Save AI config separately if API key, model, or base URL changed
     const apiKeyInput = document.getElementById('settings-apikey');
     const modelInput = document.getElementById('settings-aimodel');
+    const apiBaseInput = document.getElementById('settings-apibase');
     const newModel = modelInput.value.trim() || deepseekModel;
-    if (apiKeyInput.value.trim()) {
-      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), newModel);
-    } else if (newModel !== deepseekModel) {
-      await window.pywebview.api.save_ai_config('', newModel);
+    const newApiBase = apiBaseInput.value.trim() || apiBase;
+
+    if (apiKeyInput.value.trim() || newApiBase !== apiBase || newModel !== deepseekModel) {
+      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), newModel, newApiBase);
     }
     deepseekModel = newModel;
+    apiBase = newApiBase;
 
     currentLanguage = result.language;
     currentTheme = result.theme;
@@ -1478,14 +1509,20 @@ async function handleAITestConnection() {
   resultDiv.style.display = 'none';
 
   try {
-    // Save the model first (it might have changed)
+    // Save the model and base URL first (they might have changed)
     const modelInput = document.getElementById('settings-aimodel');
     const apiKeyInput = document.getElementById('settings-apikey');
+    const apiBaseInput = document.getElementById('settings-apibase');
+    const newModel = modelInput.value.trim() || 'deepseek-chat';
+    const newApiBase = apiBaseInput.value.trim() || 'https://api.deepseek.com/v1';
+
     if (apiKeyInput.value.trim()) {
-      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), modelInput.value.trim() || 'deepseek-chat');
+      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), newModel, newApiBase);
     } else {
-      await window.pywebview.api.save_ai_config('', modelInput.value.trim() || 'deepseek-chat');
+      await window.pywebview.api.save_ai_config('', newModel, newApiBase);
     }
+    deepseekModel = newModel;
+    apiBase = newApiBase;
 
     const result = await window.pywebview.api.ai_test_connection();
     resultDiv.style.display = 'block';

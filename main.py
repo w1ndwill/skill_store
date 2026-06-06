@@ -430,6 +430,7 @@ class Api:
         self.default_scan_dir = config.get("default_scan_dir", os.path.expanduser("~"))
         self.deepseek_api_key = config.get("deepseek_api_key", "")
         self.deepseek_model = config.get("deepseek_model", "deepseek-chat")
+        self.api_base = config.get("api_base", "https://api.deepseek.com/v1")
 
     def set_window(self, window):
         self._window = window
@@ -484,7 +485,8 @@ class Api:
                 "theme": self.theme,
                 "default_scan_dir": self.default_scan_dir,
                 "deepseek_api_key": self.deepseek_api_key,
-                "deepseek_model": self.deepseek_model
+                "deepseek_model": self.deepseek_model,
+                "api_base": self.api_base
             }
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
@@ -504,6 +506,7 @@ class Api:
             "default_scan_dir": self.default_scan_dir,
             "deepseek_api_key": "***" if self.deepseek_api_key else "",
             "deepseek_model": self.deepseek_model,
+            "api_base": self.api_base,
             "has_ai_key": bool(self.deepseek_api_key)
         }
 
@@ -562,25 +565,30 @@ class Api:
 
     # --- AI Configuration ---
 
-    def save_ai_config(self, api_key, model="deepseek-chat"):
-        """Save DeepSeek API configuration. Empty api_key means keep existing."""
+    def save_ai_config(self, api_key, model="deepseek-chat", api_base="https://api.deepseek.com/v1"):
+        """Save AI configuration. Empty api_key means keep existing."""
         if api_key:
             self.deepseek_api_key = api_key
         self.deepseek_model = model or self.deepseek_model
+        self.api_base = api_base or self.api_base
         self._save_config()
         return {"ok": True}
 
     # --- AI Connection Test ---
 
     def ai_test_connection(self):
-        """Test DeepSeek API connectivity with a minimal request."""
+        """Test API connectivity with a minimal request."""
         if not self.deepseek_api_key:
             return {"error": "请先配置 API Key" if self.language == "zh" else "Please configure API Key first"}
 
         start = time.time()
         try:
+            url = self.api_base.strip()
+            if not url.endswith("/chat/completions"):
+                url = url.rstrip("/") + "/chat/completions"
+            
             resp = requests.post(
-                "https://api.deepseek.com/v1/chat/completions",
+                url,
                 headers={
                     "Authorization": f"Bearer {self.deepseek_api_key}",
                     "Content-Type": "application/json"
@@ -596,7 +604,10 @@ class Api:
             if resp.status_code == 200:
                 return {"ok": True, "model": self.deepseek_model, "latency_ms": elapsed}
             else:
-                err = resp.json().get("error", {}).get("message", f"HTTP {resp.status_code}")
+                try:
+                    err = resp.json().get("error", {}).get("message", f"HTTP {resp.status_code}")
+                except Exception:
+                    err = resp.text or f"HTTP {resp.status_code}"
                 return {"error": err}
         except requests.exceptions.Timeout:
             return {"error": "连接超时" if self.language == "zh" else "Connection timed out"}
@@ -669,8 +680,12 @@ description: <一句话描述>
 保持回复简洁，一次聚焦1-2个要点。"""
 
         try:
+            url = self.api_base.strip()
+            if not url.endswith("/chat/completions"):
+                url = url.rstrip("/") + "/chat/completions"
+                
             resp = requests.post(
-                "https://api.deepseek.com/v1/chat/completions",
+                url,
                 headers={
                     "Authorization": f"Bearer {self.deepseek_api_key}",
                     "Content-Type": "application/json"
@@ -848,8 +863,12 @@ description: <一句话描述这个技能的用途>
 请根据以上信息，生成一份完整的技能规范文件。只输出 markdown 内容。"""
 
         try:
+            url = self.api_base.strip()
+            if not url.endswith("/chat/completions"):
+                url = url.rstrip("/") + "/chat/completions"
+                
             response = requests.post(
-                "https://api.deepseek.com/v1/chat/completions",
+                url,
                 headers={
                     "Authorization": f"Bearer {self.deepseek_api_key}",
                     "Content-Type": "application/json"
