@@ -32,95 +32,173 @@ SKILL_TRANSLATIONS = {
     "zh": {
         "Git提交规范.md": {
             "title": "Git提交规范",
+            "category": "编程开发",
             "tags": ["Git", "协作", "基础"],
             "description": "遵循 Angular 规范 of Git Commit 消息标准，让项目的版本演进历史清晰、规范且可追溯。"
         },
         "frontend_optimization.md": {
             "title": "前端性能优化技能指南",
+            "category": "编程开发",
             "tags": ["性能", "优化", "前端"],
             "description": "现代 Web 应用全方位性能优化指南，旨在提升用户体验、Lighthouse 评分及核心网页指标。"
         },
         "handoff.md": {
             "title": "流程接力与工作交接技能指南",
+            "category": "工作流程",
             "tags": ["交接", "工作流", "常规"],
             "description": "本技能指南旨在解决因上下文饱和导致的记忆衰退问题，在切换助手或会话时实现无缝的“无损状态恢复”与“流程接力”。"
         },
         "process_optimization.md": {
             "title": "流程优化技能指南",
+            "category": "工作流程",
             "tags": ["流程", "优化", "常规"],
             "description": "系统化软件开发与系统运行流程优化指南，覆盖本地开发、构建部署及运行时执行效率。"
         },
         "python_env_isolation.md": {
             "title": "Python 虚拟环境与依赖管理规范",
+            "category": "编程开发",
             "tags": ["常规", "Python", "环境隔离"],
             "description": "指导 AI 助手在开发 Python 项目时自动创建和使用本地专属虚拟环境，杜绝全局环境污染与依赖冲突。"
         },
         "run_recording.md": {
             "title": "运行记录与可观测性技能指南",
+            "category": "编程开发",
             "tags": ["日志", "可观测性", "常规"],
             "description": "高质量系统运行记录与可观测性指南，涵盖结构化日志分级、异常监控以及诊断审计规范。"
         },
         "代码移交标准.md": {
             "title": "代码移交标准",
+            "category": "工作流程",
             "tags": ["团队协作", "工作流", "规范"],
             "description": "用于保障代码开发完成后，平滑、无缝地移交给其他开发者或运维团队的主动审查与交接清单。"
         },
         "前端性能优化规范.md": {
             "title": "前端性能优化规范",
+            "category": "编程开发",
             "tags": ["前端", "优化", "性能"],
             "description": "涵盖图片延迟加载、虚拟列表、代码分割、静态资源缓存以及打包体积压缩的本地开发与交付指南。"
         },
         "superpowers-template": {
             "title": "Superpowers 主控模版",
+            "category": "工作流程",
             "tags": ["主控", "模板", "项目级"],
             "description": "Superpowers 技能体系的主控模板文件夹，包含全局的 Agent 工作流与核心规划/脑暴/执行规约。"
+        },
+        "brainstorm.md": {
+            "title": "Superpowers 头脑风暴技能",
+            "category": "工作流程",
+            "tags": ["常规"],
+            "description": "Superpowers 体系的第一阶段：头脑风暴，确保在做出设计决策前充分分析问题空间。"
+        },
+        "planning.md": {
+            "title": "Superpowers 规划技能",
+            "category": "工作流程",
+            "tags": ["常规"],
+            "description": "Superpowers 体系的第二阶段：规划，确保在实现前有详尽的步骤路线图。"
+        },
+        "tdd_execution.md": {
+            "title": "Superpowers TDD 执行技能",
+            "category": "编程开发",
+            "tags": ["常规"],
+            "description": "Superpowers 体系的第三阶段：测试驱动执行，确保实现过程规范、增量可追踪。"
+        },
+        "verification.md": {
+            "title": "Superpowers 验证技能",
+            "category": "编程开发",
+            "tags": ["常规"],
+            "description": "Superpowers 体系的第四阶段：验证，确保产出物达到高质量工程标准。"
+        },
+        "codegraph_analysis.md": {
+            "title": "代码图谱静态分析与依赖图构建",
+            "category": "编程开发",
+            "tags": ["代码分析", "依赖图谱", "架构分析", "静态扫描"],
+            "description": "指导 AI 助手如何高效分析复杂代码库、提取文件与组件间的耦合关系，并绘制高清晰度的代码拓扑图谱。"
         }
     },
     "en": {
         "Git提交规范.md": {
             "title": "Git Commit Guideline",
+            "category": "Development",
             "tags": ["Git", "Collaboration", "Basic"],
             "description": "Follow Angular specs for Git Commit messages, making version history clear, standardized, and traceable."
         },
         "frontend_optimization.md": {
             "title": "Frontend Performance Optimization Skill Guide",
+            "category": "Development",
             "tags": ["Performance", "Optimization", "Frontend"],
             "description": "Comprehensive performance optimization guide for modern web apps, aimed at improving user experience, Lighthouse scores, and Core Web Vitals."
         },
         "handoff.md": {
             "title": "Handoff & Context Resume Skill Guide",
+            "category": "Workflow",
             "tags": ["Handoff", "Context", "Resume"],
             "description": "Resolves memory decay from context saturation, implementing seamless lossless state recovery and context handoff between sessions."
         },
         "process_optimization.md": {
             "title": "Process Optimization Skill Guide",
+            "category": "Workflow",
             "tags": ["Process", "Optimization", "Efficiency"],
             "description": "Systematic software development and execution process optimization guide, covering local dev, build deployment, and runtime efficiency."
         },
         "python_env_isolation.md": {
             "title": "Python Virtual Env & Dependency Management Specification",
+            "category": "Development",
             "tags": ["Python", "Virtual Env", "Isolation"],
             "description": "Guides AI assistants to automatically create and use local virtual environments when developing Python projects, preventing global package conflicts."
         },
         "run_recording.md": {
             "title": "Run Recording & Logging Skill Guide",
+            "category": "Development",
             "tags": ["Observability", "Logging", "Diagnostics"],
             "description": "High-quality system logging and observability guide, covering structured log levels, exception monitoring, and diagnostics/auditing."
         },
         "代码移交标准.md": {
             "title": "Code Handoff Standards",
+            "category": "Workflow",
             "tags": ["Collaboration", "Workflow", "Handoff"],
             "description": "An active review and handoff checklist to ensure smooth, seamless transition of code to other developers or ops teams."
         },
         "前端性能优化规范.md": {
             "title": "Frontend Performance Optimization Standards",
+            "category": "Development",
             "tags": ["Frontend", "Performance", "Optimization"],
             "description": "Local development and delivery guide covering image lazy loading, virtual lists, code splitting, asset caching, and bundle compression."
         },
         "superpowers-template": {
             "title": "Superpowers Master Template",
+            "category": "Workflow",
             "tags": ["Master", "Template", "Project-Level"],
             "description": "Master template folder for Superpowers skill system, containing global Agent workflows and planning/brainstorming/execution rules."
+        },
+        "brainstorm.md": {
+            "title": "Superpowers Brainstorming Skill",
+            "category": "Workflow",
+            "tags": ["General"],
+            "description": "Phase 1 of Superpowers: Brainstorming, ensuring thorough problem analysis before design decisions."
+        },
+        "planning.md": {
+            "title": "Superpowers Planning Skill",
+            "category": "Workflow",
+            "tags": ["General"],
+            "description": "Phase 2 of Superpowers: Planning, ensuring a documented step-by-step roadmap before implementation."
+        },
+        "tdd_execution.md": {
+            "title": "Superpowers TDD Execution Skill",
+            "category": "Development",
+            "tags": ["General"],
+            "description": "Phase 3 of Superpowers: Test-driven execution, ensuring disciplined and trackable implementation."
+        },
+        "verification.md": {
+            "title": "Superpowers Verification Skill",
+            "category": "Development",
+            "tags": ["General"],
+            "description": "Phase 4 of Superpowers: Verification, ensuring output meets high-quality engineering standards."
+        },
+        "codegraph_analysis.md": {
+            "title": "Code Graph Static Analysis & Dependency Mapping",
+            "category": "Development",
+            "tags": ["Code Analysis", "Dependency Graph", "Architecture", "Static Scan"],
+            "description": "Guides AI assistants in efficiently analyzing complex codebases, extracting coupling relationships, and drawing code topology graphs."
         }
     }
 }
@@ -256,6 +334,7 @@ def parse_markdown_metadata(file_path: str) -> dict:
         "filename": filename,
         "title": default_title,
         "emoji": "\U0001f4c4",
+        "category": "未分类",
         "tags": ["常规"],
         "description": "此技能暂无详细描述信息。"
     }
@@ -279,6 +358,8 @@ def parse_markdown_metadata(file_path: str) -> dict:
                         metadata["title"] = value
                     elif key == "emoji":
                         metadata["emoji"] = value
+                    elif key == "category":
+                        metadata["category"] = value
                     elif key == "tags":
                         metadata["tags"] = [t.strip() for t in value.split(",")]
                     elif key == "description":
@@ -906,6 +987,7 @@ description: <一句话描述这个技能的用途>
                         meta = {
                             "title": item,
                             "emoji": "📦",
+                            "category": "工作流程" if self.language == "zh" else "Workflow",
                             "tags": ["主控", "模板", "项目级"] if self.language == "zh" else ["Master", "Template", "Project-Level"],
                             "description": "主控模板文件夹" if self.language == "zh" else "Master template folder"
                         }
@@ -1206,8 +1288,8 @@ The AI collaboration rules for this project have been loaded by the **AI Skill H
 
 ## 🎯 Currently Enabled Development Skills & Rules
 
-| Skill Name | Categories | Description | Local Link |
-| :--- | :--- | :--- | :--- |
+| Skill Name | Category | Tags | Description | Local Link |
+| :--- | :--- | :--- | :--- | :--- |
 """
             if active_metadata:
                 for meta in active_metadata:
@@ -1216,6 +1298,7 @@ The AI collaboration rules for this project have been loaded by the **AI Skill H
                     title = meta.get("title", filename)
                     tags = meta.get("tags", [])
                     desc = meta.get("description", "")
+                    category = meta.get("category", "Uncategorized")
                     
                     # Apply English translation if available
                     trans = SKILL_TRANSLATIONS.get("en", {}).get(filename)
