@@ -208,14 +208,23 @@ SKILL_TRANSLATIONS = {
 # Helpers
 # ============================================================
 
-def get_file_md5(file_path: str) -> str:
+def get_file_md5(file_path: str, cache: dict = None) -> str:
     if not os.path.exists(file_path) or os.path.isdir(file_path):
         return ""
+    cache_key = os.path.normcase(os.path.abspath(file_path))
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+    digest = hashlib.md5()
     with open(file_path, "rb") as f:
-        return hashlib.md5(f.read()).hexdigest()
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    value = digest.hexdigest()
+    if cache is not None:
+        cache[cache_key] = value
+    return value
 
 
-def check_dir_sync_status(src_dir: str, dst_root: str, skills_dir: str = None) -> str:
+def check_dir_sync_status(src_dir: str, dst_root: str, skills_dir: str = None, md5_cache: dict = None) -> str:
     """
     Check the synchronization status of a folder skill in a project.
     When skills_dir is provided, a destination file that doesn't match the folder's
@@ -245,9 +254,9 @@ def check_dir_sync_status(src_dir: str, dst_root: str, skills_dir: str = None) -
             dst_file = os.path.join(dst_root, rel_path)
 
             if os.path.exists(dst_file):
-                if get_file_md5(src_file) == get_file_md5(dst_file):
+                if get_file_md5(src_file, md5_cache) == get_file_md5(dst_file, md5_cache):
                     matched_files += 1
-                elif skills_dir and _matches_standalone_skill(skills_dir, f, dst_file):
+                elif skills_dir and _matches_standalone_skill(skills_dir, f, dst_file, md5_cache):
                     # The project file matches the standalone global skill version
                     # (which takes precedence over the folder-bundled copy during sync).
                     matched_files += 1
@@ -265,12 +274,35 @@ def check_dir_sync_status(src_dir: str, dst_root: str, skills_dir: str = None) -
     return "unloaded"
 
 
-def _matches_standalone_skill(skills_dir: str, filename: str, dst_file: str) -> bool:
+def _matches_standalone_skill(skills_dir: str, filename: str, dst_file: str, md5_cache: dict = None) -> bool:
     """Return True if dst_file's MD5 matches the standalone file skills_dir/filename."""
     standalone = os.path.join(skills_dir, filename)
     if not os.path.isfile(standalone):
         return False
-    return get_file_md5(standalone) == get_file_md5(dst_file)
+    return get_file_md5(standalone, md5_cache) == get_file_md5(dst_file, md5_cache)
+
+
+def safe_child_path(root: str, child: str) -> str:
+    """Resolve child under root and reject path traversal or absolute paths."""
+    if not child or os.path.isabs(child):
+        return ""
+    root_abs = os.path.abspath(root)
+    target = os.path.abspath(os.path.join(root_abs, child))
+    try:
+        if os.path.commonpath([root_abs, target]) != root_abs:
+            return ""
+    except ValueError:
+        return ""
+    return target
+
+
+def normalize_skill_filename(filename: str, ensure_md: bool = False) -> str:
+    """Return a safe single-file skill name while preserving readable characters."""
+    name = (filename or "").strip().replace("\\", "_").replace("/", "_")
+    name = re.sub(r'[<>:"|?*\x00-\x1f]', "", name).strip(" .")
+    if ensure_md and name and not name.lower().endswith(".md"):
+        name += ".md"
+    return name
 
 
 def copy_dir_recursive(src: str, dst: str):
@@ -289,7 +321,7 @@ def copy_dir_recursive(src: str, dst: str):
             shutil.copy2(src_file, dst_file)
 
 
-def remove_dir_if_matching(src_dir: str, dst_root: str):
+def remove_dir_if_matching(src_dir: str, dst_root: str, md5_cache: dict = None):
     """
     Recursively remove files in dst_root that match files in src_dir (same rel_path and MD5).
     Then recursively clean up empty folders.
@@ -306,7 +338,7 @@ def remove_dir_if_matching(src_dir: str, dst_root: str):
                 
             dst_file = os.path.join(dst_root, rel_path)
             if os.path.exists(dst_file) and not os.path.isdir(dst_file):
-                if get_file_md5(src_file) == get_file_md5(dst_file):
+                if get_file_md5(src_file, md5_cache) == get_file_md5(dst_file, md5_cache):
                     try:
                         os.remove(dst_file)
                     except Exception:
@@ -961,23 +993,23 @@ description: <一句话描述这个技能的用途>
 
     def ai_save_skill(self, skill_data):
         """Save an AI-generated skill to the global library."""
-        filename = skill_data.get("filename", "")
+        filename = normalize_skill_filename(skill_data.get("filename", ""), ensure_md=True)
         content = skill_data.get("content", "")
         if not filename or not content:
             return {"error": "Missing filename or content"}
 
-        # Ensure .md extension
-        if not filename.endswith(".md"):
-            filename += ".md"
-
-        fp = os.path.join(self.skills_dir, filename)
+        fp = safe_child_path(self.skills_dir, filename)
+        if not fp:
+            return {"error": "Invalid filename"}
         # If exists, append a numeric suffix
         if os.path.exists(fp):
             base = filename[:-3] if filename.endswith(".md") else filename
             counter = 1
             while os.path.exists(fp):
                 filename = f"{base}_{counter}.md"
-                fp = os.path.join(self.skills_dir, filename)
+                fp = safe_child_path(self.skills_dir, filename)
+                if not fp:
+                    return {"error": "Invalid filename"}
                 counter += 1
 
         try:
@@ -1021,7 +1053,9 @@ description: <一句话描述这个技能的用途>
 
     def get_skill_content(self, filename):
         """Return raw content of a skill file or the README.md inside a skill directory."""
-        fp = os.path.join(self.skills_dir, filename)
+        fp = safe_child_path(self.skills_dir, filename)
+        if not fp:
+            return {"error": "Invalid filename"}
         if os.path.isdir(fp):
             fp = os.path.join(fp, "README.md")
         if not os.path.exists(fp):
@@ -1034,7 +1068,9 @@ description: <一句话描述这个技能的用途>
 
     def save_skill(self, filename, content):
         """Save content to a global skill file or a skill directory's README.md."""
-        fp = os.path.join(self.skills_dir, filename)
+        fp = safe_child_path(self.skills_dir, filename)
+        if not fp:
+            return {"error": "Invalid filename"}
         if os.path.isdir(fp):
             fp = os.path.join(fp, "README.md")
         try:
@@ -1046,7 +1082,9 @@ description: <一句话描述这个技能的用途>
 
     def delete_skill(self, filename):
         """Delete a global skill file or directory physically."""
-        fp = os.path.join(self.skills_dir, filename)
+        fp = safe_child_path(self.skills_dir, filename)
+        if not fp:
+            return {"error": "Invalid filename"}
         try:
             if os.path.exists(fp):
                 if os.path.isdir(fp):
@@ -1060,9 +1098,12 @@ description: <一句话描述这个技能的用途>
 
     def create_skill(self, filename):
         """Create a new skill file with a dynamic bilingual template based on current settings."""
-        if not filename.endswith(".md"):
-            filename += ".md"
-        fp = os.path.join(self.skills_dir, filename)
+        filename = normalize_skill_filename(filename, ensure_md=True)
+        if not filename:
+            return {"error": "Invalid filename"}
+        fp = safe_child_path(self.skills_dir, filename)
+        if not fp:
+            return {"error": "Invalid filename"}
         if os.path.exists(fp):
             return {"error": "该文件已存在" if self.language == "zh" else "This file already exists"}
         
@@ -1111,6 +1152,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
     def get_projects(self):
         """Return projects list with per-skill sync status."""
         result = []
+        md5_cache = {}
         global_skills = self.get_skills()
         dir_skills = [skill for skill in global_skills if skill.get("is_dir", False)]
         file_skills = [skill for skill in global_skills if not skill.get("is_dir", False)]
@@ -1129,7 +1171,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             for skill in dir_skills:
                 fname = skill["filename"]
                 global_fp = os.path.join(self.skills_dir, fname)
-                status = check_dir_sync_status(global_fp, path, self.skills_dir)
+                status = check_dir_sync_status(global_fp, path, self.skills_dir, md5_cache)
                 entry["skills_status"][fname] = status
 
                 if status != "unloaded":
@@ -1148,9 +1190,9 @@ description: 简短说明此项技能指南的目的与开发约束规范。
                 target_fp = os.path.join(path, ".agent", "skills", fname)
                 if os.path.exists(global_fp):
                     if os.path.exists(target_fp):
-                        if get_file_md5(global_fp) == get_file_md5(target_fp):
+                        if get_file_md5(global_fp, md5_cache) == get_file_md5(target_fp, md5_cache):
                             entry["skills_status"][fname] = "synced"
-                        elif fname in bundled_files and get_file_md5(bundled_files[fname]) == get_file_md5(target_fp):
+                        elif fname in bundled_files and get_file_md5(bundled_files[fname], md5_cache) == get_file_md5(target_fp, md5_cache):
                             entry["skills_status"][fname] = "unloaded"
                         else:
                             entry["skills_status"][fname] = "out_of_sync"
@@ -1216,6 +1258,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         os.makedirs(target_dir, exist_ok=True)
 
         enabled_set = set(enabled_skills)
+        md5_cache = {}
         active_metadata = []
         global_skills = self.get_skills()
         enabled_global_skills = [skill for skill in global_skills if skill["filename"] in enabled_set]
@@ -1297,7 +1340,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             fname = skill["filename"]
             if skill.get("is_dir", False) and fname not in enabled_set:
                 src = os.path.join(self.skills_dir, fname)
-                remove_dir_if_matching(src, project_path)
+                remove_dir_if_matching(src, project_path, md5_cache)
 
         # Generate AGENTS.md in active language
         if self.language == "en":

@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Skill Hub Manager</title>
-  <link rel="icon" href="data:;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQEAAAAPw=">
+  <link rel="icon" type="image/svg+xml" href="app-icon.svg">
+  <link rel="alternate icon" type="image/png" href="app-icon.png">
   <link rel="stylesheet" href="index.css">
   <script src="lucide.min.js"></script>
   <script src="marked.min.js"></script>
@@ -14,7 +15,7 @@
     <!-- Left Sidebar -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-icon">&#9889;</div>
+        <div class="brand-icon"><img src="app-icon.svg" alt="" aria-hidden="true"></div>
         <div class="brand-title">
           <h1>AI Skill Hub</h1>
           <p>本地技能可视化管理器</p>
@@ -123,8 +124,8 @@
         </div>
         <div class="modal-header-actions">
           <div class="modal-tabs">
-            <button class="modal-tab active" onclick="switchModalTab('edit')">编辑源码</button>
-            <button class="modal-tab" onclick="switchModalTab('preview')">实时预览</button>
+            <button class="modal-tab active" id="modal-tab-edit" onclick="switchModalTab('edit')">编辑源码</button>
+            <button class="modal-tab" id="modal-tab-preview" onclick="switchModalTab('preview')">实时预览</button>
           </div>
           <button class="btn btn-secondary btn-icon" onclick="closeEditorModal()">
             <i data-lucide="x" style="width:18px;height:18px;"></i>
@@ -140,8 +141,8 @@
         </div>
       </div>
       <footer class="modal-header" style="border-top:1px solid var(--border-color);border-bottom:none;justify-content:flex-end;gap:0.75rem;">
-        <button class="btn btn-secondary" onclick="closeEditorModal()">取消</button>
-        <button class="btn btn-primary" onclick="handleSaveSkill()">
+        <button class="btn btn-secondary" id="modal-close-footer" onclick="closeEditorModal()">取消</button>
+        <button class="btn btn-primary" id="modal-save-btn" onclick="handleSaveSkill()">
           <i data-lucide="save" style="width:16px;height:16px;"></i>
           保存并更新
         </button>
