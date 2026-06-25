@@ -7,6 +7,7 @@ let skills = [];
 let currentProjectPath = null;
 let enabledSkills = new Set();
 let editingFilename = null;
+let isViewingSkill = false;
 
 // i18n & Theme State
 let currentLanguage = 'zh';
@@ -17,6 +18,8 @@ let deepseekModel = 'deepseek-chat';
 let apiBase = 'https://api.deepseek.com/v1';
 let aiGeneratedSkill = null; // cached AI result
 let activeCategoryFilter = null; // active category filter (null = show all)
+let searchRenderTimer = null;
+let hasRenderedSkillCards = false;
 
 // DOM cache
 const projectList = document.getElementById('project-list');
@@ -30,6 +33,10 @@ const modalEmoji = document.getElementById('modal-emoji');
 const modalBody = document.getElementById('modal-body');
 const markdownTextarea = document.getElementById('markdown-textarea');
 const markdownPreview = document.getElementById('markdown-preview');
+const modalTabEdit = document.getElementById('modal-tab-edit');
+const modalTabPreview = document.getElementById('modal-tab-preview');
+const modalCloseFooter = document.getElementById('modal-close-footer');
+const modalSaveBtn = document.getElementById('modal-save-btn');
 const toastContainer = document.getElementById('toast-container');
 const searchInput = document.getElementById('search-input');
 const skillsDirPath = document.getElementById('skills-dir-path');
@@ -65,8 +72,13 @@ const locales = {
     statusPendingUnmount: '待移除',
     statusUnloaded: '未装载',
     statusReadonly: '全局只读',
+    btnViewSkill: '查看文档',
     btnEditSkill: '编辑技能',
     toggleLabel: '启用装载',
+    viewModalTitle: '查看文档',
+    viewModalTabSource: 'Markdown 源码',
+    viewModalTabPreview: '文档预览',
+    viewModalClose: '关闭',
     editModalTitle: '编辑技能',
     editModalTabSource: '编辑源码',
     editModalTabPreview: '实时预览',
@@ -138,8 +150,13 @@ const locales = {
     statusPendingUnmount: 'Pending Removal',
     statusUnloaded: 'Unloaded',
     statusReadonly: 'Global Read-Only',
+    btnViewSkill: 'View Docs',
     btnEditSkill: 'Edit Skill',
     toggleLabel: 'Enable Mount',
+    viewModalTitle: 'View Docs',
+    viewModalTabSource: 'Markdown Source',
+    viewModalTabPreview: 'Document Preview',
+    viewModalClose: 'Close',
     editModalTitle: 'Edit Skill',
     editModalTabSource: 'Edit Source',
     editModalTabPreview: 'Live Preview',
@@ -495,10 +512,10 @@ function applyLanguage(lang) {
   document.getElementById('btn-refresh-skills').title = lang === 'zh' ? '刷新全局技能库' : 'Refresh Global Skills';
 
   // Modals (Editor)
-  document.querySelectorAll('.modal-tab')[0].textContent = t.editModalTabSource;
-  document.querySelectorAll('.modal-tab')[1].textContent = t.editModalTabPreview;
-  document.querySelectorAll('#editor-modal footer button')[0].textContent = t.editModalCancel;
-  document.querySelectorAll('#editor-modal footer button')[1].innerHTML = `<i data-lucide="save" style="width:16px;height:16px;"></i> ${t.editModalSave}`;
+  modalTabEdit.textContent = isViewingSkill ? t.viewModalTabSource : t.editModalTabSource;
+  modalTabPreview.textContent = isViewingSkill ? t.viewModalTabPreview : t.editModalTabPreview;
+  modalCloseFooter.textContent = isViewingSkill ? t.viewModalClose : t.editModalCancel;
+  modalSaveBtn.innerHTML = `<i data-lucide="save" style="width:16px;height:16px;"></i> ${t.editModalSave}`;
 
   // Modals (Settings)
   document.getElementById('settings-modal-title').textContent = t.settingsTitle;
@@ -601,11 +618,12 @@ function renderProjectsList() {
     const errorBadge = proj.error
       ? `<span style="font-size:0.65rem;color:#d1242f;font-weight:600;">⚠️ ${currentLanguage === 'zh' ? '路径无效' : 'Invalid Path'}</span>`
       : '';
-    const escapedPath = proj.path.replace(/\\/g, '\\\\');
+    const encodedPath = encodeURIComponent(proj.path);
+    const escapedPath = proj.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     item.innerHTML = `
-      <div class="project-details" onclick="handleSelectProject('${escapedPath}')">
-        <span class="project-name">${proj.name}</span>
-        <span class="project-path">${proj.path}</span>
+      <div class="project-details" onclick="handleSelectProject(decodeURIComponent('${encodedPath}'))">
+        <span class="project-name">${escapeHtml(proj.name)}</span>
+        <span class="project-path">${escapeHtml(proj.path)}</span>
         ${errorBadge}
       </div>
       <button class="delete-project-btn btn-icon" onclick="handleDeleteProject(event, '${escapedPath}')" title="移除项目">
@@ -658,6 +676,77 @@ function getSmartEmojiAndTags(skill) {
   
   return { emoji, tags };
 }
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeHtml(html) {
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  template.content.querySelectorAll('script, iframe, object, embed, link, meta').forEach(node => node.remove());
+  template.content.querySelectorAll('*').forEach(node => {
+    [...node.attributes].forEach(attr => {
+      const name = attr.name.toLowerCase();
+      const value = attr.value.trim().toLowerCase();
+      if (name.startsWith('on') || value.startsWith('javascript:') || value.startsWith('data:text/html')) {
+        node.removeAttribute(attr.name);
+      }
+    });
+  });
+  return template.innerHTML;
+}
+
+function renderMarkdown(markdown) {
+  return sanitizeHtml(marked.parse(markdown || ''));
+}
+
+function getCardFilename(event) {
+  const card = event.target.closest('.skill-card');
+  return card?.dataset.filename || '';
+}
+
+function handleCardsGridClick(event) {
+  const filename = getCardFilename(event);
+  if (!filename) return;
+  if (event.target.closest('.js-edit-skill')) {
+    event.stopPropagation();
+    openEditorModal(filename);
+    return;
+  }
+  if (event.target.closest('.js-delete-skill')) {
+    event.stopPropagation();
+    handleDeleteSkill(filename);
+    return;
+  }
+  if (event.target.closest('button, label, input, a')) return;
+  openSkillViewer(filename);
+}
+
+function handleCardsGridChange(event) {
+  if (!event.target.matches('.js-toggle-skill')) return;
+  const filename = getCardFilename(event);
+  if (filename) {
+    handleToggleSkill(filename, event.target.checked);
+  }
+}
+
+function handleCardsGridKeydown(event) {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const filename = getCardFilename(event);
+  if (!filename || event.target.closest('button, label, input, a')) return;
+  event.preventDefault();
+  openSkillViewer(filename);
+}
+
+cardsGrid.addEventListener('click', handleCardsGridClick);
+cardsGrid.addEventListener('change', handleCardsGridChange);
+cardsGrid.addEventListener('keydown', handleCardsGridKeydown);
 
 // Get canonical category name (e.g. 'Development', 'Workflow', 'Uncategorized', or raw custom string)
 function getCanonicalCategory(skill) {
@@ -749,10 +838,12 @@ function renderSkillsGrid() {
 
   const activeProj = currentProjectPath ? projects.find(p => p.path === currentProjectPath) : null;
   const statusMap = activeProj ? (activeProj.skills_status || {}) : {};
+  const fragment = document.createDocumentFragment();
 
   filtered.forEach((skill, index) => {
     const card = document.createElement('div');
     card.className = 'skill-card';
+    card.dataset.filename = skill.filename;
     card.style.transitionDelay = `${index * 35}ms`;
 
     // Apply 100% Local Smart Classifier for Emojis and Tags
@@ -810,30 +901,36 @@ function renderSkillsGrid() {
 
     // Translate Tags
     const translatedTags = resolvedTags.map(t => tagTranslations[currentLanguage]?.[t] || t);
-    const tagsHTML = translatedTags.map(t => `<span class="badge">${t}</span>`).join('');
+    const tagsHTML = translatedTags.map(t => `<span class="badge">${escapeHtml(t)}</span>`).join('');
+    const safeTitle = escapeHtml(resolvedTitle);
+    const safeMainTitle = escapeHtml(mainTitle);
+    const safeSubTitle = escapeHtml(subTitle);
+    const safeDesc = escapeHtml(resolvedDesc);
+    const safeFilename = escapeHtml(skill.filename);
+    const cardTitle = currentLanguage === 'zh' ? `点击查看 ${resolvedTitle} 的 Markdown 文档` : `Click to view the Markdown document for ${resolvedTitle}`;
 
     card.innerHTML = `
       <div class="card-header">
         <div class="skill-meta">
-          <div class="skill-emoji">${resolvedEmoji}</div>
+          <div class="skill-emoji">${escapeHtml(resolvedEmoji)}</div>
           <div class="skill-info">
-            <h4 class="skill-title" title="${resolvedTitle}">${mainTitle}</h4>
-            ${subTitle ? `<span class="skill-subtitle" title="${subTitle}">${subTitle}</span>` : ''}
+            <h4 class="skill-title" title="${safeTitle}">${safeMainTitle}</h4>
+            ${subTitle ? `<span class="skill-subtitle" title="${safeSubTitle}">${safeSubTitle}</span>` : ''}
           </div>
         </div>
         ${badgeHTML}
       </div>
-      <p class="card-body" title="${resolvedDesc}">${resolvedDesc}</p>
+      <p class="card-body" title="${safeDesc}">${safeDesc}</p>
       <div class="card-meta-line">
-        <span class="skill-tag" title="${skill.filename}">${skill.is_dir ? '📁 ' : ''}${skill.filename}</span>
+        <span class="skill-tag" title="${safeFilename}">${skill.is_dir ? '📁 ' : ''}${safeFilename}</span>
         <div class="card-tags">${tagsHTML}</div>
       </div>
       <div class="card-footer">
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <button class="btn btn-secondary btn-icon" onclick="openEditorModal('${skill.filename}')" title="${locales[currentLanguage].btnEditSkill}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
+          <button type="button" class="btn btn-secondary btn-icon js-edit-skill" title="${escapeHtml(locales[currentLanguage].btnEditSkill)}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
             <i data-lucide="edit-3" style="width:14px;height:14px;"></i>${locales[currentLanguage].btnEditSkill}
           </button>
-          <button class="btn btn-danger-outline btn-icon" onclick="handleDeleteSkill('${skill.filename}')" title="${currentLanguage === 'zh' ? '删除技能' : 'Delete Skill'}" style="padding: 0.5rem; height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center;">
+          <button type="button" class="btn btn-danger-outline btn-icon js-delete-skill" title="${currentLanguage === 'zh' ? '删除技能' : 'Delete Skill'}" style="padding: 0.5rem; height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center;">
             <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
           </button>
         </div>
@@ -841,21 +938,29 @@ function renderSkillsGrid() {
           <label class="switch-label">
             <span>${locales[currentLanguage].toggleLabel}</span>
             <label class="switch">
-              <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="handleToggleSkill('${skill.filename}', this.checked)">
+              <input type="checkbox" class="js-toggle-skill" ${isChecked ? 'checked' : ''}>
               <span class="slider"></span>
             </label>
           </label>` : ''}
       </div>`;
-    cardsGrid.appendChild(card);
+    card.title = cardTitle;
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.setAttribute('aria-label', cardTitle);
+    fragment.appendChild(card);
   });
+  cardsGrid.appendChild(fragment);
   lucide.createIcons();
 
-  // Staggered card entrance animation
+  // Staggered card entrance animation only on the first full render.
   requestAnimationFrame(() => {
     const cards = cardsGrid.querySelectorAll('.skill-card');
-    cards.forEach((card, i) => {
-      setTimeout(() => card.classList.add('visible'), i * 40);
-    });
+    if (hasRenderedSkillCards) {
+      cards.forEach(card => card.classList.add('visible'));
+      return;
+    }
+    cards.forEach((card, i) => setTimeout(() => card.classList.add('visible'), i * 40));
+    hasRenderedSkillCards = true;
   });
 }
 
@@ -940,7 +1045,7 @@ function _loadProjectState(proj) {
     if (status === 'synced' || status === 'out_of_sync') enabledSkills.add(fname);
   });
   currentProjectTitle.textContent = proj.name;
-  currentProjectDesc.innerHTML = `<i data-lucide="folder" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>${proj.path}`;
+  currentProjectDesc.innerHTML = `<i data-lucide="folder" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>${escapeHtml(proj.path)}`;
   syncBtn.removeAttribute('disabled');
   syncBtn.classList.add('pulsing-btn');
   renderProjectsList();
@@ -1014,19 +1119,39 @@ async function handleSyncSkills() {
 }
 
 function handleSearch() {
-  renderSkillsGrid();
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(renderSkillsGrid, 120);
 }
 
 // ------------------------------------------
 // Editor Modal
 // ------------------------------------------
 
+function resetSkillModalForEditing() {
+  isViewingSkill = false;
+  markdownTextarea.readOnly = false;
+  modalSaveBtn.style.display = '';
+  modalTabEdit.textContent = locales[currentLanguage].editModalTabSource;
+  modalTabPreview.textContent = locales[currentLanguage].editModalTabPreview;
+  modalCloseFooter.textContent = locales[currentLanguage].editModalCancel;
+}
+
+function resetSkillModalForViewing() {
+  isViewingSkill = true;
+  editingFilename = null;
+  markdownTextarea.readOnly = true;
+  modalSaveBtn.style.display = 'none';
+  modalTabEdit.textContent = locales[currentLanguage].viewModalTabSource;
+  modalTabPreview.textContent = locales[currentLanguage].viewModalTabPreview;
+  modalCloseFooter.textContent = locales[currentLanguage].viewModalClose;
+}
+
 async function openEditorModal(filename) {
+  resetSkillModalForEditing();
   editingFilename = filename;
   modalBody.className = 'modal-body tab-edit';
-  const tabs = document.querySelectorAll('.modal-tab');
-  tabs[0].classList.add('active');
-  tabs[1].classList.remove('active');
+  modalTabEdit.classList.add('active');
+  modalTabPreview.classList.remove('active');
   const skill = skills.find(s => s.filename === filename);
   modalEmoji.textContent = skill ? skill.emoji : '📄';
   modalTitle.textContent = (currentLanguage === 'zh' ? `编辑技能: ` : 'Edit Skill: ') + (skill ? skill.title : filename);
@@ -1047,26 +1172,55 @@ async function openEditorModal(filename) {
   lucide.createIcons();
 }
 
+async function openSkillViewer(filename) {
+  resetSkillModalForViewing();
+  modalBody.className = 'modal-body tab-preview';
+  modalTabEdit.classList.remove('active');
+  modalTabPreview.classList.add('active');
+  const skill = skills.find(s => s.filename === filename);
+  modalEmoji.textContent = skill ? skill.emoji : '📄';
+  modalTitle.textContent = `${locales[currentLanguage].viewModalTitle}: ${skill ? skill.title : filename}`;
+  markdownTextarea.value = currentLanguage === 'zh' ? '加载中...' : 'Loading...';
+  markdownPreview.innerHTML = `<p>${currentLanguage === 'zh' ? '加载中...' : 'Loading...'}</p>`;
+  markdownTextarea.setAttribute('disabled', 'true');
+  editorModal.classList.add('active');
+  try {
+    const data = await window.pywebview.api.get_skill_content(filename);
+    if (data.error) throw new Error(data.error);
+    markdownTextarea.value = data.content;
+    markdownPreview.innerHTML = renderMarkdown(data.content);
+  } catch (e) {
+    showToast((currentLanguage === 'zh' ? '加载失败: ' : 'Failed to load: ') + e, 'error');
+    closeEditorModal();
+  } finally {
+    markdownTextarea.removeAttribute('disabled');
+  }
+  lucide.createIcons();
+}
+
 function closeEditorModal() {
   editorModal.classList.remove('active');
   editingFilename = null;
+  isViewingSkill = false;
+  markdownTextarea.readOnly = false;
+  modalSaveBtn.style.display = '';
 }
 
 function switchModalTab(tab) {
-  const tabs = document.querySelectorAll('.modal-tab');
   if (tab === 'edit') {
-    tabs[0].classList.add('active');
-    tabs[1].classList.remove('active');
+    modalTabEdit.classList.add('active');
+    modalTabPreview.classList.remove('active');
     modalBody.className = 'modal-body tab-edit';
   } else {
-    tabs[0].classList.remove('active');
-    tabs[1].classList.add('active');
+    modalTabEdit.classList.remove('active');
+    modalTabPreview.classList.add('active');
     modalBody.className = 'modal-body tab-preview';
-    markdownPreview.innerHTML = marked.parse(markdownTextarea.value);
+    markdownPreview.innerHTML = renderMarkdown(markdownTextarea.value);
   }
 }
 
 async function handleSaveSkill() {
+  if (isViewingSkill) return;
   if (!editingFilename) return;
   try {
     const result = await window.pywebview.api.save_skill(editingFilename, markdownTextarea.value);
@@ -1138,7 +1292,7 @@ async function handleRefreshSkills() {
           if (status === 'synced' || status === 'out_of_sync') enabledSkills.add(fname);
         });
         currentProjectTitle.textContent = proj.name;
-        currentProjectDesc.innerHTML = `<i data-lucide="folder" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>${proj.path}`;
+        currentProjectDesc.innerHTML = `<i data-lucide="folder" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>${escapeHtml(proj.path)}`;
         updateStatistics();
       }
       renderProjectsList();
@@ -1453,7 +1607,7 @@ async function handleAIGenerateSkill() {
       appendChatBubble('ai', '❌ ' + result.error);
     } else if (result.skill) {
       aiGeneratedSkill = result.skill;
-      aiSkillContent.innerHTML = marked.parse(aiGeneratedSkill.content || '');
+      aiSkillContent.innerHTML = renderMarkdown(aiGeneratedSkill.content || '');
       aiSkillPreview.style.display = 'block';
       aiChatHistory.push({ role: 'assistant', content: '✅ 技能已生成，请在下方预览并保存' });
       appendChatBubble('ai', '✅ 技能已生成！你可以在下方预览，满意后点击 **保存**。');
@@ -1567,7 +1721,7 @@ function toggleApiKeyVisibility() {
 function appendChatBubble(role, text) {
   const div = document.createElement('div');
   div.className = `ai-chat-bubble ai-chat-${role}`;
-  div.innerHTML = `<div class="ai-chat-bubble-content">${marked.parse(text)}</div>`;
+  div.innerHTML = `<div class="ai-chat-bubble-content">${renderMarkdown(text)}</div>`;
   aiChatMessages.appendChild(div);
   aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
   lucide.createIcons();
@@ -1708,6 +1862,7 @@ window.handleToggleSkill = handleToggleSkill;
 window.handleDeleteProject = handleDeleteProject;
 window.handleSyncSkills = handleSyncSkills;
 window.handleSearch = handleSearch;
+window.openSkillViewer = openSkillViewer;
 window.openEditorModal = openEditorModal;
 window.closeEditorModal = closeEditorModal;
 window.switchModalTab = switchModalTab;

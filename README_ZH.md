@@ -1,21 +1,23 @@
-# AI Skill Hub Manager v2.0
+# AI Skill Hub Manager
 
-一款 Windows 桌面工具，用于统一管理 AI 开发规范。编写好开发规约后，一键同步到指定项目，以便 Cursor、Copilot、Windsurf、Claude 等 AI 工具自动读取。
+一个 Windows 桌面小工具，用来管理各个项目的 AI 编码规范。
 
-## 核心功能
+把开发规约写成 Markdown 文件，选好哪个项目需要哪些规则，一键同步过去。Cursor、Copilot、Windsurf、Claude 等工具会自动从 `.agent/skills/` 目录读取这些规范。
 
-- **统一技能库** — 将编码规范、设计原则、质量红线等编写成 Markdown 文件，并在应用内集中管理。
-- **多维度分类** — 支持为技能配置分类属性（如：编程开发、工作流程，或自定义分类如：Office、设计等），支持界面快速筛选与索引导出。
-- **一键同步项目** — 选择项目目录并勾选所需技能，自动同步到项目的 `.agent/skills/` 路径，并生成 `AGENTS.md` 索引文件。
-- **状态追踪** — 基于 MD5 值校验，自动显示技能文件在项目中的同步状态（已同步、有更新、待移除）。
-- **AI 辅助生成** — 支持对接 LLM（如 DeepSeek）进行联网搜索并直接生成技能文件，支持多会话历史记录。
-- **纯本地运行** — 使用系统原生 WebView 渲染，不占用网络端口，不启动本地 Web 服务，内置 Lucide 图标和 Marked 解析器。
+## 主要功能
 
-## 快速开始
+- **技能库管理** — 把编码标准、设计约定、Review 检查项之类的东西统一写成 `.md` 文件，集中存放。
+- **标签分类** — 给技能打标签（比如"前端"、"Git"、"Python"），在界面上按标签筛选。
+- **一键同步** — 选个项目目录，勾上需要的技能，点一下就复制到项目的 `.agent/skills/` 下，同时生成 `AGENTS.md` 索引。
+- **同步状态** — 用 MD5 对比文件变化，一眼就能看出哪些是最新的、哪些改过了、哪些还没同步。
+- **AI 对话** — 接入 LLM（比如 DeepSeek），支持联网搜索，可以直接让 AI 帮你写技能文件。支持多轮会话。
+- **纯本地运行** — 用系统自带的 WebView2 渲染界面，不起本地服务，不占端口。
 
-在 [Releases](https://github.com/w1ndwill/skill_store/releases) 页面下载 `AI_Skill_Hub_Manager.exe` 即可直接运行，无需安装。
+## 快速上手
 
-首次启动时，程序会在同级目录下自动创建 `skills/` 文件夹。将你的 `.md` 规范文件放入该文件夹，或直接在应用内新建即可。
+去 [Releases](https://github.com/w1ndwill/skill_store/releases) 页面下载 `AI_Skill_Hub_Manager.exe`，双击就能用，不用安装。
+
+第一次启动会在同级目录创建 `skills/` 文件夹，把你的 `.md` 规范文件丢进去就行，也可以在应用里直接新建。
 
 ## 从源码运行
 
@@ -26,7 +28,7 @@ pip install pywebview ddgs requests
 python main.py
 ```
 
-使用 PyInstaller 打包成单文件 exe：
+打包成单文件 exe：
 
 ```bash
 pip install pyinstaller
@@ -35,20 +37,20 @@ pyinstaller AI_Skill_Hub_Manager.spec
 
 ## 技术栈
 
-- **后端**：Python + `pywebview`（使用系统原生 WebView2 内核）
-- **前端**：HTML5, CSS3, JavaScript
-- **AI 与搜索**：DeepSeek API + DuckDuckGo Search
+- Python + [pywebview](https://pywebview.flowrl.com/)（系统原生 WebView2）
+- HTML / CSS / JS 前端
+- DeepSeek API + DuckDuckGo 联网搜索
 
 ## 目录结构
 
 ```
-├── main.py              # 后端 API 桥接、文件读写、AI 集成
+├── main.py              # 后端：文件读写、API 桥接、AI 对话
 ├── static/
-│   ├── index.html       # 界面骨架
+│   ├── index.html       # 页面结构
 │   ├── index.css        # 样式
-│   ├── app.js           # 前端业务逻辑
-│   ├── lucide.min.js    # 本地图标库
-│   └── marked.min.js    # 本地 Markdown 渲染器
+│   ├── app.js           # 前端逻辑
+│   ├── lucide.min.js    # 图标库（本地打包）
+│   └── marked.min.js    # Markdown 解析器（本地打包）
 ├── app.ico              # 应用图标
 └── .gitignore
 ```
