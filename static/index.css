@@ -1,5 +1,5 @@
 /* ==========================================
-   AI Skill Hub Manager — 高级感 · 精微细节
+   SkillHub - desktop interface
    Slate · Plus Jakarta Sans · Tactile Polish
    ========================================== */
 
@@ -208,8 +208,21 @@ body.dark-theme ::-webkit-scrollbar-thumb:hover{background:#54524c}
 .config-value:hover{color:var(--accent);text-decoration:none}
 
 /* ── Sidebar Actions ── */
-.sidebar-actions{display:flex;gap:.45rem}
-.sidebar-actions .btn{flex:1;padding:.55rem .5rem;font-size:.76rem}
+.sidebar-actions{display:flex;flex-wrap:wrap;gap:.45rem}
+.sidebar-actions .btn{flex:1 1 calc(50% - .45rem);padding:.55rem .5rem;font-size:.76rem}
+.dialog-message{white-space:pre-wrap}
+.service-status-row{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:-.15rem}
+.service-status{
+  display:inline-flex;align-items:center;gap:.3rem;
+  padding:.22rem .48rem;border-radius:999px;
+  font-size:.61rem;font-weight:650;
+  background:var(--bg-active);color:var(--text-tertiary);
+  border:1px solid var(--border-light);
+}
+.service-status::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.service-status.ready{background:var(--green-soft);color:var(--green);border-color:transparent}
+.service-status.ai{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.service-status.local{background:var(--bg-active);color:var(--text-secondary)}
 
 /* ── Section ── */
 .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem}
@@ -543,6 +556,70 @@ body.dark-theme .badge{background:var(--bg-active)}
   padding-top:.7rem;
   display:flex;align-items:center;justify-content:space-between;
 }
+.collection-card{
+  border-color:color-mix(in srgb,var(--accent) 24%,var(--border-hairline));
+}
+.collection-card .skill-emoji{
+  background:linear-gradient(135deg,var(--accent-soft),var(--bg-active));
+}
+.collection-count{
+  display:inline-flex;align-items:center;gap:.3rem;
+  color:var(--accent);font-weight:650;
+}
+
+/* ── Collection manager ── */
+.collection-modal-container{
+  max-width:720px;height:auto;max-height:82vh;
+}
+.collection-modal-summary{
+  margin-top:.2rem;font-size:.72rem;color:var(--text-tertiary);
+}
+.collection-members-list{
+  padding:1rem 1.25rem;overflow-y:auto;
+  display:flex;flex-direction:column;gap:.65rem;
+  background:var(--bg-app);
+}
+.collection-member{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;gap:1rem;
+  padding:.85rem 1rem;border-radius:var(--radius-md);
+  border:1px solid var(--border-hairline);
+  background:var(--bg-surface);box-shadow:var(--elevation-1);
+}
+.collection-member-main{
+  min-width:0;display:flex;align-items:flex-start;gap:.7rem;
+}
+.collection-member-emoji{
+  width:34px;height:34px;flex-shrink:0;border-radius:var(--radius-sm);
+  display:flex;align-items:center;justify-content:center;
+  background:var(--accent-soft);
+}
+.collection-member-copy{min-width:0}
+.collection-member-title{
+  font-size:.82rem;font-weight:700;color:var(--text-primary);
+}
+.collection-member-description{
+  margin-top:.22rem;font-size:.7rem;line-height:1.45;
+  color:var(--text-secondary);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;
+}
+.collection-member-file{
+  margin-top:.32rem;font-family:var(--font-mono);
+  font-size:.6rem;color:var(--accent);
+}
+.collection-member-actions{
+  display:flex;align-items:center;gap:.7rem;
+}
+.collection-member-state{
+  min-width:2.4rem;text-align:right;
+  font-size:.66rem;font-weight:650;color:var(--text-tertiary);
+}
+.collection-member.enabled .collection-member-state{color:var(--green)}
+.collection-modal-footer{
+  border-top:1px solid var(--border-hairline);border-bottom:none;
+  justify-content:space-between;font-size:.68rem;color:var(--text-tertiary);
+}
 
 /* ============================================
    7. Toggle Switch — Spring Physics
@@ -648,6 +725,17 @@ body.dark-theme .btn-danger-outline{background:transparent}
 body.dark-theme .btn-danger-outline:hover{background:var(--rose-soft)}
 
 #sync-btn:disabled{opacity:.45;cursor:not-allowed;pointer-events:none}
+.sync-history-btn{
+  width:34px;height:34px;padding:0;flex-shrink:0;
+  border:1px solid var(--border);
+  background:var(--bg-surface);
+}
+.sync-history-btn:disabled{opacity:.38;cursor:not-allowed;pointer-events:none}
+.dialog-message{
+  width:100%;max-height:44vh;overflow-y:auto;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+  font-family:var(--font-mono);font-size:.8rem!important;
+}
 
 /* ============================================
    9. Modals — Elevated
@@ -813,6 +901,14 @@ body.dark-theme .settings-field:not(:last-child){
   color:var(--accent);text-decoration:none;
 }
 .settings-field-desc a:hover{text-decoration:underline}
+.config-status{
+  display:inline-flex;align-self:flex-start;
+  margin-top:.28rem;padding:.2rem .5rem;border-radius:999px;
+  font-size:.65rem;font-weight:650;
+  background:var(--bg-active);color:var(--text-tertiary);
+}
+.config-status.ready{background:var(--green-soft);color:var(--green)}
+.config-status.neutral{background:var(--bg-active);color:var(--text-tertiary)}
 
 /* Field control row */
 .settings-field-control{

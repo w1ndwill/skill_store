@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Skill Hub Manager</title>
+  <title>SkillHub</title>
   <link rel="icon" type="image/svg+xml" href="app-icon.svg">
   <link rel="alternate icon" type="image/png" href="app-icon.png">
   <link rel="stylesheet" href="index.css">
@@ -17,7 +17,7 @@
       <div class="brand">
         <div class="brand-icon"><img src="app-icon.svg" alt="" aria-hidden="true"></div>
         <div class="brand-title">
-          <h1>AI Skill Hub</h1>
+          <h1>SkillHub</h1>
           <p>本地技能可视化管理器</p>
         </div>
       </div>
@@ -43,10 +43,18 @@
           <i data-lucide="file-plus" style="width:15px;height:15px;"></i>
           新建技能
         </button>
+        <button class="btn btn-secondary" onclick="handleImportSkill()" id="btn-import-skill">
+          <i data-lucide="download" style="width:15px;height:15px;"></i>
+          导入技能
+        </button>
         <button class="btn btn-ai" onclick="openAIModal()" id="btn-ai-search" style="flex:1; padding:0.5rem 0.5rem; font-size:0.75rem;">
           <i data-lucide="sparkles" style="width:15px;height:15px;"></i>
           AI 搜索
         </button>
+      </div>
+      <div class="service-status-row">
+        <span id="api-config-summary" class="service-status neutral">AI 未配置</span>
+        <span id="import-mode-summary" class="service-status local">导入：本地体检</span>
       </div>
 
       <!-- Projects List -->
@@ -80,6 +88,9 @@
           <p id="current-project-desc">选择左侧项目后，可在此管理技能装载</p>
         </div>
         <div class="header-actions">
+          <button id="undo-sync-btn" class="btn btn-secondary btn-icon sync-history-btn" onclick="handleUndoSync()" disabled title="撤销最近同步">
+            <i data-lucide="undo-2" style="width:16px;height:16px;"></i>
+          </button>
           <button id="sync-btn" class="btn btn-primary pulsing-btn" onclick="handleSyncSkills()" disabled>
             <i data-lucide="refresh-cw" style="width:16px;height:16px;"></i>
             一键同步技能
@@ -146,6 +157,29 @@
           <i data-lucide="save" style="width:16px;height:16px;"></i>
           保存并更新
         </button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Skill Collection Modal -->
+  <div id="collection-modal" class="modal-overlay">
+    <div class="modal-container collection-modal-container">
+      <header class="modal-header">
+        <div class="modal-title-info">
+          <span class="modal-emoji">🧰</span>
+          <div>
+            <h3 class="modal-title" id="collection-modal-title">技能集合</h3>
+            <p class="collection-modal-summary" id="collection-modal-summary"></p>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-icon" onclick="closeCollectionModal()">
+          <i data-lucide="x" style="width:18px;height:18px;"></i>
+        </button>
+      </header>
+      <div class="collection-members-list" id="collection-members-list"></div>
+      <footer class="modal-header collection-modal-footer">
+        <span id="collection-modal-hint">停用子技能不会删除文件；下次同步时生效。</span>
+        <button class="btn btn-secondary" onclick="closeCollectionModal()">关闭</button>
       </footer>
     </div>
   </div>
@@ -239,6 +273,7 @@
               <div class="settings-field-label">
                 <span id="settings-label-apikey">DeepSeek API Key</span>
                 <span class="settings-field-desc" id="settings-desc-apikey">用于 AI 搜索和生成技能内容 · <a href="https://platform.deepseek.com/api_keys" target="_blank">获取 Key</a></span>
+                <span id="api-config-status" class="config-status neutral">未配置</span>
               </div>
               <div class="settings-field-control">
                 <input type="password" id="settings-apikey" class="settings-input" placeholder="sk-...">
@@ -246,6 +281,16 @@
                   <i data-lucide="eye" style="width:14px;height:14px;" id="apikey-eye-icon"></i>
                 </button>
               </div>
+            </div>
+            <div class="settings-field">
+              <div class="settings-field-label">
+                <span id="settings-label-ai-import">导入时使用 AI 优化</span>
+                <span class="settings-field-desc" id="settings-desc-ai-import">开启后先完成本地体检，再调用已配置的 AI 优化入口文档；失败时自动回退本地结果。</span>
+              </div>
+              <label class="switch" title="AI 优化">
+                <input type="checkbox" id="settings-ai-import-optimization">
+                <span class="slider"></span>
+              </label>
             </div>
             <div class="settings-field vertical">
               <div class="settings-field-label">
@@ -351,7 +396,7 @@
 
   <!-- Custom Dialog Modal (Prompt/Confirm) -->
   <div id="dialog-modal" class="modal-overlay">
-    <div class="modal-container" style="max-width: 480px; height: auto; display: flex; flex-direction: column;">
+    <div class="modal-container" style="max-width: 560px; height: auto; display: flex; flex-direction: column;">
       <header class="modal-header" style="padding: 1.25rem 1.5rem;">
         <div class="modal-title-info">
           <span class="modal-emoji" id="dialog-emoji">💬</span>
@@ -362,12 +407,13 @@
         </button>
       </header>
       <div class="modal-body dialog-body" style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; overflow: visible;">
-        <p id="dialog-message" style="font-size: 0.9rem; color: var(--text-main); line-height: 1.5; margin: 0;"></p>
+        <p id="dialog-message" class="dialog-message" style="font-size: 0.9rem; color: var(--text-main); line-height: 1.5; margin: 0;"></p>
         <div id="dialog-input-container" style="display: none; width: 100%;">
           <input type="text" id="dialog-input" class="settings-input" style="width: 100%;" placeholder="">
         </div>
       </div>
       <footer class="modal-header" style="border-top: 1px solid var(--border-color); border-bottom: none; justify-content: flex-end; gap: 0.75rem; padding: 1rem 1.5rem;">
+        <button class="btn btn-secondary" id="dialog-btn-secondary" style="display:none; padding: 0.5rem 1rem; font-size: 0.825rem; border-radius: 8px;">其他</button>
         <button class="btn btn-secondary" onclick="closeDialogModal()" id="dialog-btn-cancel" style="padding: 0.5rem 1rem; font-size: 0.825rem; border-radius: 8px;">取消</button>
         <button class="btn btn-primary" id="dialog-btn-confirm" style="padding: 0.5rem 1rem; font-size: 0.825rem; border-radius: 8px;">确定</button>
       </footer>
