@@ -7,6 +7,7 @@ __pycache__/
 build/
 dist/
 *.spec
+!SkillHub.spec
 
 # App runtime
 config.json
@@ -19,7 +20,11 @@ config.json
 .agents/
 AGENTS.md
 
-# Default skills folder
+# Preserve bundled upstream sources verbatim, including nested agent metadata.
+!original-skills/
+!original-skills/**
+
+# Legacy/runtime skills folder (active libraries live outside the repository)
 /skills/
 
 # Compiled binaries (upload via GitHub Releases)
