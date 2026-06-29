@@ -1,5 +1,5 @@
 // ==========================================
-// AI Skill Hub Manager - pywebview Frontend
+// SkillHub - pywebview Frontend
 // ==========================================
 
 let projects = [];
@@ -8,6 +8,8 @@ let currentProjectPath = null;
 let enabledSkills = new Set();
 let editingFilename = null;
 let isViewingSkill = false;
+let displaySkillsByFilename = new Map();
+let activeCollectionId = null;
 
 // i18n & Theme State
 let currentLanguage = 'zh';
@@ -16,6 +18,9 @@ let defaultScanDir = '';
 let deepseekApiKey = '';
 let deepseekModel = 'deepseek-chat';
 let apiBase = 'https://api.deepseek.com/v1';
+let hasAiKey = false;
+let apiKeyHint = '';
+let aiImportOptimization = false;
 let aiGeneratedSkill = null; // cached AI result
 let activeCategoryFilter = null; // active category filter (null = show all)
 let searchRenderTimer = null;
@@ -25,6 +30,7 @@ let hasRenderedSkillCards = false;
 const projectList = document.getElementById('project-list');
 const cardsGrid = document.getElementById('cards-grid');
 const syncBtn = document.getElementById('sync-btn');
+const undoSyncBtn = document.getElementById('undo-sync-btn');
 const currentProjectTitle = document.getElementById('current-project-title');
 const currentProjectDesc = document.getElementById('current-project-desc');
 const editorModal = document.getElementById('editor-modal');
@@ -42,13 +48,18 @@ const searchInput = document.getElementById('search-input');
 const skillsDirPath = document.getElementById('skills-dir-path');
 const toolbarStats = document.getElementById('toolbar-stats');
 const categoryFilterBar = document.getElementById('category-filter-bar');
+const collectionModal = document.getElementById('collection-modal');
+const collectionModalTitle = document.getElementById('collection-modal-title');
+const collectionModalSummary = document.getElementById('collection-modal-summary');
+const collectionMembersList = document.getElementById('collection-members-list');
+const collectionModalHint = document.getElementById('collection-modal-hint');
 
 // ------------------------------------------
 // Bilingual i18n Dictionary
 // ------------------------------------------
 const locales = {
   zh: {
-    sidebarTitle: 'AI Skill Hub',
+    sidebarTitle: 'SkillHub',
     sidebarSub: '本地技能可视化管理器',
     btnAssociate: '关联项目',
     btnNewSkill: '新建技能',
@@ -60,6 +71,17 @@ const locales = {
     noProjectDesc: '选择左侧项目后，可在此管理技能装载',
     syncBtn: '一键同步技能',
     syncingBtn: '同步中…',
+    syncPreviewTitle: '同步变更预览',
+    syncPreviewIntro: '确认后才会写入项目：',
+    syncPreviewConflict: '存在需要明确确认的覆盖冲突。',
+    syncPreviewNoChanges: '当前项目已经是最新状态',
+    syncApply: '应用同步',
+    undoSyncTitle: '撤销最近同步',
+    undoSyncMessage: '将恢复最近一次同步修改过的文件。同步后又被手动编辑的文件会自动跳过。',
+    undoSyncConfirm: '撤销同步',
+    toastUndoSuccess: '最近一次同步已撤销',
+    toastUndoPartial: '撤销完成，但跳过了已被再次修改的文件: ',
+    toastUndoFail: '撤销失败: ',
     statTotal: '全局技能库',
     statSynced: '已装载',
     statUnsynced: '待更新',
@@ -126,7 +148,7 @@ const locales = {
     defaultDesc: '此技能暂无详细描述信息。'
   },
   en: {
-    sidebarTitle: 'AI Skill Hub',
+    sidebarTitle: 'SkillHub',
     sidebarSub: 'Local Skill Manager',
     btnAssociate: 'Link Project',
     btnNewSkill: 'New Skill',
@@ -138,6 +160,17 @@ const locales = {
     noProjectDesc: 'Select a project on the left to manage skill mounts',
     syncBtn: 'Sync Skills Now',
     syncingBtn: 'Syncing...',
+    syncPreviewTitle: 'Sync Change Preview',
+    syncPreviewIntro: 'Files will only be written after confirmation:',
+    syncPreviewConflict: 'Explicit confirmation is required for overwrite conflicts.',
+    syncPreviewNoChanges: 'This project is already up to date',
+    syncApply: 'Apply Sync',
+    undoSyncTitle: 'Undo Last Sync',
+    undoSyncMessage: 'Files changed by the most recent sync will be restored. Files edited afterward will be skipped.',
+    undoSyncConfirm: 'Undo Sync',
+    toastUndoSuccess: 'The most recent sync was undone',
+    toastUndoPartial: 'Undo completed, but skipped files edited afterward: ',
+    toastUndoFail: 'Undo failed: ',
     statTotal: 'Global Skill Library',
     statSynced: 'Currently Loaded',
     statUnsynced: 'Pending Update',
@@ -208,9 +241,9 @@ const locales = {
 const skillTranslations = {
   zh: {
     'Git提交规范.md': {
-      title: 'Git提交规范',
+      title: 'Git 提交规范',
       category: 'Development',
-      description: '遵循 Angular 规范的 Git Commit 消息标准，让项目的版本演进历史清晰、规范且可追溯。'
+      description: '用于创建或审查提交信息与仓库卫生；不会自行提交、推送或改写历史。'
     },
     'frontend_optimization.md': {
       title: '前端性能优化技能指南',
@@ -218,71 +251,71 @@ const skillTranslations = {
       description: '现代 Web 应用全方位性能优化指南，旨在提升用户体验、Lighthouse 评分及核心网页指标。'
     },
     'handoff.md': {
-      title: '流程接力与工作交接技能指南',
+      title: 'AI 会话接力与状态恢复',
       category: 'Workflow',
-      description: 'AI 开发上下文无损交接与接力指南，有效解决长会话记忆衰退及多阶段开发无缝恢复问题。'
+      description: '用于跨会话继续任务或用户明确要求交接；不用于团队发布和代码移交。'
     },
     'process_optimization.md': {
-      title: '流程优化技能指南',
+      title: '开发与运行流程优化',
       category: 'Workflow',
-      description: '系统化软件开发与系统运行流程优化指南，覆盖本地开发、构建部署及运行时执行效率。'
+      description: '用于有数据支持的开发、构建、CI/CD 和运行时优化，强调先测量再改进。'
     },
     'python_env_isolation.md': {
-      title: 'Python 虚拟环境与依赖管理规范',
+      title: 'Python 环境与依赖隔离',
       category: 'Development',
-      description: '指导 AI 助手在开发 Python 项目时自动创建和使用本地专属虚拟环境，杜绝全局环境污染与依赖冲突。'
+      description: '遵循项目已有包管理器和锁文件，安全隔离 Python 环境与依赖。'
     },
     'run_recording.md': {
-      title: '运行记录与可观测性技能指南',
+      title: '安全的运行记录与可观测性',
       category: 'Development',
-      description: '高质量系统运行记录与可观测性指南，涵盖结构化日志分级、异常监控以及诊断审计规范。'
+      description: '设计日志、追踪和诊断记录，同时执行数据最小化、脱敏和受控留存。'
     },
     '代码移交标准.md': {
-      title: '代码移交标准',
+      title: '团队代码与运维移交',
       category: 'Workflow',
-      description: '用于保障代码开发完成后，平滑、无缝地移交给其他开发者或运维团队的主动审查与交接清单。'
+      description: '用于版本发布、团队换手或运维接管前的长期可维护性交付。'
     },
     '前端性能优化规范.md': {
-      title: '前端性能优化规范',
+      title: '前端性能优化',
       category: 'Development',
-      description: '涵盖图片延迟加载、虚拟列表、代码分割、静态资源缓存以及打包体积压缩的本地开发与交付指南。'
+      description: '基于测量数据优化前端加载、交互、渲染与资源性能，避免固定阈值。'
     },
     'superpowers-template': {
-      title: 'Superpowers 主控模版',
+      title: 'Superpowers 工程工作流',
       category: 'Workflow',
-      description: 'Superpowers 技能体系的主控模板文件夹，包含全局 of Agent 工作流与核心规划/脑暴/执行规约。'
+      description: '为中大型实现任务提供按风险裁剪的分析、规划、执行和验证流程。'
     },
     'brainstorm.md': {
-      title: 'Superpowers 头脑风暴技能',
+      title: 'Superpowers 分析与方案探索',
       category: 'Workflow',
-      description: 'Superpowers 体系的第一阶段：头脑风暴，确保在做出设计决策前充分分析问题空间。'
+      description: '用于需求模糊、存在架构取舍或影响多个模块的任务。'
     },
     'planning.md': {
-      title: 'Superpowers 规划技能',
+      title: 'Superpowers 实施规划',
       category: 'Workflow',
-      description: 'Superpowers 体系的第二阶段：规划，确保在实现前有详尽的步骤路线图。'
+      description: '用于多文件、多阶段、跨会话或高风险实现任务。'
     },
     'tdd_execution.md': {
-      title: 'Superpowers TDD 执行技能',
+      title: 'Superpowers 测试驱动执行',
       category: 'Development',
-      description: 'Superpowers 体系的第三阶段：测试驱动执行，确保实现过程规范、增量可追踪。'
+      description: '对可测试的行为变化执行 TDD，并为其他任务提供等价验证路径。'
     },
     'verification.md': {
-      title: 'Superpowers 验证技能',
-      category: 'Development',
-      description: 'Superpowers 体系的第四阶段：验证，确保产出物达到高质量工程标准。'
+      title: 'Superpowers 验证与交付',
+      category: 'Workflow',
+      description: '执行与风险匹配的验证、回归检查和结果说明。'
     },
     'codegraph_analysis.md': {
-      title: '代码图谱静态分析与依赖图构建',
+      title: '代码图谱静态分析与依赖审计',
       category: 'Development',
-      description: '指导 AI 助手如何高效分析复杂代码库、提取文件与组件间的耦合关系，并绘制高清晰度的代码拓扑图谱。'
+      description: '分析模块依赖、调用链和耦合风险，并按需生成可验证的 Mermaid 图。'
     }
   },
   en: {
     'Git提交规范.md': {
       title: 'Git Commit Guideline',
       category: 'Development',
-      description: 'Follow Angular specs for Git Commit messages, making version history clear, standardized, and traceable.'
+      description: 'Create or review Conventional Commit messages and repository hygiene without automatically committing or pushing.'
     },
     'frontend_optimization.md': {
       title: 'Frontend Performance Optimization Skill Guide',
@@ -290,64 +323,64 @@ const skillTranslations = {
       description: 'Comprehensive performance optimization guide for modern web apps, aimed at improving user experience, Lighthouse scores, and Core Web Vitals.'
     },
     'handoff.md': {
-      title: 'Handoff & Context Resume Skill Guide',
+      title: 'AI Session Handoff & Context Resume',
       category: 'Workflow',
-      description: 'Resolves memory decay from context saturation, implementing seamless lossless state recovery and context handoff between sessions.'
+      description: 'Capture task state when work must continue in another session; not for release handoffs.'
     },
     'process_optimization.md': {
-      title: 'Process Optimization Skill Guide',
+      title: 'Development & Runtime Process Optimization',
       category: 'Workflow',
-      description: 'Systematic software development and execution process optimization guide, covering local dev, build deployment, and runtime efficiency.'
+      description: 'Measure and improve observable development, build, CI/CD, and runtime bottlenecks.'
     },
     'python_env_isolation.md': {
-      title: 'Python Virtual Env & Dependency Management',
+      title: 'Python Environment & Dependency Isolation',
       category: 'Development',
-      description: 'Guide AI assistants to automatically create and use local virtual environments when developing Python projects, preventing global package conflicts.'
+      description: 'Follow the project package manager and lockfile while isolating Python environments and dependencies.'
     },
     'run_recording.md': {
-      title: 'Run Recording & Logging Skill Guide',
+      title: 'Secure Run Recording & Observability',
       category: 'Development',
-      description: 'High-quality system logging and observability guide, covering structured log levels, exception monitoring, and diagnostics/auditing.'
+      description: 'Design logs, traces, and diagnostics with data minimization, redaction, and controlled retention.'
     },
     '代码移交标准.md': {
-      title: 'Code Handoff Standards',
+      title: 'Team Code & Operations Handoff',
       category: 'Workflow',
-      description: 'An active review and handoff checklist to ensure smooth, seamless transition of code to other developers or ops teams.'
+      description: 'Prepare maintainable delivery before a release, team transition, or operations takeover.'
     },
     '前端性能优化规范.md': {
-      title: 'Frontend Performance Optimization Standards',
+      title: 'Frontend Performance Optimization',
       category: 'Development',
-      description: 'Local development and delivery guide covering image lazy loading, virtual lists, code splitting, asset caching, and bundle compression.'
+      description: 'Optimize measured frontend loading, interaction, rendering, and asset performance without fixed thresholds.'
     },
     'superpowers-template': {
-      title: 'Superpowers Master Template',
+      title: 'Superpowers Engineering Workflow',
       category: 'Workflow',
-      description: 'Master template folder for Superpowers skill system, containing global Agent workflows and planning/brainstorming/execution rules.'
+      description: 'Risk-scaled analysis, planning, execution, and verification for medium or large implementation tasks.'
     },
     'brainstorm.md': {
-      title: 'Superpowers Brainstorming Skill',
+      title: 'Superpowers Analysis & Design Exploration',
       category: 'Workflow',
-      description: 'Phase 1 of Superpowers: Brainstorming, ensuring thorough problem analysis before design decisions.'
+      description: 'Use for ambiguous requirements, architectural tradeoffs, or changes spanning multiple modules.'
     },
     'planning.md': {
-      title: 'Superpowers Planning Skill',
+      title: 'Superpowers Implementation Planning',
       category: 'Workflow',
-      description: 'Phase 2 of Superpowers: Planning, ensuring a documented step-by-step roadmap before implementation.'
+      description: 'Plan multi-file, multi-stage, cross-session, or high-risk implementations.'
     },
     'tdd_execution.md': {
-      title: 'Superpowers TDD Execution Skill',
+      title: 'Superpowers Test-Driven Execution',
       category: 'Development',
-      description: 'Phase 3 of Superpowers: Test-driven execution, ensuring disciplined and trackable implementation.'
+      description: 'Apply TDD to testable behavior changes and equivalent validation to other task types.'
     },
     'verification.md': {
-      title: 'Superpowers Verification Skill',
-      category: 'Development',
-      description: 'Phase 4 of Superpowers: Verification, ensuring output meets high-quality engineering standards.'
+      title: 'Superpowers Verification & Delivery',
+      category: 'Workflow',
+      description: 'Perform risk-scaled final verification, regression checks, and evidence-based delivery.'
     },
     'codegraph_analysis.md': {
-      title: 'Code Graph Static Analysis & Dependency Mapping',
+      title: 'Code Graph Static Analysis & Dependency Audit',
       category: 'Development',
-      description: 'Guides AI assistants in efficiently analyzing complex codebases, extracting coupling relationships, and drawing code topology graphs.'
+      description: 'Analyze module dependencies, call paths, and coupling risks, with verifiable Mermaid diagrams when useful.'
     }
   }
 };
@@ -445,6 +478,7 @@ async function init() {
   await fetchSkills();
   await fetchProjects();
   lucide.createIcons();
+  checkForUnregisteredSkills();
 }
 
 async function fetchConfig() {
@@ -458,10 +492,13 @@ async function fetchConfig() {
     defaultScanDir = config.default_scan_dir || '';
     deepseekModel = config.deepseek_model || 'deepseek-chat';
     apiBase = config.api_base || 'https://api.deepseek.com/v1';
-    // API key is masked as "***" if set; actual value only used via save_ai_config
+    hasAiKey = Boolean(config.has_ai_key);
+    apiKeyHint = config.api_key_hint || '';
+    aiImportOptimization = Boolean(config.ai_import_optimization);
 
     applyTheme(currentTheme);
     applyLanguage(currentLanguage);
+    updateAIConfigurationIndicators();
   } catch (e) {
     showToast(currentLanguage === 'zh' ? '获取系统配置失败: ' + e : 'Failed to fetch config: ' + e, 'error');
   }
@@ -485,6 +522,7 @@ function applyLanguage(lang) {
   document.querySelector('.brand-title p').textContent = t.sidebarSub;
   document.getElementById('btn-add-project').innerHTML = `<i data-lucide="folder-plus" style="width:15px;height:15px;"></i> ${t.btnAssociate}`;
   document.getElementById('btn-new-skill').innerHTML = `<i data-lucide="file-plus" style="width:15px;height:15px;"></i> ${t.btnNewSkill}`;
+  document.getElementById('btn-import-skill').innerHTML = `<i data-lucide="download" style="width:15px;height:15px;"></i> ${lang === 'zh' ? '导入技能' : 'Import Skill'}`;
   document.querySelector('.sidebar-section .section-title h2').textContent = t.headingProjects;
   document.getElementById('sidebar-settings-text').textContent = t.btnSettings;
 
@@ -501,6 +539,7 @@ function applyLanguage(lang) {
   
   // Sync Button Text
   syncBtn.innerHTML = `<i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> ${t.syncBtn}`;
+  undoSyncBtn.title = t.undoSyncTitle;
   
   // Search Controls & Header Title
   if (!currentProjectPath) {
@@ -540,6 +579,12 @@ function applyLanguage(lang) {
   document.getElementById('settings-desc-apibase').textContent = t.settingsDescApibase;
   document.getElementById('settings-label-apikey').textContent = t.settingsLabelApikey;
   document.getElementById('settings-desc-apikey').textContent = t.settingsDescApikey;
+  document.getElementById('settings-label-ai-import').textContent = lang === 'zh'
+    ? '导入时使用 AI 优化'
+    : 'Use AI optimization during import';
+  document.getElementById('settings-desc-ai-import').textContent = lang === 'zh'
+    ? '开启后先完成本地体检，再调用已配置的 AI 优化入口文档；失败时自动回退本地结果。'
+    : 'Runs local validation first, then uses the configured AI to optimize the entry document; failures fall back to local results.';
   document.getElementById('settings-label-aimodel').textContent = t.settingsLabelAimodel;
   document.getElementById('settings-desc-aimodel').textContent = t.settingsDescAimodel;
   document.getElementById('btn-test-connection').innerHTML = `<i data-lucide="zap" style="width:13px;height:13px;"></i> ${t.btnTestConnection}`;
@@ -549,6 +594,7 @@ function applyLanguage(lang) {
   renderCategoryFilterBar();
   renderSkillsGrid();
   updateStatistics();
+  updateAIConfigurationIndicators();
   lucide.createIcons();
 }
 
@@ -706,6 +752,54 @@ function renderMarkdown(markdown) {
   return sanitizeHtml(marked.parse(markdown || ''));
 }
 
+function buildDisplaySkills() {
+  const groups = new Map();
+  skills.forEach(skill => {
+    const collectionId = skill.collection?.id;
+    if (!collectionId) return;
+    if (!groups.has(collectionId)) groups.set(collectionId, []);
+    groups.get(collectionId).push(skill);
+  });
+
+  const emitted = new Set();
+  const display = [];
+  skills.forEach(skill => {
+    const collectionId = skill.collection?.id;
+    if (!collectionId) {
+      display.push(skill);
+      return;
+    }
+    if (emitted.has(collectionId)) return;
+    emitted.add(collectionId);
+    const members = groups.get(collectionId) || [];
+    const primary = members.find(member => member.filename === collectionId) || members[0];
+    const enabledCount = members.filter(member => member.collection?.enabled).length;
+    const tags = Array.from(new Set(members.flatMap(member => member.tags || []))).slice(0, 5);
+    display.push({
+      ...primary,
+      filename: `@collection:${collectionId}`,
+      title: primary.collection?.title || primary.title,
+      emoji: '🧰',
+      tags,
+      is_dir: true,
+      is_collection: true,
+      collection_id: collectionId,
+      collection_members: members,
+      collection_enabled_count: enabledCount,
+      search_text: members.map(member => [
+        member.title,
+        member.description,
+        member.filename,
+        ...(member.tags || [])
+      ].join(' ')).join(' ')
+    });
+  });
+  displaySkillsByFilename = new Map(
+    display.map(skill => [skill.filename, skill])
+  );
+  return display;
+}
+
 function getCardFilename(event) {
   const card = event.target.closest('.skill-card');
   return card?.dataset.filename || '';
@@ -714,6 +808,13 @@ function getCardFilename(event) {
 function handleCardsGridClick(event) {
   const filename = getCardFilename(event);
   if (!filename) return;
+  const displaySkill = displaySkillsByFilename.get(filename);
+  if (displaySkill?.is_collection) {
+    if (event.target.closest('label, input, a')) return;
+    event.stopPropagation();
+    openCollectionModal(displaySkill.collection_id);
+    return;
+  }
   if (event.target.closest('.js-edit-skill')) {
     event.stopPropagation();
     openEditorModal(filename);
@@ -731,9 +832,50 @@ function handleCardsGridClick(event) {
 function handleCardsGridChange(event) {
   if (!event.target.matches('.js-toggle-skill')) return;
   const filename = getCardFilename(event);
-  if (filename) {
+  const displaySkill = displaySkillsByFilename.get(filename);
+  if (displaySkill?.is_collection) {
+    handleToggleCollectionMount(displaySkill, event.target.checked);
+  } else if (filename) {
     handleToggleSkill(filename, event.target.checked);
   }
+}
+
+function updateAIConfigurationIndicators() {
+  const isZh = currentLanguage === 'zh';
+  const status = document.getElementById('api-config-status');
+  const summary = document.getElementById('api-config-summary');
+  const importSummary = document.getElementById('import-mode-summary');
+  const keyInput = document.getElementById('settings-apikey');
+  const toggle = document.getElementById('settings-ai-import-optimization');
+
+  if (status) {
+    status.className = `config-status ${hasAiKey ? 'ready' : 'neutral'}`;
+    status.textContent = hasAiKey
+      ? `${isZh ? '已配置' : 'Configured'} ${apiKeyHint}`
+      : (isZh ? '未配置 API Key' : 'API Key not configured');
+  }
+  if (summary) {
+    summary.className = `service-status ${hasAiKey ? 'ready' : 'neutral'}`;
+    summary.textContent = hasAiKey
+      ? `${isZh ? 'AI 已配置' : 'AI configured'} ${apiKeyHint}`
+      : (isZh ? 'AI 未配置' : 'AI not configured');
+  }
+  if (importSummary) {
+    const usingAi = aiImportOptimization && hasAiKey;
+    importSummary.className = `service-status ${usingAi ? 'ai' : 'local'}`;
+    importSummary.textContent = usingAi
+      ? (isZh ? '导入：本地 + AI' : 'Import: Local + AI')
+      : (isZh ? '导入：本地体检' : 'Import: Local checks');
+    importSummary.title = aiImportOptimization && !hasAiKey
+      ? (isZh ? 'AI 优化已开启，但未配置 API Key；导入时自动使用本地结果。' : 'AI optimization is enabled without an API key; imports automatically use local results.')
+      : '';
+  }
+  if (keyInput) {
+    keyInput.placeholder = hasAiKey
+      ? (isZh ? `已配置 ${apiKeyHint}；输入新 Key 可替换` : `Configured ${apiKeyHint}; enter a new key to replace`)
+      : 'sk-...';
+  }
+  if (toggle) toggle.checked = aiImportOptimization;
 }
 
 function handleCardsGridKeydown(event) {
@@ -741,7 +883,12 @@ function handleCardsGridKeydown(event) {
   const filename = getCardFilename(event);
   if (!filename || event.target.closest('button, label, input, a')) return;
   event.preventDefault();
-  openSkillViewer(filename);
+  const displaySkill = displaySkillsByFilename.get(filename);
+  if (displaySkill?.is_collection) {
+    openCollectionModal(displaySkill.collection_id);
+  } else {
+    openSkillViewer(filename);
+  }
 }
 
 cardsGrid.addEventListener('click', handleCardsGridClick);
@@ -781,7 +928,7 @@ function renderCategoryFilterBar() {
   
   // Extract all unique canonical categories from currently loaded skills
   const categoriesSet = new Set();
-  skills.forEach(skill => {
+  buildDisplaySkills().forEach(skill => {
     categoriesSet.add(getCanonicalCategory(skill));
   });
   
@@ -808,12 +955,18 @@ window.handleSelectCategory = function(canonicalCat) {
 
 function renderSkillsGrid() {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
-  let filtered = skills;
+  let filtered = buildDisplaySkills();
   
   // Filter by Search Query
   if (query) {
     filtered = filtered.filter(s => {
-      const text = [s.title, s.description, s.filename, ...s.tags].join(' ').toLowerCase();
+      const text = [
+        s.title,
+        s.description,
+        s.filename,
+        s.search_text || '',
+        ...(s.tags || [])
+      ].join(' ').toLowerCase();
       return text.includes(query);
     });
   }
@@ -842,7 +995,7 @@ function renderSkillsGrid() {
 
   filtered.forEach((skill, index) => {
     const card = document.createElement('div');
-    card.className = 'skill-card';
+    card.className = `skill-card${skill.is_collection ? ' collection-card' : ''}`;
     card.dataset.filename = skill.filename;
     card.style.transitionDelay = `${index * 35}ms`;
 
@@ -855,8 +1008,26 @@ function renderSkillsGrid() {
     let isChecked = false;
 
     if (currentProjectPath && activeProj && !activeProj.error) {
-      const physicalStatus = statusMap[skill.filename] || 'unloaded';
-      const isLocallyEnabled = enabledSkills.has(skill.filename);
+      let physicalStatus = statusMap[skill.filename] || 'unloaded';
+      let isLocallyEnabled = enabledSkills.has(skill.filename);
+      if (skill.is_collection) {
+        const activeMembers = skill.collection_members.filter(
+          member => member.collection?.enabled
+        );
+        const memberStatuses = activeMembers.map(
+          member => statusMap[member.filename] || 'unloaded'
+        );
+        isLocallyEnabled = activeMembers.length > 0 && activeMembers.every(
+          member => enabledSkills.has(member.filename)
+        );
+        if (memberStatuses.length && memberStatuses.every(status => status === 'synced')) {
+          physicalStatus = 'synced';
+        } else if (memberStatuses.length && memberStatuses.every(status => status === 'unloaded')) {
+          physicalStatus = 'unloaded';
+        } else {
+          physicalStatus = 'out_of_sync';
+        }
+      }
 
       if (isLocallyEnabled) {
         isChecked = true;
@@ -876,7 +1047,9 @@ function renderSkillsGrid() {
         }
       }
     } else {
-      badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusReadonly}</span>`;
+      badgeHTML = skill.is_collection
+        ? `<span class="status-badge unloaded"><span class="status-dot"></span>${skill.collection_enabled_count}/${skill.collection_members.length} ${currentLanguage === 'zh' ? '已启用' : 'enabled'}</span>`
+        : `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusReadonly}</span>`;
     }
 
     // Apply Dynamic Bilingual Translation Mapping for Skill Content
@@ -906,8 +1079,25 @@ function renderSkillsGrid() {
     const safeMainTitle = escapeHtml(mainTitle);
     const safeSubTitle = escapeHtml(subTitle);
     const safeDesc = escapeHtml(resolvedDesc);
-    const safeFilename = escapeHtml(skill.filename);
-    const cardTitle = currentLanguage === 'zh' ? `点击查看 ${resolvedTitle} 的 Markdown 文档` : `Click to view the Markdown document for ${resolvedTitle}`;
+    const displayFilename = skill.is_collection
+      ? `${skill.collection_members.length} ${currentLanguage === 'zh' ? '个子技能' : 'child skills'}`
+      : skill.filename;
+    const safeFilename = escapeHtml(displayFilename);
+    const cardTitle = skill.is_collection
+      ? (currentLanguage === 'zh' ? `点击管理 ${resolvedTitle} 的子技能` : `Manage child skills in ${resolvedTitle}`)
+      : (currentLanguage === 'zh' ? `点击查看 ${resolvedTitle} 的 Markdown 文档` : `Click to view the Markdown document for ${resolvedTitle}`);
+    const actionButtons = skill.is_collection
+      ? `
+          <button type="button" class="btn btn-secondary btn-icon js-edit-skill" title="${currentLanguage === 'zh' ? '管理子技能' : 'Manage child skills'}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
+            <i data-lucide="list-tree" style="width:14px;height:14px;"></i>${currentLanguage === 'zh' ? '管理子技能' : 'Manage'}
+          </button>`
+      : `
+          <button type="button" class="btn btn-secondary btn-icon js-edit-skill" title="${escapeHtml(locales[currentLanguage].btnEditSkill)}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
+            <i data-lucide="edit-3" style="width:14px;height:14px;"></i>${locales[currentLanguage].btnEditSkill}
+          </button>
+          <button type="button" class="btn btn-danger-outline btn-icon js-delete-skill" title="${currentLanguage === 'zh' ? '删除技能' : 'Delete Skill'}" style="padding: 0.5rem; height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center;">
+            <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
+          </button>`;
 
     card.innerHTML = `
       <div class="card-header">
@@ -922,17 +1112,12 @@ function renderSkillsGrid() {
       </div>
       <p class="card-body" title="${safeDesc}">${safeDesc}</p>
       <div class="card-meta-line">
-        <span class="skill-tag" title="${safeFilename}">${skill.is_dir ? '📁 ' : ''}${safeFilename}</span>
+        <span class="skill-tag${skill.is_collection ? ' collection-count' : ''}" title="${safeFilename}">${skill.is_collection ? '🧩 ' : (skill.is_dir ? '📁 ' : '')}${safeFilename}</span>
         <div class="card-tags">${tagsHTML}</div>
       </div>
       <div class="card-footer">
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <button type="button" class="btn btn-secondary btn-icon js-edit-skill" title="${escapeHtml(locales[currentLanguage].btnEditSkill)}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
-            <i data-lucide="edit-3" style="width:14px;height:14px;"></i>${locales[currentLanguage].btnEditSkill}
-          </button>
-          <button type="button" class="btn btn-danger-outline btn-icon js-delete-skill" title="${currentLanguage === 'zh' ? '删除技能' : 'Delete Skill'}" style="padding: 0.5rem; height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center;">
-            <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
-          </button>
+          ${actionButtons}
         </div>
         ${currentProjectPath && activeProj && !activeProj.error ? `
           <label class="switch-label">
@@ -1015,6 +1200,7 @@ function handleSelectProject(path) {
     currentProjectTitle.textContent = locales[currentLanguage].noProjectTitle;
     currentProjectDesc.textContent = locales[currentLanguage].noProjectDesc;
     syncBtn.setAttribute('disabled', 'true');
+    undoSyncBtn.setAttribute('disabled', 'true');
     syncBtn.classList.remove('pulsing-btn', 'active');
     renderProjectsList();
     renderSkillsGrid();
@@ -1041,13 +1227,18 @@ function refreshCurrentProject() {
 
 function _loadProjectState(proj) {
   enabledSkills.clear();
-  Object.entries(proj.skills_status || {}).forEach(([fname, status]) => {
-    if (status === 'synced' || status === 'out_of_sync') enabledSkills.add(fname);
-  });
+  if (Array.isArray(proj.enabled_skills)) {
+    proj.enabled_skills.forEach(filename => enabledSkills.add(filename));
+  } else {
+    Object.entries(proj.skills_status || {}).forEach(([fname, status]) => {
+      if (status === 'synced' || status === 'out_of_sync') enabledSkills.add(fname);
+    });
+  }
   currentProjectTitle.textContent = proj.name;
   currentProjectDesc.innerHTML = `<i data-lucide="folder" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>${escapeHtml(proj.path)}`;
   syncBtn.removeAttribute('disabled');
   syncBtn.classList.add('pulsing-btn');
+  undoSyncBtn.disabled = !proj.can_undo_sync;
   renderProjectsList();
   renderSkillsGrid();
   updateStatistics();
@@ -1060,6 +1251,114 @@ function handleToggleSkill(filename, isEnabled) {
   syncBtn.classList.add('active');
   renderSkillsGrid();
 }
+
+function handleToggleCollectionMount(collectionSkill, isEnabled) {
+  collectionSkill.collection_members
+    .filter(member => member.collection?.enabled)
+    .forEach(member => {
+      if (isEnabled) enabledSkills.add(member.filename);
+      else enabledSkills.delete(member.filename);
+    });
+  syncBtn.classList.add('active');
+  renderSkillsGrid();
+}
+
+function getCollectionDisplaySkill(collectionId) {
+  return buildDisplaySkills().find(
+    skill => skill.is_collection && skill.collection_id === collectionId
+  );
+}
+
+function openCollectionModal(collectionId) {
+  const collectionSkill = getCollectionDisplaySkill(collectionId);
+  if (!collectionSkill) return;
+  activeCollectionId = collectionId;
+  collectionModalTitle.textContent = collectionSkill.title;
+  collectionModalSummary.textContent = currentLanguage === 'zh'
+    ? `${collectionSkill.collection_members.length} 个子技能，可分别启用或停用`
+    : `${collectionSkill.collection_members.length} child skills; enable each independently`;
+  collectionModalHint.textContent = currentLanguage === 'zh'
+    ? '停用不会删除文件；项目将在下次同步时移除该子技能。'
+    : 'Disabling keeps the files in the library; projects remove the child on next sync.';
+
+  collectionMembersList.innerHTML = collectionSkill.collection_members.map(member => {
+    const translation = skillTranslations[currentLanguage]?.[member.filename];
+    const title = translation?.title || member.title;
+    const description = translation?.description || member.description;
+    const enabled = Boolean(member.collection?.enabled);
+    const smart = getSmartEmojiAndTags(member);
+    return `
+      <div class="collection-member ${enabled ? 'enabled' : ''}" data-filename="${escapeHtml(member.filename)}">
+        <div class="collection-member-main">
+          <span class="collection-member-emoji">${escapeHtml(smart.emoji)}</span>
+          <div class="collection-member-copy">
+            <div class="collection-member-title">${escapeHtml(title)}</div>
+            <div class="collection-member-description">${escapeHtml(description)}</div>
+            <div class="collection-member-file">${escapeHtml(member.filename)}</div>
+          </div>
+        </div>
+        <div class="collection-member-actions">
+          <button type="button" class="btn btn-secondary btn-icon js-view-collection-member" data-filename="${escapeHtml(member.filename)}" title="${currentLanguage === 'zh' ? '查看文档' : 'View docs'}">
+            <i data-lucide="eye" style="width:14px;height:14px;"></i>
+          </button>
+          <span class="collection-member-state">${enabled ? (currentLanguage === 'zh' ? '启用' : 'On') : (currentLanguage === 'zh' ? '停用' : 'Off')}</span>
+          <label class="switch">
+            <input type="checkbox" class="js-collection-member-toggle" data-filename="${escapeHtml(member.filename)}" ${enabled ? 'checked' : ''}>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>`;
+  }).join('');
+  collectionModal.classList.add('active');
+  lucide.createIcons();
+}
+
+function closeCollectionModal() {
+  collectionModal.classList.remove('active');
+  activeCollectionId = null;
+}
+
+collectionMembersList.addEventListener('change', async event => {
+  if (!event.target.matches('.js-collection-member-toggle')) return;
+  const input = event.target;
+  const filename = input.dataset.filename;
+  const enabled = input.checked;
+  input.disabled = true;
+  try {
+    const result = await window.pywebview.api.set_collection_member_enabled(
+      activeCollectionId,
+      filename,
+      enabled
+    );
+    if (result.error) throw new Error(result.error);
+    if (!enabled) enabledSkills.delete(filename);
+    await fetchSkills();
+    if (currentProjectPath) syncBtn.classList.add('active');
+    const collectionId = activeCollectionId;
+    if (collectionId) openCollectionModal(collectionId);
+    showToast(
+      currentLanguage === 'zh'
+        ? `${filename} 已${enabled ? '启用' : '停用'}`
+        : `${filename} ${enabled ? 'enabled' : 'disabled'}`,
+      'success'
+    );
+  } catch (error) {
+    input.checked = !enabled;
+    input.disabled = false;
+    showToast(
+      (currentLanguage === 'zh' ? '更新子技能失败: ' : 'Failed to update child skill: ') + error,
+      'error'
+    );
+  }
+});
+
+collectionMembersList.addEventListener('click', event => {
+  const button = event.target.closest('.js-view-collection-member');
+  if (!button) return;
+  const filename = button.dataset.filename;
+  closeCollectionModal();
+  openSkillViewer(filename);
+});
 
 async function handleDeleteProject(event, path) {
   event.stopPropagation();
@@ -1077,6 +1376,7 @@ async function handleDeleteProject(event, path) {
       currentProjectTitle.textContent = locales[currentLanguage].noProjectTitle;
       currentProjectDesc.textContent = locales[currentLanguage].noProjectDesc;
       syncBtn.setAttribute('disabled', 'true');
+      undoSyncBtn.setAttribute('disabled', 'true');
       syncBtn.classList.remove('pulsing-btn', 'active');
     }
     await fetchProjects();
@@ -1091,17 +1391,50 @@ async function handleSyncSkills() {
   if (!currentProjectPath) return;
   syncBtn.setAttribute('disabled', 'true');
   syncBtn.classList.remove('active');
-  
-  const icon = syncBtn.querySelector('i');
-  if (icon) {
-    icon.classList.add('spinning');
-  }
-
   const originalHTML = syncBtn.innerHTML;
   syncBtn.innerHTML = `<span class="loading-spinner"></span> ${locales[currentLanguage].syncingBtn}`;
 
   try {
-    const result = await window.pywebview.api.sync_skills(currentProjectPath, Array.from(enabledSkills));
+    const selectedSkills = Array.from(enabledSkills);
+    let preview = await window.pywebview.api.preview_sync(currentProjectPath, selectedSkills);
+    if (preview.error) throw new Error(preview.error);
+
+    const changedCount = preview.summary.add + preview.summary.modify + preview.summary.delete + preview.summary.preserve;
+    if (changedCount === 0) {
+      showToast(locales[currentLanguage].syncPreviewNoChanges, 'success');
+      return;
+    }
+
+    const confirmed = await showCustomDialog({
+      title: locales[currentLanguage].syncPreviewTitle,
+      message: formatSyncPreview(preview),
+      emoji: '↻',
+      confirmText: locales[currentLanguage].syncApply
+    });
+    if (!confirmed) return;
+
+    let result = await window.pywebview.api.sync_skills(
+      currentProjectPath,
+      selectedSkills,
+      Boolean(preview.has_conflicts),
+      preview.plan_token
+    );
+    if (result.requires_confirmation) {
+      preview = result.preview;
+      const reconfirmed = await showCustomDialog({
+        title: locales[currentLanguage].syncPreviewTitle,
+        message: formatSyncPreview(preview),
+        emoji: '!',
+        confirmText: locales[currentLanguage].syncApply
+      });
+      if (!reconfirmed) return;
+      result = await window.pywebview.api.sync_skills(
+        currentProjectPath,
+        selectedSkills,
+        true,
+        preview.plan_token
+      );
+    }
     if (result.error) throw new Error(result.error);
     showToast(locales[currentLanguage].toastSyncSuccess + result.synced_count + (currentLanguage === 'zh' ? ' 项技能' : ' skills'), 'success');
     await fetchProjects();
@@ -1110,11 +1443,312 @@ async function handleSyncSkills() {
     showToast(locales[currentLanguage].toastSyncFail + e, 'error');
   } finally {
     syncBtn.innerHTML = originalHTML;
-    syncBtn.removeAttribute('disabled');
-    syncBtn.classList.add('pulsing-btn');
-    if (icon) {
-      icon.classList.remove('spinning');
+    if (currentProjectPath) {
+      syncBtn.removeAttribute('disabled');
+      syncBtn.classList.add('pulsing-btn');
     }
+    lucide.createIcons();
+  }
+}
+
+function formatImportPreview(preview) {
+  const isZh = currentLanguage === 'zh';
+  const kindLabels = {
+    markdown: isZh ? 'Markdown 技能' : 'Markdown skill',
+    standard: isZh ? '标准 SKILL.md 技能包' : 'Standard SKILL.md package',
+    collection: isZh ? '标准技能集合' : 'Standard skill collection',
+    bundle: isZh ? 'SkillHub 组合技能包' : 'SkillHub bundle'
+  };
+  const changeLabels = {
+    added_frontmatter: isZh ? '已补充完整元数据' : 'Added complete metadata',
+    completed_frontmatter: isZh ? '已补齐缺失元数据' : 'Completed missing metadata',
+    normalized_metadata: isZh ? '已规范化元数据格式' : 'Normalized metadata',
+    converted_to_utf8: isZh ? '已转换为 UTF-8' : 'Converted to UTF-8',
+    completed_standard_skill_metadata: isZh ? '已补齐 SKILL.md 的 name/description' : 'Completed SKILL.md name/description',
+    created_bundle_readme: isZh ? '已为组合技能创建 README.md' : 'Created bundle README.md',
+    ai_optimized: isZh ? 'AI 已优化入口文档' : 'AI optimized the entry document'
+  };
+  const processingMode = preview.ai_used
+    ? (isZh ? '本地规则体检 + AI 优化' : 'Local validation + AI optimization')
+    : preview.ai_requested
+      ? (isZh ? '本地规则体检（AI 已回退）' : 'Local validation (AI fallback)')
+      : (isZh ? '本地规则体检（未调用 AI）' : 'Local validation (AI not called)');
+  const lines = [
+    `${isZh ? '来源' : 'Source'}: ${preview.source_name}`,
+    `${isZh ? '类型' : 'Type'}: ${kindLabels[preview.kind] || preview.kind}`,
+    `${isZh ? '处理方式' : 'Processing'}: ${processingMode}`
+  ];
+  if (preview.kind === 'collection') {
+    lines.push(
+      `${isZh ? '集合内容' : 'Collection'}: ${preview.collection_count} ${
+        isZh ? '个技能' : 'skills'
+      }`,
+      `${isZh ? '本次安装' : 'To install'}: ${preview.installable_count}`,
+      `${isZh ? '跳过重复' : 'Duplicates skipped'}: ${preview.duplicate_count}`
+    );
+    preview.collection_items?.forEach(item => {
+      const status = item.duplicate_of
+        ? (isZh ? `跳过，与 ${item.duplicate_of} 重复` : `skip, duplicate of ${item.duplicate_of}`)
+        : (isZh ? `安装为 ${item.active_name}` : `install as ${item.active_name}`);
+      lines.push(`• ${item.source_name}: ${status}`);
+    });
+  } else {
+    lines.splice(
+      1,
+      0,
+      `${isZh ? '导入为' : 'Import as'}: ${preview.active_name}`
+    );
+  }
+  if (preview.replace_existing) {
+    lines.push(
+      `${isZh ? '应用方式' : 'Apply mode'}: ${
+        isZh ? '原地更新，原文件会先归档' : 'Update in place after archiving the original'
+      }`
+    );
+  }
+  if (preview.changes?.length) {
+    lines.push('', isZh ? '自动处理：' : 'Automatic changes:');
+    preview.changes.forEach(code => lines.push(`• ${changeLabels[code] || code}`));
+  }
+  if (preview.findings?.length) {
+    lines.push('', isZh ? `风险提示（${preview.findings.length}）：` : `Findings (${preview.findings.length}):`);
+    preview.findings.slice(0, 8).forEach(item => {
+      const label = item.severity === 'high' ? '!' : '•';
+      lines.push(`${label} ${isZh ? item.message_zh : item.message_en}${item.path ? ` [${item.path}]` : ''}`);
+    });
+    if (preview.findings.length > 8) {
+      lines.push(isZh ? `…另有 ${preview.findings.length - 8} 项` : `…and ${preview.findings.length - 8} more`);
+    }
+  }
+  if (preview.duplicate_of) {
+    lines.push('', `${isZh ? '检测到完全重复' : 'Exact duplicate detected'}: ${preview.duplicate_of}`);
+  }
+  return lines.join('\n');
+}
+
+async function handleImportSkill() {
+  const isZh = currentLanguage === 'zh';
+  const selection = await showCustomDialog({
+    title: isZh ? '导入技能' : 'Import Skill',
+    message: isZh
+      ? `基础导入始终使用本地规则。当前模式：${aiImportOptimization && hasAiKey ? '本地体检 + AI 优化' : '本地体检'}。请选择 Markdown/ZIP 文件、单个技能文件夹，或包含 skills/*/SKILL.md 的技能集合。`
+      : `Local validation always runs. Current mode: ${aiImportOptimization && hasAiKey ? 'Local + AI optimization' : 'Local validation'}. Select a Markdown/ZIP file, one skill folder, or a collection containing skills/*/SKILL.md.`,
+    emoji: '📥',
+    confirmText: isZh ? '选择文件' : 'Choose File',
+    secondaryText: isZh ? '选择文件夹' : 'Choose Folder',
+    secondaryValue: 'folder'
+  });
+  if (!selection) return;
+  const importKind = selection === 'folder' ? 'folder' : 'file';
+  let preview;
+  try {
+    preview = await window.pywebview.api.preview_skill_import_via_dialog(importKind);
+  } catch (e) {
+    showToast((isZh ? '导入分析失败: ' : 'Import analysis failed: ') + e, 'error');
+    return;
+  }
+  if (!preview) return;
+  if (preview.error) {
+    showToast((isZh ? '导入分析失败: ' : 'Import analysis failed: ') + preview.error, 'error');
+    return;
+  }
+
+  const confirmed = await showCustomDialog({
+    title: preview.can_import
+      ? (isZh ? '确认导入' : 'Confirm Import')
+      : (isZh ? '无需重复导入' : 'Duplicate Skill'),
+    message: formatImportPreview(preview),
+    emoji: preview.findings?.some(item => item.severity === 'high') ? '⚠️' : '📋',
+    confirmText: preview.can_import ? (isZh ? '导入' : 'Import') : (isZh ? '关闭' : 'Close')
+  });
+  if (!confirmed || !preview.can_import) {
+    try {
+      await window.pywebview.api.discard_skill_import(preview.token);
+    } catch (_e) {
+      // Staged previews are also cleaned automatically after 24 hours.
+    }
+    return;
+  }
+
+  try {
+    const result = await window.pywebview.api.apply_skill_import(preview.token);
+    if (result.error) throw new Error(result.error);
+    if (result.kind === 'collection') {
+      const skipped = result.skipped_duplicates?.length || 0;
+      showToast(
+        isZh
+          ? `已导入 ${result.filenames.length} 个技能${skipped ? `，跳过 ${skipped} 个重复项` : ''}`
+          : `Imported ${result.filenames.length} skills${skipped ? `; skipped ${skipped} duplicate(s)` : ''}`,
+        'success'
+      );
+    } else {
+      showToast(
+        isZh
+          ? `已通过${result.ai_used ? '本地体检和 AI 优化' : '本地体检'}导入：${result.filename}`
+          : `Imported with ${result.ai_used ? 'local validation and AI optimization' : 'local validation'}: ${result.filename}`,
+        'success'
+      );
+    }
+    await fetchSkills();
+    if (currentProjectPath) {
+      await fetchProjects();
+      refreshCurrentProject();
+    }
+    if (result.kind !== 'collection' || result.filenames?.length === 1) {
+      openEditorModal(result.filename);
+    }
+  } catch (e) {
+    showToast((isZh ? '导入失败: ' : 'Import failed: ') + e, 'error');
+  }
+}
+
+async function checkForUnregisteredSkills() {
+  const isZh = currentLanguage === 'zh';
+  let scan;
+  try {
+    scan = await window.pywebview.api.scan_unregistered_skills();
+  } catch (e) {
+    showToast((isZh ? '检查新增技能失败: ' : 'Failed to scan new skills: ') + e, 'error');
+    return;
+  }
+  if (!scan || scan.error || !scan.skills?.length) return;
+
+  const names = scan.skills.slice(0, 8).map(item => `• ${item.filename}`);
+  if (scan.skills.length > 8) {
+    names.push(isZh ? `…另有 ${scan.skills.length - 8} 个` : `…and ${scan.skills.length - 8} more`);
+  }
+  const choice = await showCustomDialog({
+    title: isZh ? `发现 ${scan.skills.length} 个新技能` : `${scan.skills.length} new skills found`,
+    message: [
+      isZh
+        ? '这些文件是直接复制到 skills 目录的，尚未经过体检：'
+        : 'These files were copied directly into the skills directory and have not been validated:',
+      '',
+      ...names,
+      '',
+      isZh
+        ? '可以逐个体检并原地优化，也可以保留原样并登记。'
+        : 'Validate and optimize them in place, or keep them unchanged and register them.'
+    ].join('\n'),
+    emoji: '🆕',
+    confirmText: isZh ? '逐个体检' : 'Validate',
+    secondaryText: isZh ? '全部保留原样' : 'Keep All',
+    secondaryValue: 'keep-all'
+  });
+  if (!choice) return;
+  if (choice === 'keep-all') {
+    for (const item of scan.skills) {
+      await window.pywebview.api.acknowledge_unregistered_skill(item.filename);
+    }
+    showToast(isZh ? '新增技能已登记并保留原样' : 'New skills registered unchanged', 'success');
+    return;
+  }
+
+  for (const item of scan.skills) {
+    let preview;
+    try {
+      preview = await window.pywebview.api.preview_unregistered_skill(item.filename);
+    } catch (e) {
+      showToast(`${item.filename}: ${e}`, 'error');
+      continue;
+    }
+    if (!preview || preview.error) {
+      showToast(`${item.filename}: ${preview?.error || 'Preview failed'}`, 'error');
+      continue;
+    }
+    const apply = await showCustomDialog({
+      title: isZh ? `体检：${item.filename}` : `Validate: ${item.filename}`,
+      message: formatImportPreview(preview),
+      emoji: preview.findings?.some(finding => finding.severity === 'high') ? '⚠️' : '📋',
+      confirmText: isZh ? '应用优化' : 'Apply',
+      secondaryText: isZh ? '保留原样' : 'Keep Original',
+      secondaryValue: 'keep'
+    });
+    if (apply === true) {
+      const result = await window.pywebview.api.apply_skill_import(preview.token);
+      if (result.error) {
+        showToast(`${item.filename}: ${result.error}`, 'error');
+      } else {
+        showToast(
+          isZh
+            ? `已原地处理：${result.filename}`
+            : `Processed in place: ${result.filename}`,
+          'success'
+        );
+      }
+    } else {
+      await window.pywebview.api.discard_skill_import(preview.token);
+      if (apply === 'keep') {
+        await window.pywebview.api.acknowledge_unregistered_skill(item.filename);
+      } else {
+        break;
+      }
+    }
+  }
+  await fetchSkills();
+  if (currentProjectPath) {
+    await fetchProjects();
+    refreshCurrentProject();
+  }
+}
+
+function formatSyncPreview(preview) {
+  const summary = preview.summary;
+  const isZh = currentLanguage === 'zh';
+  const countLine = isZh
+    ? `新增 ${summary.add}  修改 ${summary.modify}  删除 ${summary.delete}  保留 ${summary.preserve}`
+    : `Add ${summary.add}  Modify ${summary.modify}  Delete ${summary.delete}  Preserve ${summary.preserve}`;
+  const lines = [locales[currentLanguage].syncPreviewIntro, countLine];
+  if (preview.has_conflicts) {
+    lines.push('', locales[currentLanguage].syncPreviewConflict);
+  }
+
+  const labels = isZh
+    ? { add: '新增', modify: '修改', delete: '删除', preserve: '保留' }
+    : { add: 'ADD', modify: 'MOD', delete: 'DEL', preserve: 'KEEP' };
+  const visibleChanges = preview.changes.filter(item => item.action !== 'unchanged');
+  visibleChanges.slice(0, 14).forEach(item => {
+    const conflict = item.conflict ? ' !' : '';
+    lines.push(`${labels[item.action] || item.action}${conflict}  ${item.path}`);
+  });
+  if (visibleChanges.length > 14) {
+    const remaining = visibleChanges.length - 14;
+    lines.push(isZh ? `…另有 ${remaining} 项` : `...and ${remaining} more`);
+  }
+  return lines.join('\n');
+}
+
+async function handleUndoSync() {
+  if (!currentProjectPath || undoSyncBtn.disabled) return;
+  const confirmed = await showCustomDialog({
+    title: locales[currentLanguage].undoSyncTitle,
+    message: locales[currentLanguage].undoSyncMessage,
+    emoji: '↶',
+    confirmText: locales[currentLanguage].undoSyncConfirm
+  });
+  if (!confirmed) return;
+
+  undoSyncBtn.disabled = true;
+  syncBtn.disabled = true;
+  try {
+    const result = await window.pywebview.api.undo_last_sync(currentProjectPath);
+    if (result.error) throw new Error(result.error);
+    if (result.skipped_count > 0) {
+      showToast(locales[currentLanguage].toastUndoPartial + result.skipped.join(', '), 'warning');
+    } else {
+      showToast(locales[currentLanguage].toastUndoSuccess, 'success');
+    }
+    await fetchProjects();
+    refreshCurrentProject();
+  } catch (e) {
+    showToast(locales[currentLanguage].toastUndoFail + e, 'error');
+  } finally {
+    if (currentProjectPath) {
+      syncBtn.disabled = false;
+      const project = projects.find(item => item.path === currentProjectPath);
+      undoSyncBtn.disabled = !project?.can_undo_sync;
+    }
+    lucide.createIcons();
   }
 }
 
@@ -1228,6 +1862,7 @@ async function handleSaveSkill() {
     showToast(locales[currentLanguage].toastSaveSuccess, 'success');
     closeEditorModal();
     await fetchSkills();
+    await checkForUnregisteredSkills();
     if (currentProjectPath) {
       await fetchProjects();
       refreshCurrentProject();
@@ -1330,6 +1965,8 @@ function openSettingsModal() {
   // API key field: leave empty placeholder — user must re-enter to change
   document.getElementById('settings-apikey').value = '';
   document.getElementById('settings-apikey').type = 'password';
+  document.getElementById('settings-ai-import-optimization').checked = aiImportOptimization;
+  updateAIConfigurationIndicators();
 
   settingsModal.classList.add('active');
   lucide.createIcons();
@@ -1367,7 +2004,8 @@ async function handleSaveSettings() {
       skills_dir: settingsSkillsDir.value,
       language: settingsLanguage.value,
       theme: settingsTheme.value,
-      default_scan_dir: settingsScanDir.value
+      default_scan_dir: settingsScanDir.value,
+      ai_import_optimization: document.getElementById('settings-ai-import-optimization').checked
     };
     const result = await window.pywebview.api.save_settings(settings);
 
@@ -1379,7 +2017,13 @@ async function handleSaveSettings() {
     const newApiBase = apiBaseInput.value.trim() || apiBase;
 
     if (apiKeyInput.value.trim() || newApiBase !== apiBase || newModel !== deepseekModel) {
-      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), newModel, newApiBase);
+      const aiResult = await window.pywebview.api.save_ai_config(
+        apiKeyInput.value.trim(),
+        newModel,
+        newApiBase
+      );
+      hasAiKey = Boolean(aiResult.has_ai_key);
+      apiKeyHint = aiResult.api_key_hint || apiKeyHint;
     }
     deepseekModel = newModel;
     apiBase = newApiBase;
@@ -1387,11 +2031,13 @@ async function handleSaveSettings() {
     currentLanguage = result.language;
     currentTheme = result.theme;
     defaultScanDir = result.default_scan_dir;
+    aiImportOptimization = Boolean(result.ai_import_optimization);
     skillsDirPath.textContent = result.skills_dir;
     skillsDirPath.title = result.skills_dir;
 
     applyTheme(currentTheme);
     applyLanguage(currentLanguage);
+    updateAIConfigurationIndicators();
 
     closeSettingsModal();
     showToast(locales[currentLanguage].toastSettingsSaved, 'success');
@@ -1423,26 +2069,30 @@ async function openAIModal() {
   aiGeneratedSkill = null;
   aiSkillPreview.style.display = 'none';
   aiModal.classList.add('active');
-  await loadSessionList();
+  await loadSessionList(true);
   lucide.createIcons();
   setTimeout(() => aiChatInput.focus(), 200);
 }
 
-function closeAIModal() {
-  saveCurrentSession();
+async function closeAIModal() {
   aiModal.classList.remove('active');
+  await saveCurrentSession();
 }
 
-async function loadSessionList() {
+async function loadSessionList(selectSession = false) {
   try {
     allSessions = await window.pywebview.api.chat_list_sessions();
-  } catch (e) { allSessions = []; }
+  } catch (e) {
+    if (selectSession) allSessions = [];
+  }
   renderSessionList();
-  // Auto-select most recent or create new
-  if (allSessions.length > 0) {
-    switchToSession(allSessions[0].id);
+  if (!selectSession) return;
+
+  const preferredSession = allSessions.find(session => session.id === currentSessionId) || allSessions[0];
+  if (preferredSession) {
+    await switchToSession(preferredSession.id, false);
   } else {
-    createNewSession();
+    await createNewSession(false);
   }
 }
 
@@ -1451,7 +2101,7 @@ function renderSessionList() {
   allSessions.forEach(s => {
     const div = document.createElement('div');
     div.className = 'ai-session-item' + (s.id === currentSessionId ? ' active' : '');
-    div.onclick = () => { saveCurrentSession(); switchToSession(s.id); };
+    div.onclick = async () => { await switchToSession(s.id); };
     div.innerHTML = `
       <div class="ai-session-item-title">${escapeHtml(s.title || '未命名')}</div>
       <div class="ai-session-item-meta">${s.msg_count || 0} 条消息</div>
@@ -1460,8 +2110,15 @@ function renderSessionList() {
   });
 }
 
-async function switchToSession(sid) {
-  saveCurrentSession(); // save current before switching
+async function switchToSession(sid, saveBeforeSwitch = true) {
+  if (sid === currentSessionId && aiChatHistory.length > 0) {
+    renderSessionList();
+    renderChatHistory();
+    return;
+  }
+  if (saveBeforeSwitch) {
+    await saveCurrentSession();
+  }
   currentSessionId = sid;
   aiChatHistory = [];
   aiSkillPreview.style.display = 'none';
@@ -1478,8 +2135,10 @@ async function switchToSession(sid) {
   renderChatHistory();
 }
 
-async function createNewSession() {
-  saveCurrentSession();
+async function createNewSession(saveBeforeCreate = true) {
+  if (saveBeforeCreate) {
+    await saveCurrentSession();
+  }
   currentSessionId = 's_' + Date.now();
   aiChatHistory = [];
   aiSkillPreview.style.display = 'none';
@@ -1498,17 +2157,43 @@ async function deleteSession(sid) {
   }
   renderSessionList();
   if (allSessions.length > 0 && !currentSessionId) {
-    switchToSession(allSessions[0].id);
+    await switchToSession(allSessions[0].id, false);
   } else if (allSessions.length === 0) {
-    createNewSession();
+    await createNewSession(false);
   }
   renderChatHistory();
 }
 
-function saveCurrentSession() {
-  if (!currentSessionId || aiChatHistory.length === 0) return;
+async function saveCurrentSession() {
+  if (!currentSessionId || aiChatHistory.length === 0) return true;
   const title = aiChatHistory.find(m => m.role === 'user')?.content?.slice(0, 30) || '未命名';
-  window.pywebview.api.chat_save_session(currentSessionId, title, aiChatHistory).catch(() => {});
+  const messages = aiChatHistory.map(message => ({ ...message }));
+  try {
+    const result = await window.pywebview.api.chat_save_session(
+      currentSessionId,
+      title,
+      messages
+    );
+    if (result?.error) throw new Error(result.error);
+    const existing = allSessions.find(session => session.id === currentSessionId);
+    if (existing) {
+      existing.title = title;
+      existing.msg_count = messages.length;
+    } else {
+      allSessions.unshift({
+        id: currentSessionId,
+        title,
+        msg_count: messages.length
+      });
+    }
+    return true;
+  } catch (e) {
+    showToast(
+      (currentLanguage === 'zh' ? '会话保存失败: ' : 'Failed to save chat: ') + (e.message || e),
+      'error'
+    );
+    return false;
+  }
 }
 
 function renderChatHistory() {
@@ -1575,9 +2260,8 @@ async function sendAIMessage() {
       appendChatBubble('ai', result.reply);
       aiChatHistory.push({ role: 'assistant', content: result.reply });
     }
-    saveCurrentSession();
-    await loadSessionList();
-    renderSessionList();
+    await saveCurrentSession();
+    await loadSessionList(false);
   } catch (e) {
     removeTypingIndicator(typingId);
     appendChatBubble('ai', '❌ ' + (e.message || e));
@@ -1589,7 +2273,7 @@ async function sendAIMessage() {
 }
 
 async function handleNewSession() {
-  createNewSession();
+  await createNewSession();
   aiChatInput.focus();
 }
 
@@ -1611,9 +2295,8 @@ async function handleAIGenerateSkill() {
       aiSkillPreview.style.display = 'block';
       aiChatHistory.push({ role: 'assistant', content: '✅ 技能已生成，请在下方预览并保存' });
       appendChatBubble('ai', '✅ 技能已生成！你可以在下方预览，满意后点击 **保存**。');
-      saveCurrentSession();
-      await loadSessionList();
-      renderSessionList();
+      await saveCurrentSession();
+      await loadSessionList(false);
     }
   } catch (e) {
     removeTypingIndicator(typingId);
@@ -1670,11 +2353,13 @@ async function handleAITestConnection() {
     const newModel = modelInput.value.trim() || 'deepseek-chat';
     const newApiBase = apiBaseInput.value.trim() || 'https://api.deepseek.com/v1';
 
-    if (apiKeyInput.value.trim()) {
-      await window.pywebview.api.save_ai_config(apiKeyInput.value.trim(), newModel, newApiBase);
-    } else {
-      await window.pywebview.api.save_ai_config('', newModel, newApiBase);
-    }
+    const savedConfig = await window.pywebview.api.save_ai_config(
+      apiKeyInput.value.trim(),
+      newModel,
+      newApiBase
+    );
+    hasAiKey = Boolean(savedConfig.has_ai_key);
+    apiKeyHint = savedConfig.api_key_hint || apiKeyHint;
     deepseekModel = newModel;
     apiBase = newApiBase;
 
@@ -1686,6 +2371,7 @@ async function handleAITestConnection() {
       resultDiv.textContent = (currentLanguage === 'zh'
         ? `✅ 连接成功！模型: ${result.model}，延迟: ${result.latency_ms}ms`
         : `✅ Connected! Model: ${result.model}, Latency: ${result.latency_ms}ms`);
+      updateAIConfigurationIndicators();
     } else {
       resultDiv.style.background = 'var(--rose-soft)';
       resultDiv.style.color = 'var(--rose)';
@@ -1750,7 +2436,17 @@ function removeTypingIndicator(id) {
 
 let dialogResolve = null;
 
-function showCustomDialog({ title, message, emoji = '💬', isPrompt = false, placeholder = '', defaultValue = '' }) {
+function showCustomDialog({
+  title,
+  message,
+  emoji = '💬',
+  isPrompt = false,
+  placeholder = '',
+  defaultValue = '',
+  confirmText = '',
+  secondaryText = '',
+  secondaryValue = 'secondary'
+}) {
   return new Promise((resolve) => {
     dialogResolve = resolve;
     
@@ -1770,7 +2466,17 @@ function showCustomDialog({ title, message, emoji = '💬', isPrompt = false, pl
     }
     
     document.getElementById('dialog-btn-cancel').textContent = locales[currentLanguage].editModalCancel || 'Cancel';
-    document.getElementById('dialog-btn-confirm').textContent = currentLanguage === 'zh' ? '确定' : 'Confirm';
+    document.getElementById('dialog-btn-confirm').textContent = confirmText || (currentLanguage === 'zh' ? '确定' : 'Confirm');
+    const secondaryBtn = document.getElementById('dialog-btn-secondary');
+    secondaryBtn.style.display = secondaryText ? 'inline-flex' : 'none';
+    secondaryBtn.textContent = secondaryText;
+    secondaryBtn.onclick = () => {
+      const resolve = dialogResolve;
+      dialogResolve = null;
+      const modal = document.getElementById('dialog-modal');
+      if (modal) modal.classList.remove('active');
+      if (resolve) resolve(secondaryValue);
+    };
     
     const confirmBtn = document.getElementById('dialog-btn-confirm');
     confirmBtn.onclick = () => {
@@ -1823,7 +2529,6 @@ if (dialogInput) {
 // ------------------------------------------
 
 async function handleDeleteSkill(filename) {
-  console.log('handleDeleteSkill requested for:', filename);
   const confirmed = await showCustomDialog({
     title: currentLanguage === 'zh' ? '删除技能' : 'Delete Skill',
     message: currentLanguage === 'zh' ? `确定要从全局技能库中物理删除 "${filename}" 吗？该操作不可撤销！` : `Are you sure you want to permanently delete "${filename}" from the global library? This cannot be undone!`,
@@ -1857,6 +2562,7 @@ window.handleSettingsPickScanDir = handleSettingsPickScanDir;
 window.handleSaveSettings = handleSaveSettings;
 window.handlePickProject = handlePickProject;
 window.handleCreateSkill = handleCreateSkill;
+window.handleImportSkill = handleImportSkill;
 window.handleSelectProject = handleSelectProject;
 window.handleToggleSkill = handleToggleSkill;
 window.handleDeleteProject = handleDeleteProject;
@@ -1864,6 +2570,8 @@ window.handleSyncSkills = handleSyncSkills;
 window.handleSearch = handleSearch;
 window.openSkillViewer = openSkillViewer;
 window.openEditorModal = openEditorModal;
+window.openCollectionModal = openCollectionModal;
+window.closeCollectionModal = closeCollectionModal;
 window.closeEditorModal = closeEditorModal;
 window.switchModalTab = switchModalTab;
 window.handleSaveSkill = handleSaveSkill;
