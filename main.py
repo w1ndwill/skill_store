@@ -3,10 +3,12 @@ import sys
 import json
 import shutil
 import hashlib
+import difflib
 import time
 import re
 import uuid
 import zipfile
+import stat
 from pathlib import PurePosixPath
 import webview
 import requests
@@ -242,6 +244,7 @@ def check_dir_sync_status(
     skills_dir: str = None,
     md5_cache: dict = None,
     standard_skill: bool = False,
+    ignored_relative_paths: set = None,
 ) -> str:
     """
     Check the synchronization status of a folder skill in a project.
@@ -264,11 +267,17 @@ def check_dir_sync_status(
         if standard_skill
         else dst_root
     )
+    ignored = {
+        normalize_relative_path(path).lower()
+        for path in (ignored_relative_paths or set())
+    }
     for root, dirs, files in os.walk(src_dir):
         dirs.sort()
         for f in files:
             src_file = os.path.join(root, f)
             rel_path = os.path.relpath(src_file, src_dir)
+            if normalize_relative_path(rel_path).lower() in ignored:
+                continue
 
             # Skip checking root README.md and AGENTS.md to avoid constant out-of-sync status
             if not standard_skill and rel_path.lower() in ("readme.md", "agents.md"):
@@ -398,7 +407,7 @@ def upsert_metadata(entries: list, metadata: dict):
         entries.append(metadata)
         return
     for idx, item in enumerate(entries):
-        if item.get("filename") == filename:
+        if (item.get("filename") or "").casefold() == filename.casefold():
             entries[idx] = metadata
             return
     entries.append(metadata)
@@ -412,7 +421,7 @@ def collect_folder_skill_metadata(folder_path: str) -> list:
 
     metadata = []
     for item in sorted(os.listdir(bundled_skills_dir)):
-        if not item.endswith(".md"):
+        if not item.lower().endswith(".md"):
             continue
         fp = os.path.join(bundled_skills_dir, item)
         if os.path.isfile(fp):
@@ -583,10 +592,36 @@ def safe_real_child_path(root: str, relative_path: str) -> str:
     return target
 
 
+def paths_overlap(first: str, second: str) -> bool:
+    """Return whether either resolved path contains the other."""
+    first_real = os.path.normcase(os.path.realpath(os.path.abspath(first)))
+    second_real = os.path.normcase(os.path.realpath(os.path.abspath(second)))
+    try:
+        common = os.path.commonpath([first_real, second_real])
+    except ValueError:
+        return False
+    return common in (first_real, second_real)
+
+
+def is_path_reparse_point(path: str) -> bool:
+    """Detect symlinks and Windows junction/reparse-point entries."""
+    if os.path.islink(path):
+        return True
+    is_junction = getattr(os.path, "isjunction", None)
+    if is_junction and is_junction(path):
+        return True
+    try:
+        attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
 SKILL_LIBRARY_STATE_DIR = ".skill-hub"
 SKILL_IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024
 SKILL_IMPORT_MAX_TOTAL_BYTES = 50 * 1024 * 1024
 SKILL_IMPORT_MAX_ENTRIES = 500
+SKILL_IMPORT_DIFF_MAX_CHARS = 24000
 
 
 def split_markdown_frontmatter(content: str) -> tuple:
@@ -629,6 +664,155 @@ def split_markdown_frontmatter(content: str) -> tuple:
         metadata[key] = value.strip("\"'")
         index += 1
     return metadata, parts[2].lstrip("\r\n")
+
+
+def split_markdown_frontmatter_source(content: str) -> tuple:
+    """Return raw frontmatter, body, and whether a valid frontmatter block exists."""
+    text = (content or "").lstrip("\ufeff")
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        return "", text, False
+    closing_index = next(
+        (
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.strip() == "---"
+        ),
+        -1,
+    )
+    if closing_index < 0:
+        return "", text, False
+    raw_frontmatter = "".join(lines[1:closing_index])
+    body = "".join(lines[closing_index + 1:]).lstrip("\r\n")
+    return raw_frontmatter, body, True
+
+
+def frontmatter_top_level_keys(raw_frontmatter: str) -> set:
+    """Return top-level YAML-like keys without parsing or rewriting nested values."""
+    keys = set()
+    for line in (raw_frontmatter or "").splitlines():
+        if not line or line[:1].isspace() or ":" not in line:
+            continue
+        key = line.split(":", 1)[0].strip().lower()
+        if re.fullmatch(r"[a-zA-Z0-9_.-]+", key):
+            keys.add(key)
+    return keys
+
+
+def _frontmatter_blocks(raw_frontmatter: str) -> list:
+    """Split YAML-like frontmatter into verbatim top-level key blocks."""
+    blocks = []
+    current_key = ""
+    current_lines = []
+    for line in (raw_frontmatter or "").splitlines(keepends=True):
+        match = (
+            re.match(r"^([a-zA-Z0-9_.-]+)\s*:", line)
+            if line and not line[:1].isspace()
+            else None
+        )
+        if match:
+            if current_lines:
+                blocks.append((current_key, "".join(current_lines)))
+            current_key = match.group(1).lower()
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+    if current_lines:
+        blocks.append((current_key, "".join(current_lines)))
+    return blocks
+
+
+def preserve_custom_frontmatter(
+    original: str,
+    optimized: str,
+    managed_keys: set,
+) -> str:
+    """Keep original custom frontmatter blocks while accepting managed AI fields."""
+    original_raw, _original_body, original_has = split_markdown_frontmatter_source(
+        original
+    )
+    if not original_has:
+        return optimized
+    optimized_raw, optimized_body, optimized_has = split_markdown_frontmatter_source(
+        optimized
+    )
+    custom_blocks = {
+        key: block
+        for key, block in _frontmatter_blocks(original_raw)
+        if key and key not in managed_keys
+    }
+    if not custom_blocks:
+        return optimized
+
+    if not optimized_has:
+        preserved = original_raw.rstrip("\r\n")
+        return f"---\n{preserved}\n---\n\n{optimized_body.rstrip()}\n"
+
+    merged_blocks = []
+    retained_custom = set()
+    for key, block in _frontmatter_blocks(optimized_raw):
+        if key in custom_blocks:
+            merged_blocks.append(custom_blocks[key])
+            retained_custom.add(key)
+        else:
+            merged_blocks.append(block)
+    merged_blocks.extend(
+        block
+        for key, block in _frontmatter_blocks(original_raw)
+        if key in custom_blocks and key not in retained_custom
+    )
+    merged = "".join(merged_blocks).rstrip("\r\n")
+    return f"---\n{merged}\n---\n\n{optimized_body.rstrip()}\n"
+
+
+def preserve_frontmatter_with_missing_fields(
+    content: str,
+    fields: list,
+) -> tuple:
+    """Add missing top-level fields while retaining all existing YAML verbatim."""
+    raw_frontmatter, body, has_frontmatter = split_markdown_frontmatter_source(
+        content
+    )
+    if not has_frontmatter:
+        lines = ["---"]
+        lines.extend(f"{key}: {value}" for key, value in fields)
+        lines.extend(["---", "", body.rstrip(), ""])
+        return "\n".join(lines), [key for key, _value in fields]
+
+    existing_keys = frontmatter_top_level_keys(raw_frontmatter)
+    missing = [
+        (key, value)
+        for key, value in fields
+        if key.lower() not in existing_keys
+    ]
+    if not missing:
+        return (content or "").lstrip("\ufeff"), []
+
+    newline = "\r\n" if "\r\n" in (content or "") else "\n"
+    preserved = raw_frontmatter.rstrip("\r\n")
+    additions = newline.join(f"{key}: {value}" for key, value in missing)
+    merged = preserved
+    if merged:
+        merged += newline
+    merged += additions
+    normalized = (
+        f"---{newline}{merged}{newline}---{newline}{newline}"
+        f"{body.rstrip()}{newline}"
+    )
+    return normalized, [key for key, _value in missing]
+
+
+def build_import_diff(before: str, after: str, filename: str) -> str:
+    """Return a complete bounded diff or reject it as unsafe to approve."""
+    diff = "".join(difflib.unified_diff(
+        (before or "").splitlines(keepends=True),
+        (after or "").splitlines(keepends=True),
+        fromfile=f"{filename} (local)",
+        tofile=f"{filename} (AI)",
+    ))
+    if len(diff) > SKILL_IMPORT_DIFF_MAX_CHARS:
+        raise ValueError("AI diff is too large to review without truncation")
+    return diff
 
 
 def _clean_frontmatter_value(value: str, fallback: str = "") -> str:
@@ -712,25 +896,20 @@ def infer_skill_metadata(content: str, filename: str, language: str = "zh") -> d
 def normalize_skillhub_markdown(content: str, filename: str, language: str = "zh") -> tuple:
     """Normalize a flat SkillHub Markdown skill and return content plus change notes."""
     metadata = infer_skill_metadata(content, filename, language)
-    frontmatter = metadata["frontmatter"]
-    required = ("title", "emoji", "category", "tags", "description")
+    fields = [
+        ("title", metadata["title"]),
+        ("emoji", metadata["emoji"]),
+        ("category", metadata["category"]),
+        ("tags", ", ".join(metadata["tags"])),
+        ("description", metadata["description"]),
+    ]
     changes = []
-    if not frontmatter:
+    _raw, _body, has_frontmatter = split_markdown_frontmatter_source(content)
+    normalized, missing = preserve_frontmatter_with_missing_fields(content, fields)
+    if not has_frontmatter:
         changes.append("added_frontmatter")
-    elif any(not frontmatter.get(key) for key in required):
+    elif missing:
         changes.append("completed_frontmatter")
-    normalized = "\n".join([
-        "---",
-        f"title: {metadata['title']}",
-        f"emoji: {metadata['emoji']}",
-        f"category: {metadata['category']}",
-        f"tags: {', '.join(metadata['tags'])}",
-        f"description: {metadata['description']}",
-        "---",
-        "",
-        metadata["body"].rstrip(),
-        "",
-    ])
     if normalized.replace("\r\n", "\n") != (content or "").replace("\r\n", "\n"):
         changes.append("normalized_metadata")
     return normalized, list(dict.fromkeys(changes)), metadata
@@ -1531,7 +1710,7 @@ description: <一句话描述这个技能的用途>
             return {"error": "Invalid filename"}
         # If exists, append a numeric suffix
         if os.path.exists(fp):
-            base = filename[:-3] if filename.endswith(".md") else filename
+            base = filename[:-3] if filename.lower().endswith(".md") else filename
             counter = 1
             while os.path.exists(fp):
                 filename = f"{base}_{counter}.md"
@@ -1581,14 +1760,39 @@ description: <一句话描述这个技能的用途>
                     meta["filename"] = item
                     meta["is_dir"] = True
                     skills.append(meta)
-                elif os.path.isfile(fp) and item.endswith(".md"):
+                elif os.path.isfile(fp) and item.lower().endswith(".md"):
                     meta = parse_markdown_metadata(fp)
                     meta["is_dir"] = False
                     skills.append(meta)
+        collections = self._load_skill_collections().get("collections", [])
+        for collection in collections:
+            parent = collection.get("bundle_parent", "")
+            for virtual_id, relative_path in collection.get(
+                "member_sources",
+                {},
+            ).items():
+                source = safe_real_child_path(
+                    os.path.join(self.skills_dir, parent),
+                    relative_path,
+                )
+                if not source or not os.path.isfile(source):
+                    continue
+                meta = parse_markdown_metadata(source)
+                meta.update({
+                    "filename": virtual_id,
+                    "display_filename": os.path.basename(relative_path),
+                    "is_dir": False,
+                    "is_virtual": True,
+                    "virtual_parent": parent,
+                    "virtual_source": relative_path,
+                    "target_filename": os.path.basename(relative_path),
+                })
+                skills.append(meta)
+
         skills_by_name = {
             skill["filename"]: skill for skill in skills
         }
-        for collection in self._load_skill_collections().get("collections", []):
+        for collection in collections:
             members = [
                 member for member in collection.get("members", [])
                 if member in skills_by_name
@@ -1611,6 +1815,8 @@ description: <一句话描述这个技能的用途>
         fp = safe_child_path(self.skills_dir, filename)
         if not fp:
             return {"error": "Invalid filename"}
+        if not os.path.exists(fp):
+            fp = self._resolve_virtual_skill(filename).get("path", "")
         if os.path.isdir(fp):
             skill_fp = os.path.join(fp, "SKILL.md")
             fp = skill_fp if os.path.isfile(skill_fp) else os.path.join(fp, "README.md")
@@ -1654,6 +1860,9 @@ description: <一句话描述这个技能的用途>
                 changed = False
                 retained = []
                 for collection in state.get("collections", []):
+                    if collection.get("bundle_parent") == filename:
+                        changed = True
+                        continue
                     members = [
                         member for member in collection.get("members", [])
                         if member != filename
@@ -1833,9 +2042,100 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             by_id[collection_id] = record
             changed = True
 
+        if os.path.isdir(self.skills_dir):
+            for item in sorted(os.listdir(self.skills_dir)):
+                bundle_root = os.path.join(self.skills_dir, item)
+                bundled_dir = os.path.join(bundle_root, ".agent", "skills")
+                readme_path = os.path.join(bundle_root, "README.md")
+                if (
+                    item.startswith(".")
+                    or not os.path.isdir(bundle_root)
+                    or not os.path.isfile(readme_path)
+                    or not os.path.isdir(bundled_dir)
+                ):
+                    continue
+                child_names = [
+                    name
+                    for name in sorted(os.listdir(bundled_dir))
+                    if name.lower().endswith(".md")
+                    and os.path.isfile(os.path.join(bundled_dir, name))
+                ]
+                if len(child_names) < 2:
+                    continue
+                collection_id = normalize_skill_filename(item).lower()
+                member_sources = {
+                    f"@bundle:{collection_id}:{name}": normalize_relative_path(
+                        os.path.join(".agent", "skills", name)
+                    )
+                    for name in child_names
+                }
+                members = [item, *member_sources.keys()]
+                title = parse_markdown_metadata(readme_path).get("title") or item
+                existing = by_id.get(collection_id)
+                if existing:
+                    before = json.dumps(
+                        existing,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                    previous_members = list(existing.get("members", []))
+                    previous_enabled = set(existing.get("enabled_members", []))
+                    existing.update({
+                        "title": title,
+                        "members": members,
+                        "source_name": item,
+                        "kind": "bundle",
+                        "bundle_parent": item,
+                        "member_sources": member_sources,
+                    })
+                    existing["enabled_members"] = [
+                        member
+                        for member in members
+                        if member in previous_enabled
+                        or member not in previous_members
+                    ]
+                    changed = changed or before != json.dumps(
+                        existing,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                else:
+                    record = {
+                        "id": collection_id,
+                        "title": title,
+                        "members": members,
+                        "enabled_members": list(members),
+                        "source_name": item,
+                        "kind": "bundle",
+                        "bundle_parent": item,
+                        "member_sources": member_sources,
+                    }
+                    state["collections"].append(record)
+                    by_id[collection_id] = record
+                    changed = True
+
         if changed:
             atomic_write_json(path, state)
         return state
+
+    def _resolve_virtual_skill(self, filename: str) -> dict:
+        for collection in self._load_skill_collections().get("collections", []):
+            source = collection.get("member_sources", {}).get(filename)
+            parent = collection.get("bundle_parent", "")
+            if not source or not parent:
+                continue
+            path = safe_real_child_path(
+                os.path.join(self.skills_dir, parent),
+                source,
+            )
+            if path and os.path.isfile(path):
+                return {
+                    "path": path,
+                    "parent": parent,
+                    "relative_path": source,
+                    "target_filename": os.path.basename(source),
+                }
+        return {}
 
     def _save_skill_collections(self, state: dict) -> None:
         atomic_write_json(self._skill_collections_path(), state)
@@ -1974,7 +2274,7 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             atomic_write_json(index_path, index)
 
     def scan_unregistered_skills(self) -> dict:
-        """Find top-level skills copied directly into the active library."""
+        """Find new or externally modified top-level skills in the active library."""
         current = self._current_library_entries()
         index_path = self._library_index_path()
         index = load_json_file(index_path, {})
@@ -1994,15 +2294,18 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             atomic_write_json(index_path, baseline)
             return {"ok": True, "initialized": True, "skills": []}
         known = index["entries"]
-        unknown = [
-            {
+        unknown = []
+        for name, metadata in current.items():
+            previous = known.get(name)
+            if previous and previous.get("hash") == metadata["hash"]:
+                continue
+            unknown.append({
                 "filename": name,
                 "kind": metadata["kind"],
                 "hash": metadata["hash"],
-            }
-            for name, metadata in current.items()
-            if name not in known
-        ]
+                "change_type": "modified" if previous else "new",
+                "previous_hash": previous.get("hash", "") if previous else "",
+            })
         return {"ok": True, "initialized": False, "skills": unknown}
 
     def acknowledge_unregistered_skill(self, filename: str) -> dict:
@@ -2032,14 +2335,19 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         entries = 0
         total_size = 0
         for root, dirs, files in os.walk(source):
+            if is_path_reparse_point(root):
+                raise ValueError("Directory reparse points are not allowed in imported skills")
+            for item in [*dirs, *files]:
+                if is_path_reparse_point(os.path.join(root, item)):
+                    raise ValueError(
+                        "Directory reparse points are not allowed in imported skills"
+                    )
             dirs[:] = [
                 item for item in dirs
                 if item not in (".git", "__pycache__", "__MACOSX")
             ]
             for item in files:
                 path = os.path.join(root, item)
-                if os.path.islink(path):
-                    raise ValueError("Symbolic links are not allowed in imported skills")
                 entries += 1
                 total_size += os.path.getsize(path)
                 if entries > SKILL_IMPORT_MAX_ENTRIES:
@@ -2152,34 +2460,76 @@ description: 简短说明此项技能指南的目的与开发约束规范。
                 continue
         return ""
 
+    def _existing_library_name(self, requested_name: str) -> str:
+        requested_key = (requested_name or "").casefold()
+        for item in os.listdir(self.skills_dir):
+            if item.casefold() == requested_key:
+                return item
+        return ""
+
+    def _classify_collection_candidate(
+        self,
+        adapted_path: str,
+        existing_name: str,
+    ) -> dict:
+        candidate_hash = get_tree_sha256(adapted_path)
+        if not existing_name:
+            duplicate = self._find_import_duplicate(adapted_path)
+            return {
+                "action": "duplicate" if duplicate else "install",
+                "duplicate_of": duplicate,
+                "existing_hash": "",
+            }
+
+        existing_path = os.path.join(self.skills_dir, existing_name)
+        existing_hash = get_tree_sha256(existing_path)
+        if candidate_hash == existing_hash:
+            return {
+                "action": "duplicate",
+                "duplicate_of": existing_name,
+                "existing_hash": existing_hash,
+            }
+
+        index = load_json_file(self._library_index_path(), {})
+        entries = index.get("entries", {}) if isinstance(index, dict) else {}
+        registered = next(
+            (
+                metadata
+                for name, metadata in entries.items()
+                if name.casefold() == existing_name.casefold()
+            ),
+            {},
+        )
+        action = (
+            "update"
+            if registered.get("hash") == existing_hash
+            else "conflict"
+        )
+        return {
+            "action": action,
+            "duplicate_of": "",
+            "existing_hash": existing_hash,
+        }
+
     def _normalize_standard_skill(self, skill_path: str, folder_name: str) -> list:
         content, _encoding = self._read_import_markdown(skill_path)
         frontmatter, body = split_markdown_frontmatter(content)
-        changes = []
         name = frontmatter.get("name") or folder_name.lower().replace(" ", "-")
         _title, inferred_description = _markdown_title_and_description(
             body, folder_name, self.language
         )
         description = frontmatter.get("description") or inferred_description
-        if not frontmatter.get("name") or not frontmatter.get("description"):
-            preserved = [
-                f"{key}: {value}"
-                for key, value in frontmatter.items()
-                if key not in ("name", "description")
-            ]
-            lines = [
-                "---",
-                f"name: {_clean_frontmatter_value(name, 'imported-skill')}",
-                f"description: {_clean_frontmatter_value(description)}",
-                *preserved,
-                "---",
-                "",
-                body.rstrip(),
-                "",
-            ]
-            atomic_write_text(skill_path, "\n".join(lines))
-            changes.append("completed_standard_skill_metadata")
-        return changes
+        normalized, missing = preserve_frontmatter_with_missing_fields(
+            content,
+            [
+                ("name", _clean_frontmatter_value(name, "imported-skill")),
+                ("description", _clean_frontmatter_value(description)),
+            ],
+        )
+        if not missing:
+            return []
+        atomic_write_text(skill_path, normalized)
+        return ["completed_standard_skill_metadata"]
 
     def _scan_adapted_import(self, adapted_path: str, structural_findings=None) -> list:
         findings = list(structural_findings or [])
@@ -2225,19 +2575,22 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         if kind == "standard":
             entry_path = os.path.join(adapted_path, "SKILL.md")
             format_rules = (
-                "Keep standard skill frontmatter with only name and description. "
+                "Keep name and description, and preserve every existing custom "
+                "frontmatter field verbatim. "
                 "Do not rename the skill or remove references to bundled resources."
             )
         elif kind == "bundle":
             entry_path = os.path.join(adapted_path, "README.md")
             format_rules = (
                 "Keep SkillHub frontmatter fields title, emoji, category, tags, and description. "
+                "Preserve every existing custom frontmatter field verbatim. "
                 "This README is the bundle entry document."
             )
         else:
             entry_path = adapted_path
             format_rules = (
-                "Keep SkillHub frontmatter fields title, emoji, category, tags, and description."
+                "Keep SkillHub frontmatter fields title, emoji, category, tags, and description. "
+                "Preserve every existing custom frontmatter field verbatim."
             )
         if not os.path.isfile(entry_path):
             return {"error": "AI optimization entry document is missing"}
@@ -2303,17 +2656,49 @@ Write in {language}. Return only the complete Markdown document without code fen
                 optimized = fence.group(1).strip()
             if not optimized:
                 return {"error": "AI returned empty content"}
+            managed_keys = (
+                {"name", "description"}
+                if kind == "standard"
+                else {"title", "emoji", "category", "tags", "description"}
+            )
+            optimized = preserve_custom_frontmatter(
+                content,
+                optimized.rstrip() + "\n",
+                managed_keys,
+            )
             if kind == "standard":
-                atomic_write_text(entry_path, optimized.rstrip() + "\n")
-                self._normalize_standard_skill(entry_path, active_name)
+                frontmatter, body = split_markdown_frontmatter(optimized)
+                name = frontmatter.get("name") or active_name
+                _title, inferred_description = _markdown_title_and_description(
+                    body,
+                    active_name,
+                    self.language,
+                )
+                final_content, _missing = preserve_frontmatter_with_missing_fields(
+                    optimized,
+                    [
+                        ("name", _clean_frontmatter_value(name, "imported-skill")),
+                        (
+                            "description",
+                            _clean_frontmatter_value(
+                                frontmatter.get("description")
+                                or inferred_description
+                            ),
+                        ),
+                    ],
+                )
             else:
-                normalized, _notes, _metadata = normalize_skillhub_markdown(
+                final_content, _notes, _metadata = normalize_skillhub_markdown(
                     optimized,
                     "README.md" if kind == "bundle" else active_name,
                     self.language,
                 )
-                atomic_write_text(entry_path, normalized)
-            return {"ok": True}
+            diff = build_import_diff(content, final_content, active_name)
+            atomic_write_text(entry_path, final_content)
+            return {
+                "ok": True,
+                "diff": diff,
+            }
         except requests.exceptions.Timeout:
             return {"error": "AI optimization timed out"}
         except Exception as error:
@@ -2402,12 +2787,8 @@ Write in {language}. Return only the complete Markdown document without code fen
                         requested
                     ).replace(" ", "-").strip(".-")
                     existing_name = (
-                        requested_name
+                        self._existing_library_name(requested_name)
                         if requested_name
-                        and os.path.exists(os.path.join(
-                            self.skills_dir,
-                            requested_name,
-                        ))
                         else ""
                     )
                     child_active_name = (
@@ -2429,9 +2810,9 @@ Write in {language}. Return only the complete Markdown document without code fen
                         child_active_name,
                     )
                     child_findings = self._scan_adapted_import(child_adapted)
-                    child_duplicate = (
-                        existing_name
-                        or self._find_import_duplicate(child_adapted)
+                    classification = self._classify_collection_candidate(
+                        child_adapted,
+                        existing_name,
                     )
                     changes.extend(child_changes)
                     collection_items.append({
@@ -2441,7 +2822,7 @@ Write in {language}. Return only the complete Markdown document without code fen
                         "changes": child_changes,
                         "findings": child_findings,
                         "existing_name": existing_name,
-                        "duplicate_of": child_duplicate,
+                        **classification,
                     })
             elif os.path.isfile(readme_path) or os.path.isdir(
                 os.path.join(candidate, ".agent", "skills")
@@ -2557,9 +2938,26 @@ Write in {language}. Return only the complete Markdown document without code fen
         source_path = os.path.abspath(source_path or "")
         if not os.path.exists(source_path):
             return {"error": "Import source does not exist"}
+        if is_path_reparse_point(source_path):
+            return {"error": "Import source cannot be a symbolic link or reparse point"}
         paths = self._skill_import_paths()
         if not paths:
             return {"error": "Invalid skill library path"}
+        direct_source = ""
+        if replace_active_name:
+            direct_source = safe_real_child_path(
+                self.skills_dir,
+                replace_active_name,
+            )
+        is_direct_adoption = bool(
+            direct_source
+            and os.path.normcase(os.path.realpath(source_path))
+            == os.path.normcase(os.path.realpath(direct_source))
+        )
+        if paths_overlap(source_path, paths["pending"]):
+            return {"error": "Import source cannot overlap the staging directory"}
+        if paths_overlap(source_path, self.skills_dir) and not is_direct_adoption:
+            return {"error": "Import source cannot overlap the skill library"}
         if os.path.isdir(paths["pending"]):
             cutoff = time.time() - (24 * 60 * 60)
             for item in os.listdir(paths["pending"]):
@@ -2630,6 +3028,10 @@ Write in {language}. Return only the complete Markdown document without code fen
                         if ai_result.get("ok"):
                             ai_used = True
                             collection_item["ai_used"] = True
+                            collection_item["ai_diff"] = ai_result.get(
+                                "diff",
+                                "",
+                            )
                             collection_item["changes"].append("ai_optimized")
                         else:
                             ai_errors.append(
@@ -2647,6 +3049,7 @@ Write in {language}. Return only the complete Markdown document without code fen
                     )
                     if ai_result.get("ok"):
                         ai_used = True
+                        result["ai_diff"] = ai_result.get("diff", "")
                         result["changes"].append("ai_optimized")
                     else:
                         ai_error = ai_result.get(
@@ -2660,12 +3063,10 @@ Write in {language}. Return only the complete Markdown document without code fen
                     collection_item["findings"] = self._scan_adapted_import(
                         collection_item["adapted_path"]
                     )
-                    collection_item["duplicate_of"] = (
-                        collection_item.get("existing_name")
-                        or self._find_import_duplicate(
-                            collection_item["adapted_path"]
-                        )
-                    )
+                    collection_item.update(self._classify_collection_candidate(
+                        collection_item["adapted_path"],
+                        collection_item.get("existing_name", ""),
+                    ))
                     for finding in collection_item["findings"]:
                         prefixed = dict(finding)
                         relative = finding.get("path", "")
@@ -2678,15 +3079,24 @@ Write in {language}. Return only the complete Markdown document without code fen
                 result["findings"] = collection_findings
                 installable_items = [
                     item for item in result["collection_items"]
-                    if not item.get("duplicate_of")
+                    if item.get("action") != "duplicate"
                 ]
                 result["active_names"] = [
                     item["active_name"] for item in installable_items
                 ]
                 result["collection_count"] = len(result["collection_items"])
                 result["installable_count"] = len(installable_items)
-                result["duplicate_count"] = (
-                    result["collection_count"] - result["installable_count"]
+                result["duplicate_count"] = sum(
+                    item.get("action") == "duplicate"
+                    for item in result["collection_items"]
+                )
+                result["update_count"] = sum(
+                    item.get("action") == "update"
+                    for item in result["collection_items"]
+                )
+                result["conflict_count"] = sum(
+                    item.get("action") == "conflict"
+                    for item in result["collection_items"]
                 )
                 result["duplicate_of"] = ""
             else:
@@ -2731,8 +3141,13 @@ Write in {language}. Return only the complete Markdown document without code fen
                 "ai_required": False,
                 "ai_requested": ai_requested,
                 "ai_used": ai_used,
+                "ai_diff": result.get("ai_diff", ""),
                 "ai_error": ai_error,
                 "replace_existing": replace_active_name,
+                "has_high_risk": any(
+                    finding.get("severity") == "high"
+                    for finding in result["findings"]
+                ),
                 "existing_hash": (
                     get_tree_sha256(source_path)
                     if replace_active_name
@@ -2744,6 +3159,8 @@ Write in {language}. Return only the complete Markdown document without code fen
                     "collection_count": result["collection_count"],
                     "installable_count": result["installable_count"],
                     "duplicate_count": result["duplicate_count"],
+                    "update_count": result["update_count"],
+                    "conflict_count": result["conflict_count"],
                     "active_names": result["active_names"],
                     "collection_items": [
                         {
@@ -2757,8 +3174,11 @@ Write in {language}. Return only the complete Markdown document without code fen
                             ),
                             "changes": item["changes"],
                             "findings": item["findings"],
+                            "action": item["action"],
+                            "existing_hash": item["existing_hash"],
                             "duplicate_of": item["duplicate_of"],
                             "ai_used": bool(item.get("ai_used")),
+                            "ai_diff": item.get("ai_diff", ""),
                         }
                         for item in result["collection_items"]
                     ],
@@ -2830,7 +3250,7 @@ Write in {language}. Return only the complete Markdown document without code fen
     ) -> dict:
         installable = [
             item for item in manifest.get("collection_items", [])
-            if not item.get("duplicate_of")
+            if item.get("action") != "duplicate"
         ]
         if not installable:
             return {"error": "Every skill in this collection is already installed"}
@@ -2851,27 +3271,53 @@ Write in {language}. Return only the complete Markdown document without code fen
                 or not os.path.isdir(adapted)
             ):
                 return {"error": "Collection staging data is invalid"}
-            if os.path.exists(destination):
+            action = item.get("action", "install")
+            exists = os.path.exists(destination)
+            if action == "install" and exists:
                 return {
                     "requires_repreview": True,
                     "error": "Skill library changed after preview",
                 }
-            prepared.append((item, adapted, destination))
+            if action in ("update", "conflict") and (
+                not exists
+                or get_tree_sha256(destination) != item.get("existing_hash", "")
+            ):
+                return {
+                    "requires_repreview": True,
+                    "error": "Existing collection skill changed after preview",
+                }
+            prepared.append((item, adapted, destination, action))
 
         original = os.path.join(pending_root, "original")
         upstream = os.path.join(paths["upstream"], manifest["token"])
-        created_destinations = []
+        applied = []
         try:
             os.makedirs(paths["upstream"], exist_ok=True)
             if not os.path.exists(upstream):
                 shutil.copytree(original, upstream)
 
-            for _item, adapted, destination in prepared:
+            for item, adapted, destination, action in prepared:
                 os.makedirs(os.path.dirname(destination), exist_ok=True)
+                backup = ""
+                if action in ("update", "conflict"):
+                    backup = f"{destination}.import-backup-{manifest['token']}"
+                    os.replace(destination, backup)
+                    applied.append((destination, backup))
+                    archived = os.path.join(
+                        upstream,
+                        "_replaced",
+                        item["active_name"],
+                    )
+                    os.makedirs(os.path.dirname(archived), exist_ok=True)
+                    shutil.copytree(backup, archived)
+                else:
+                    applied.append((destination, backup))
                 shutil.copytree(adapted, destination)
-                created_destinations.append(destination)
 
-            filenames = [item["active_name"] for item, _a, _d in prepared]
+            filenames = [
+                item["active_name"]
+                for item, _adapted, _destination, _action in prepared
+            ]
             skipped_duplicates = list(dict.fromkeys(
                 item["duplicate_of"]
                 for item in manifest.get("collection_items", [])
@@ -2897,6 +3343,11 @@ Write in {language}. Return only the complete Markdown document without code fen
                 "ai_used": bool(manifest.get("ai_used")),
                 "ai_error": manifest.get("ai_error", ""),
                 "skipped_duplicates": skipped_duplicates,
+                "updated": [
+                    item["active_name"]
+                    for item in installable
+                    if item.get("action") in ("update", "conflict")
+                ],
             })
             atomic_write_json(paths["catalog"], catalog)
             for filename in filenames:
@@ -2908,6 +3359,9 @@ Write in {language}. Return only the complete Markdown document without code fen
                 manifest.get("source_name", ""),
                 [*filenames, *skipped_duplicates],
             )
+            for _destination, backup in applied:
+                if backup and os.path.isdir(backup):
+                    shutil.rmtree(backup, ignore_errors=True)
             shutil.rmtree(pending_root, ignore_errors=True)
             return {
                 "ok": True,
@@ -2921,12 +3375,20 @@ Write in {language}. Return only the complete Markdown document without code fen
                 "replaced_existing": False,
             }
         except Exception as error:
-            for destination in reversed(created_destinations):
+            for destination, backup in reversed(applied):
                 if os.path.isdir(destination):
                     shutil.rmtree(destination, ignore_errors=True)
+                if backup and os.path.isdir(backup):
+                    os.replace(backup, destination)
             return {"error": str(error)}
 
-    def apply_skill_import(self, token: str) -> dict:
+    def apply_skill_import(
+        self,
+        token: str,
+        accept_ai_changes: bool = False,
+        accept_high_risk: bool = False,
+        accept_collection_conflicts: bool = False,
+    ) -> dict:
         """Apply a previously previewed local import and preserve its upstream source."""
         if not re.fullmatch(r"[a-f0-9]{32}", token or ""):
             return {"error": "Invalid import token"}
@@ -2938,6 +3400,44 @@ Write in {language}. Return only the complete Markdown document without code fen
         manifest = load_json_file(manifest_path, {})
         if manifest.get("token") != token:
             return {"error": "Invalid import manifest"}
+        if manifest.get("has_high_risk") and not accept_high_risk:
+            return {
+                "requires_high_risk_confirmation": True,
+                "high_risk_findings": [
+                    finding
+                    for finding in manifest.get("findings", [])
+                    if finding.get("severity") == "high"
+                ],
+            }
+        if manifest.get("ai_used") and not accept_ai_changes:
+            return {
+                "requires_ai_confirmation": True,
+                "ai_diff": manifest.get("ai_diff", ""),
+                "collection_diffs": [
+                    {
+                        "source_name": item.get("source_name", ""),
+                        "ai_diff": item.get("ai_diff", ""),
+                    }
+                    for item in manifest.get("collection_items", [])
+                    if item.get("ai_used")
+                ],
+            }
+        if (
+            manifest.get("kind") == "collection"
+            and manifest.get("conflict_count", 0)
+            and not accept_collection_conflicts
+        ):
+            return {
+                "requires_collection_confirmation": True,
+                "conflicts": [
+                    {
+                        "source_name": item.get("source_name", ""),
+                        "active_name": item.get("active_name", ""),
+                    }
+                    for item in manifest.get("collection_items", [])
+                    if item.get("action") == "conflict"
+                ],
+            }
         if manifest.get("kind") == "collection":
             return self._apply_skill_collection_import(
                 pending_root,
@@ -3057,6 +3557,12 @@ Write in {language}. Return only the complete Markdown document without code fen
         global_skills = self.get_skills()
         dir_skills = [skill for skill in global_skills if skill.get("is_dir", False)]
         file_skills = [skill for skill in global_skills if not skill.get("is_dir", False)]
+        bundle_collections = {
+            collection.get("bundle_parent"): collection
+            for collection in self._load_skill_collections().get("collections", [])
+            if collection.get("kind") == "bundle"
+            and collection.get("bundle_parent")
+        }
         for proj in self.projects:
             path = proj["path"]
             state_paths = self._sync_state_paths(path)
@@ -3085,34 +3591,84 @@ Write in {language}. Return only the complete Markdown document without code fen
                 fname = skill["filename"]
                 global_fp = os.path.join(self.skills_dir, fname)
                 is_standard = skill.get("folder_kind") == "standard"
+                ignored_relative_paths = set()
+                bundle_collection = bundle_collections.get(fname, {})
+                if entry["enabled_skills"] is not None:
+                    project_enabled = set(entry["enabled_skills"])
+                    ignored_relative_paths = {
+                        relative
+                        for virtual_id, relative in bundle_collection.get(
+                            "member_sources",
+                            {},
+                        ).items()
+                        if virtual_id not in project_enabled
+                    }
                 status = check_dir_sync_status(
                     global_fp,
                     path,
                     self.skills_dir,
                     md5_cache,
                     standard_skill=is_standard,
+                    ignored_relative_paths=ignored_relative_paths,
                 )
+                if bundle_collection and not is_standard:
+                    readme_path = os.path.join(global_fp, "README.md")
+                    parent_target = os.path.join(
+                        path,
+                        ".agent",
+                        "skills",
+                        f"{fname}.md",
+                    )
+                    parent_exists = os.path.isfile(parent_target)
+                    parent_matches = (
+                        parent_exists
+                        and os.path.isfile(readme_path)
+                        and get_file_md5(
+                            readme_path,
+                            md5_cache,
+                        ) == get_file_md5(parent_target, md5_cache)
+                    )
+                    if status == "synced" and not parent_matches:
+                        status = "out_of_sync"
+                    elif status == "unloaded" and parent_matches:
+                        status = "synced"
+                    elif status == "unloaded" and parent_exists:
+                        status = "out_of_sync"
                 entry["skills_status"][fname] = status
 
                 if status != "unloaded" and not is_standard:
-                    bundled_refs.add(fname + ".md")
+                    bundled_refs.add((fname + ".md").casefold())
                     sub_skills_dir = os.path.join(global_fp, ".agent", "skills")
                     if os.path.isdir(sub_skills_dir):
                         for item in os.listdir(sub_skills_dir):
-                            if item.endswith(".md"):
-                                bundled_files[item] = os.path.join(sub_skills_dir, item)
+                            if item.lower().endswith(".md"):
+                                bundled_files[item.casefold()] = os.path.join(
+                                    sub_skills_dir,
+                                    item,
+                                )
 
             # Then check file skills. If a file is supplied by a loaded folder skill,
             # do not treat that bundled copy as the standalone global skill being enabled.
             for skill in file_skills:
                 fname = skill["filename"]
-                global_fp = os.path.join(self.skills_dir, fname)
-                target_fp = os.path.join(path, ".agent", "skills", fname)
+                if skill.get("is_virtual"):
+                    global_fp = safe_real_child_path(
+                        os.path.join(
+                            self.skills_dir,
+                            skill.get("virtual_parent", ""),
+                        ),
+                        skill.get("virtual_source", ""),
+                    )
+                    target_name = skill.get("target_filename", "")
+                else:
+                    global_fp = os.path.join(self.skills_dir, fname)
+                    target_name = fname
+                target_fp = os.path.join(path, ".agent", "skills", target_name)
                 if os.path.exists(global_fp):
                     if os.path.exists(target_fp):
                         if get_file_md5(global_fp, md5_cache) == get_file_md5(target_fp, md5_cache):
                             entry["skills_status"][fname] = "synced"
-                        elif fname in bundled_files and get_file_md5(bundled_files[fname], md5_cache) == get_file_md5(target_fp, md5_cache):
+                        elif fname.casefold() in bundled_files and get_file_md5(bundled_files[fname.casefold()], md5_cache) == get_file_md5(target_fp, md5_cache):
                             entry["skills_status"][fname] = "unloaded"
                         else:
                             entry["skills_status"][fname] = "out_of_sync"
@@ -3126,8 +3682,16 @@ Write in {language}. Return only the complete Markdown document without code fen
             skills_dir = os.path.join(path, ".agent", "skills")
             if os.path.exists(skills_dir):
                 for item in os.listdir(skills_dir):
-                    if item.endswith(".md"):
-                        if item not in entry["skills_status"] and item not in bundled_files and item not in bundled_refs:
+                    if item.lower().endswith(".md"):
+                        managed_names = {
+                            name.casefold()
+                            for name in entry["skills_status"]
+                        }
+                        if (
+                            item.casefold() not in managed_names
+                            and item.casefold() not in bundled_files
+                            and item.casefold() not in bundled_refs
+                        ):
                             entry["skills_status"][item] = "orphan"
                             
             result.append(entry)
@@ -3213,20 +3777,44 @@ Write in {language}. Return only the complete Markdown document without code fen
         enabled_set = set(enabled_skills or [])
         global_skills = self.get_skills()
         enabled = [skill for skill in global_skills if skill.get("filename") in enabled_set]
+        bundle_collections = {
+            collection.get("bundle_parent"): collection
+            for collection in self._load_skill_collections().get("collections", [])
+            if collection.get("kind") == "bundle"
+            and collection.get("bundle_parent")
+        }
         desired = {}
+        desired_paths = {}
         active_metadata = []
-        source_collisions = set()
+        source_collision_keys = set()
 
-        def add_desired(relative_path, owner, source=None, content=None, merge_safe=False):
+        def add_desired(
+            relative_path,
+            owner,
+            source=None,
+            content=None,
+            merge_safe=False,
+            requires_bundle_authorization=False,
+        ):
             relative_path = normalize_relative_path(relative_path)
             if relative_path.lower().startswith(normalize_relative_path(SYNC_STATE_DIR).lower() + "/"):
                 return
-            if relative_path in desired and desired[relative_path].get("owner") != owner:
-                source_collisions.add(relative_path)
+            path_key = relative_path.casefold()
+            previous_path = desired_paths.get(path_key)
+            if previous_path:
+                previous = desired[previous_path]
+                if (
+                    previous_path != relative_path
+                    or previous.get("owner") != owner
+                ):
+                    source_collision_keys.add(path_key)
+                if previous_path != relative_path:
+                    desired.pop(previous_path, None)
             if source:
                 digest = get_file_md5(source)
             else:
                 digest = get_bytes_md5((content or "").encode("utf-8"))
+            desired_paths[path_key] = relative_path
             desired[relative_path] = {
                 "path": relative_path,
                 "owner": owner,
@@ -3234,6 +3822,7 @@ Write in {language}. Return only the complete Markdown document without code fen
                 "content": content,
                 "hash": digest,
                 "merge_safe": merge_safe,
+                "requires_bundle_authorization": requires_bundle_authorization,
             }
 
         # Folder skills are applied first. Standalone skills then override bundled files.
@@ -3275,6 +3864,14 @@ Write in {language}. Return only the complete Markdown document without code fen
                 continue
 
             readme_path = os.path.join(source_root, "README.md")
+            bundle_collection = bundle_collections.get(filename, {})
+            virtual_by_source = {
+                normalize_relative_path(relative).lower(): virtual_id
+                for virtual_id, relative in bundle_collection.get(
+                    "member_sources",
+                    {},
+                ).items()
+            }
             if os.path.isfile(readme_path):
                 folder_meta = parse_markdown_metadata(readme_path)
                 add_desired(
@@ -3301,7 +3898,18 @@ Write in {language}. Return only the complete Markdown document without code fen
             upsert_metadata(active_metadata, self._localized_skill_metadata(folder_meta))
 
             for bundled_meta in collect_folder_skill_metadata(source_root):
-                upsert_metadata(active_metadata, self._localized_skill_metadata(bundled_meta))
+                source_relative = normalize_relative_path(os.path.join(
+                    ".agent",
+                    "skills",
+                    bundled_meta.get("filename", ""),
+                )).lower()
+                virtual_id = virtual_by_source.get(source_relative)
+                if virtual_id and virtual_id not in enabled_set:
+                    continue
+                upsert_metadata(
+                    active_metadata,
+                    self._localized_skill_metadata(bundled_meta),
+                )
 
             for root, dirs, files in os.walk(source_root):
                 dirs.sort()
@@ -3313,17 +3921,44 @@ Write in {language}. Return only the complete Markdown document without code fen
                     relative_path = normalize_relative_path(os.path.relpath(source, source_root))
                     if relative_path.lower() in ("agents.md", "readme.md"):
                         continue
-                    add_desired(relative_path, filename, source=source)
+                    virtual_id = virtual_by_source.get(relative_path.lower())
+                    if virtual_id and virtual_id not in enabled_set:
+                        continue
+                    bundle_allowed = relative_path.casefold().startswith(
+                        ".agent/skills/"
+                    )
+                    add_desired(
+                        relative_path,
+                        filename,
+                        source=source,
+                        requires_bundle_authorization=not bundle_allowed,
+                    )
 
         for skill in enabled:
             if skill.get("is_dir", False):
                 continue
             filename = skill["filename"]
-            source = safe_real_child_path(self.skills_dir, filename)
+            if skill.get("is_virtual"):
+                parent = skill.get("virtual_parent", "")
+                if parent in enabled_set:
+                    continue
+                source = safe_real_child_path(
+                    os.path.join(self.skills_dir, parent),
+                    skill.get("virtual_source", ""),
+                )
+                target_filename = skill.get("target_filename", "")
+            else:
+                source = safe_real_child_path(self.skills_dir, filename)
+                target_filename = filename
             if not source or not os.path.isfile(source):
                 continue
-            add_desired(os.path.join(".agent", "skills", filename), filename, source=source)
+            add_desired(
+                os.path.join(".agent", "skills", target_filename),
+                filename,
+                source=source,
+            )
             metadata = parse_markdown_metadata(source)
+            metadata["filename"] = target_filename
             metadata["is_dir"] = False
             upsert_metadata(active_metadata, self._localized_skill_metadata(metadata))
 
@@ -3343,7 +3978,7 @@ Write in {language}. Return only the complete Markdown document without code fen
             content=agents_content,
             merge_safe=True,
         )
-        return desired, active_metadata, source_collisions
+        return desired, active_metadata, source_collision_keys
 
     def _build_sync_plan(self, project_path: str, enabled_skills: list) -> dict:
         registered_path = self._registered_project_path(project_path)
@@ -3353,10 +3988,18 @@ Write in {language}. Return only the complete Markdown document without code fen
         previous_manifest = self._load_sync_manifest(registered_path)
         previous_files = previous_manifest.get("files", {})
         effective_enabled = self._effective_enabled_skills(enabled_skills)
-        desired, active_metadata, source_collisions = self._collect_desired_sync_files(
+        desired, active_metadata, source_collision_keys = self._collect_desired_sync_files(
             registered_path, effective_enabled
         )
         changes = []
+        desired_keys = {
+            relative_path.casefold(): relative_path
+            for relative_path in desired
+        }
+        previous_by_key = {
+            relative_path.casefold(): (relative_path, metadata)
+            for relative_path, metadata in previous_files.items()
+        }
 
         for relative_path, spec in desired.items():
             target = safe_real_child_path(registered_path, relative_path)
@@ -3374,10 +4017,10 @@ Write in {language}. Return only the complete Markdown document without code fen
             else:
                 action = "modify"
 
-            previous = previous_files.get(relative_path, {})
+            previous = previous_by_key.get(relative_path.casefold(), ("", {}))[1]
             conflict = False
             reason = ""
-            if relative_path in source_collisions:
+            if relative_path.casefold() in source_collision_keys:
                 conflict = True
                 reason = "Multiple selected skills provide this path"
             if action == "modify" and not spec.get("merge_safe"):
@@ -3396,11 +4039,14 @@ Write in {language}. Return only the complete Markdown document without code fen
                 "after_hash": spec["hash"],
                 "conflict": conflict,
                 "reason": reason,
+                "requires_bundle_authorization": bool(
+                    spec.get("requires_bundle_authorization")
+                ),
                 "spec": spec,
             })
 
         for relative_path, previous in previous_files.items():
-            if relative_path in desired:
+            if relative_path.casefold() in desired_keys:
                 continue
             target = safe_real_child_path(registered_path, relative_path)
             if not target or not os.path.isfile(target):
@@ -3420,6 +4066,7 @@ Write in {language}. Return only the complete Markdown document without code fen
                 "after_hash": "",
                 "conflict": False,
                 "reason": reason,
+                "requires_bundle_authorization": False,
                 "spec": None,
             })
 
@@ -3455,6 +4102,9 @@ Write in {language}. Return only the complete Markdown document without code fen
                 "owner": item["owner"],
                 "conflict": item["conflict"],
                 "reason": item["reason"],
+                "requires_bundle_authorization": item[
+                    "requires_bundle_authorization"
+                ],
             })
         token_payload = {
             "enabled_skills": plan["enabled_skills"],
@@ -3465,6 +4115,9 @@ Write in {language}. Return only the complete Markdown document without code fen
                     "before_hash": item["before_hash"],
                     "after_hash": item["after_hash"],
                     "conflict": item["conflict"],
+                    "requires_bundle_authorization": item[
+                        "requires_bundle_authorization"
+                    ],
                 }
                 for item in plan["changes"]
             ],
@@ -3472,12 +4125,20 @@ Write in {language}. Return only the complete Markdown document without code fen
         plan_token = get_bytes_md5(
             json.dumps(token_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
         )
+        restricted_bundle_files = [
+            item["path"]
+            for item in plan["changes"]
+            if item["requires_bundle_authorization"]
+            and item["action"] in ("add", "modify")
+        ]
         return {
             "ok": True,
             "summary": summary,
             "changes": changes,
             "synced_count": len(plan["active_metadata"]),
             "has_conflicts": summary["conflict"] > 0,
+            "has_restricted_bundle_files": bool(restricted_bundle_files),
+            "restricted_bundle_files": restricted_bundle_files,
             "plan_token": plan_token,
         }
 
@@ -3515,6 +4176,7 @@ Write in {language}. Return only the complete Markdown document without code fen
         enabled_skills,
         allow_conflicts=False,
         preview_token="",
+        allow_bundle_files=False,
     ):
         """Apply a previewed synchronization plan with backup and ownership tracking."""
         plan = self._build_sync_plan(project_path, enabled_skills)
@@ -3531,6 +4193,12 @@ Write in {language}. Return only the complete Markdown document without code fen
         if preview["has_conflicts"] and not allow_conflicts:
             return {
                 "requires_confirmation": True,
+                "preview": preview,
+                "error": "",
+            }
+        if preview["has_restricted_bundle_files"] and not allow_bundle_files:
+            return {
+                "requires_bundle_file_confirmation": True,
                 "preview": preview,
                 "error": "",
             }

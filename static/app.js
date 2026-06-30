@@ -583,8 +583,8 @@ function applyLanguage(lang) {
     ? '导入时使用 AI 优化'
     : 'Use AI optimization during import';
   document.getElementById('settings-desc-ai-import').textContent = lang === 'zh'
-    ? '开启后先完成本地体检，再调用已配置的 AI 优化入口文档；失败时自动回退本地结果。'
-    : 'Runs local validation first, then uses the configured AI to optimize the entry document; failures fall back to local results.';
+    ? '开启后先完成本地体检，再调用 AI 优化入口文档；导入前会显示差异并要求确认。'
+    : 'Runs local validation, then asks AI to optimize the entry document; the diff must be reviewed and accepted before import.';
   document.getElementById('settings-label-aimodel').textContent = t.settingsLabelAimodel;
   document.getElementById('settings-desc-aimodel').textContent = t.settingsDescAimodel;
   document.getElementById('btn-test-connection').innerHTML = `<i data-lucide="zap" style="width:13px;height:13px;"></i> ${t.btnTestConnection}`;
@@ -785,6 +785,9 @@ function buildDisplaySkills() {
       is_collection: true,
       collection_id: collectionId,
       collection_members: members,
+      collection_child_count: members.filter(
+        member => member.filename !== collectionId
+      ).length,
       collection_enabled_count: enabledCount,
       search_text: members.map(member => [
         member.title,
@@ -1080,7 +1083,7 @@ function renderSkillsGrid() {
     const safeSubTitle = escapeHtml(subTitle);
     const safeDesc = escapeHtml(resolvedDesc);
     const displayFilename = skill.is_collection
-      ? `${skill.collection_members.length} ${currentLanguage === 'zh' ? '个子技能' : 'child skills'}`
+      ? `${skill.collection_child_count} ${currentLanguage === 'zh' ? '个子技能' : 'child skills'}`
       : skill.filename;
     const safeFilename = escapeHtml(displayFilename);
     const cardTitle = skill.is_collection
@@ -1274,15 +1277,20 @@ function openCollectionModal(collectionId) {
   if (!collectionSkill) return;
   activeCollectionId = collectionId;
   collectionModalTitle.textContent = collectionSkill.title;
+  const hasPrimary = collectionSkill.collection_members.some(
+    member => member.filename === collectionId
+  );
+  const childCount = collectionSkill.collection_child_count;
   collectionModalSummary.textContent = currentLanguage === 'zh'
-    ? `${collectionSkill.collection_members.length} 个子技能，可分别启用或停用`
-    : `${collectionSkill.collection_members.length} child skills; enable each independently`;
+    ? `${hasPrimary ? '1 个主控 + ' : ''}${childCount} 个子技能，可分别启用或停用`
+    : `${hasPrimary ? '1 controller + ' : ''}${childCount} child skills; enable each independently`;
   collectionModalHint.textContent = currentLanguage === 'zh'
     ? '停用不会删除文件；项目将在下次同步时移除该子技能。'
     : 'Disabling keeps the files in the library; projects remove the child on next sync.';
 
   collectionMembersList.innerHTML = collectionSkill.collection_members.map(member => {
-    const translation = skillTranslations[currentLanguage]?.[member.filename];
+    const displayFilename = member.display_filename || member.filename;
+    const translation = skillTranslations[currentLanguage]?.[displayFilename];
     const title = translation?.title || member.title;
     const description = translation?.description || member.description;
     const enabled = Boolean(member.collection?.enabled);
@@ -1294,7 +1302,7 @@ function openCollectionModal(collectionId) {
           <div class="collection-member-copy">
             <div class="collection-member-title">${escapeHtml(title)}</div>
             <div class="collection-member-description">${escapeHtml(description)}</div>
-            <div class="collection-member-file">${escapeHtml(member.filename)}</div>
+            <div class="collection-member-file">${escapeHtml(displayFilename)}</div>
           </div>
         </div>
         <div class="collection-member-actions">
@@ -1336,10 +1344,14 @@ collectionMembersList.addEventListener('change', async event => {
     if (currentProjectPath) syncBtn.classList.add('active');
     const collectionId = activeCollectionId;
     if (collectionId) openCollectionModal(collectionId);
+    const member = getCollectionDisplaySkill(collectionId)?.collection_members?.find(
+      item => item.filename === filename
+    );
+    const displayFilename = member?.display_filename || filename;
     showToast(
       currentLanguage === 'zh'
-        ? `${filename} 已${enabled ? '启用' : '停用'}`
-        : `${filename} ${enabled ? 'enabled' : 'disabled'}`,
+        ? `${displayFilename} 已${enabled ? '启用' : '停用'}`
+        : `${displayFilename} ${enabled ? 'enabled' : 'disabled'}`,
       'success'
     );
   } catch (error) {
@@ -1413,11 +1425,29 @@ async function handleSyncSkills() {
     });
     if (!confirmed) return;
 
+    let acceptedBundleFiles = false;
+    if (preview.has_restricted_bundle_files) {
+      acceptedBundleFiles = await showCustomDialog({
+        title: currentLanguage === 'zh' ? '授权 Bundle 额外文件' : 'Authorize Extra Bundle Files',
+        message: [
+          currentLanguage === 'zh'
+            ? '以下文件位于 README 和 .agent/skills 之外，将写入项目目录：'
+            : 'These files are outside README and .agent/skills and will be written into the project:',
+          '',
+          ...preview.restricted_bundle_files.map(path => `• ${path}`)
+        ].join('\n'),
+        emoji: '⚠️',
+        confirmText: currentLanguage === 'zh' ? '授权这些文件' : 'Authorize Files'
+      });
+      if (!acceptedBundleFiles) return;
+    }
+
     let result = await window.pywebview.api.sync_skills(
       currentProjectPath,
       selectedSkills,
       Boolean(preview.has_conflicts),
-      preview.plan_token
+      preview.plan_token,
+      Boolean(acceptedBundleFiles)
     );
     if (result.requires_confirmation) {
       preview = result.preview;
@@ -1428,11 +1458,39 @@ async function handleSyncSkills() {
         confirmText: locales[currentLanguage].syncApply
       });
       if (!reconfirmed) return;
+      acceptedBundleFiles = false;
+      if (preview.has_restricted_bundle_files) {
+        acceptedBundleFiles = await showCustomDialog({
+          title: currentLanguage === 'zh' ? '重新授权 Bundle 额外文件' : 'Reauthorize Extra Bundle Files',
+          message: preview.restricted_bundle_files.map(path => `• ${path}`).join('\n'),
+          emoji: '⚠️',
+          confirmText: currentLanguage === 'zh' ? '授权这些文件' : 'Authorize Files'
+        });
+        if (!acceptedBundleFiles) return;
+      }
       result = await window.pywebview.api.sync_skills(
         currentProjectPath,
         selectedSkills,
         true,
-        preview.plan_token
+        preview.plan_token,
+        Boolean(acceptedBundleFiles)
+      );
+    }
+    if (result.requires_bundle_file_confirmation) {
+      preview = result.preview;
+      acceptedBundleFiles = await showCustomDialog({
+        title: currentLanguage === 'zh' ? '授权 Bundle 额外文件' : 'Authorize Extra Bundle Files',
+        message: preview.restricted_bundle_files.map(path => `• ${path}`).join('\n'),
+        emoji: '⚠️',
+        confirmText: currentLanguage === 'zh' ? '授权这些文件' : 'Authorize Files'
+      });
+      if (!acceptedBundleFiles) return;
+      result = await window.pywebview.api.sync_skills(
+        currentProjectPath,
+        selectedSkills,
+        Boolean(preview.has_conflicts),
+        preview.plan_token,
+        true
       );
     }
     if (result.error) throw new Error(result.error);
@@ -1484,12 +1542,26 @@ function formatImportPreview(preview) {
         isZh ? '个技能' : 'skills'
       }`,
       `${isZh ? '本次安装' : 'To install'}: ${preview.installable_count}`,
+      `${isZh ? '更新' : 'Updates'}: ${preview.update_count || 0}`,
+      `${isZh ? '冲突' : 'Conflicts'}: ${preview.conflict_count || 0}`,
       `${isZh ? '跳过重复' : 'Duplicates skipped'}: ${preview.duplicate_count}`
     );
     preview.collection_items?.forEach(item => {
-      const status = item.duplicate_of
-        ? (isZh ? `跳过，与 ${item.duplicate_of} 重复` : `skip, duplicate of ${item.duplicate_of}`)
-        : (isZh ? `安装为 ${item.active_name}` : `install as ${item.active_name}`);
+      const statuses = {
+        duplicate: isZh
+          ? `跳过，与 ${item.duplicate_of} 内容相同`
+          : `skip, identical to ${item.duplicate_of}`,
+        update: isZh
+          ? `更新 ${item.active_name}`
+          : `update ${item.active_name}`,
+        conflict: isZh
+          ? `冲突：${item.active_name} 含本地修改`
+          : `conflict: ${item.active_name} has local changes`,
+        install: isZh
+          ? `安装为 ${item.active_name}`
+          : `install as ${item.active_name}`
+      };
+      const status = statuses[item.action] || statuses.install;
       lines.push(`• ${item.source_name}: ${status}`);
     });
   } else {
@@ -1510,20 +1582,62 @@ function formatImportPreview(preview) {
     lines.push('', isZh ? '自动处理：' : 'Automatic changes:');
     preview.changes.forEach(code => lines.push(`• ${changeLabels[code] || code}`));
   }
-  if (preview.findings?.length) {
-    lines.push('', isZh ? `风险提示（${preview.findings.length}）：` : `Findings (${preview.findings.length}):`);
-    preview.findings.slice(0, 8).forEach(item => {
-      const label = item.severity === 'high' ? '!' : '•';
-      lines.push(`${label} ${isZh ? item.message_zh : item.message_en}${item.path ? ` [${item.path}]` : ''}`);
+  const ordinaryFindings = (preview.findings || []).filter(item => item.severity !== 'high');
+  if (ordinaryFindings.length) {
+    lines.push('', isZh ? `普通提示（${ordinaryFindings.length}）：` : `Standard findings (${ordinaryFindings.length}):`);
+    ordinaryFindings.slice(0, 8).forEach(item => {
+      lines.push(`• ${isZh ? item.message_zh : item.message_en}${item.path ? ` [${item.path}]` : ''}`);
     });
-    if (preview.findings.length > 8) {
-      lines.push(isZh ? `…另有 ${preview.findings.length - 8} 项` : `…and ${preview.findings.length - 8} more`);
+    if (ordinaryFindings.length > 8) {
+      lines.push(isZh ? `…另有 ${ordinaryFindings.length - 8} 项` : `…and ${ordinaryFindings.length - 8} more`);
     }
+  }
+  if (preview.has_high_risk) {
+    lines.push(
+      '',
+      isZh
+        ? '检测到高风险项；普通导入确认后将单独展示并确认。'
+        : 'High-risk findings were detected and will be shown in a separate confirmation.'
+    );
   }
   if (preview.duplicate_of) {
     lines.push('', `${isZh ? '检测到完全重复' : 'Exact duplicate detected'}: ${preview.duplicate_of}`);
   }
+  if (preview.ai_used) {
+    lines.push(
+      '',
+      isZh
+        ? 'AI 已改写入口文档；导入前还需要审阅并确认差异。'
+        : 'AI rewrote the entry document; review and accept the diff before importing.'
+    );
+  }
   return lines.join('\n');
+}
+
+function formatAiImportDiff(preview) {
+  const isZh = currentLanguage === 'zh';
+  const sections = [];
+  if (preview.kind === 'collection') {
+    preview.collection_items?.forEach(item => {
+      if (!item.ai_used) return;
+      sections.push(
+        `=== ${item.source_name} ===`,
+        item.ai_diff || (isZh ? 'AI 未产生文本差异。' : 'AI produced no text difference.'),
+        ''
+      );
+    });
+  } else {
+    sections.push(
+      preview.ai_diff || (isZh ? 'AI 未产生文本差异。' : 'AI produced no text difference.')
+    );
+  }
+  return [
+    isZh
+      ? '下面仅显示 AI 对暂存副本的改动。原版已经归档；确认后才会写入技能库。'
+      : 'These are AI changes to the staged copy only. The upstream original is archived; nothing enters the library until you accept.',
+    '',
+    ...sections
+  ].join('\n');
 }
 
 async function handleImportSkill() {
@@ -1570,8 +1684,79 @@ async function handleImportSkill() {
     return;
   }
 
+  let acceptedHighRisk = false;
+  if (preview.has_high_risk) {
+    acceptedHighRisk = await showCustomDialog({
+      title: isZh ? '单独确认高风险项' : 'Confirm High-Risk Findings',
+      message: preview.findings
+        .filter(item => item.severity === 'high')
+        .map(item => `• ${isZh ? item.message_zh : item.message_en}${item.path ? ` [${item.path}]` : ''}`)
+        .join('\n'),
+      emoji: '⚠️',
+      confirmText: isZh ? '确认风险并继续' : 'Accept Risk and Continue'
+    });
+    if (!acceptedHighRisk) {
+      await window.pywebview.api.discard_skill_import(preview.token);
+      return;
+    }
+  }
+
+  let acceptedCollectionConflicts = false;
+  if ((preview.conflict_count || 0) > 0) {
+    acceptedCollectionConflicts = await showCustomDialog({
+      title: isZh ? '确认覆盖集合冲突' : 'Confirm Collection Conflicts',
+      message: preview.collection_items
+        .filter(item => item.action === 'conflict')
+        .map(item => `• ${item.source_name} → ${item.active_name}`)
+        .join('\n'),
+      emoji: '⚠️',
+      confirmText: isZh ? '覆盖本地修改' : 'Overwrite Local Changes'
+    });
+    if (!acceptedCollectionConflicts) {
+      await window.pywebview.api.discard_skill_import(preview.token);
+      return;
+    }
+  }
+
+  let acceptedAiChanges = false;
+  if (preview.ai_used) {
+    acceptedAiChanges = await showCustomDialog({
+      title: isZh ? '审阅 AI 改写差异' : 'Review AI Changes',
+      message: formatAiImportDiff(preview),
+      emoji: '✨',
+      confirmText: isZh ? '接受改写并导入' : 'Accept Changes and Import'
+    });
+    if (!acceptedAiChanges) {
+      try {
+        await window.pywebview.api.discard_skill_import(preview.token);
+      } catch (_e) {
+        // Staged previews are also cleaned automatically after 24 hours.
+      }
+      return;
+    }
+  }
+
   try {
-    const result = await window.pywebview.api.apply_skill_import(preview.token);
+    const result = await window.pywebview.api.apply_skill_import(
+      preview.token,
+      Boolean(acceptedAiChanges),
+      Boolean(acceptedHighRisk),
+      Boolean(acceptedCollectionConflicts)
+    );
+    if (result.requires_high_risk_confirmation) {
+      throw new Error(
+        isZh
+          ? '高风险扫描结果尚未获得独立确认。'
+          : 'High-risk findings have not been independently accepted.'
+      );
+    }
+    if (result.requires_ai_confirmation) {
+      throw new Error(
+        isZh
+          ? 'AI 改写尚未获得明确确认。'
+          : 'AI changes have not been explicitly accepted.'
+      );
+    }
     if (result.error) throw new Error(result.error);
     if (result.kind === 'collection') {
       const skipped = result.skipped_duplicates?.length || 0;
@@ -1613,16 +1798,21 @@ async function checkForUnregisteredSkills() {
   }
   if (!scan || scan.error || !scan.skills?.length) return;
 
-  const names = scan.skills.slice(0, 8).map(item => `• ${item.filename}`);
+  const names = scan.skills.slice(0, 8).map(item => {
+    const state = item.change_type === 'modified'
+      ? (isZh ? '（内容已变化）' : ' (content changed)')
+      : '';
+    return `• ${item.filename}${state}`;
+  });
   if (scan.skills.length > 8) {
     names.push(isZh ? `…另有 ${scan.skills.length - 8} 个` : `…and ${scan.skills.length - 8} more`);
   }
   const choice = await showCustomDialog({
-    title: isZh ? `发现 ${scan.skills.length} 个新技能` : `${scan.skills.length} new skills found`,
+    title: isZh ? `发现 ${scan.skills.length} 个待体检技能` : `${scan.skills.length} skills need validation`,
     message: [
       isZh
-        ? '这些文件是直接复制到 skills 目录的，尚未经过体检：'
-        : 'These files were copied directly into the skills directory and have not been validated:',
+        ? '这些技能是新复制的，或登记后内容发生了变化：'
+        : 'These skills are newly copied or changed since they were registered:',
       '',
       ...names,
       '',
@@ -1665,7 +1855,40 @@ async function checkForUnregisteredSkills() {
       secondaryValue: 'keep'
     });
     if (apply === true) {
-      const result = await window.pywebview.api.apply_skill_import(preview.token);
+      let acceptedHighRisk = false;
+      if (preview.has_high_risk) {
+        acceptedHighRisk = await showCustomDialog({
+          title: isZh ? '单独确认高风险项' : 'Confirm High-Risk Findings',
+          message: preview.findings
+            .filter(finding => finding.severity === 'high')
+            .map(finding => `• ${isZh ? finding.message_zh : finding.message_en}`)
+            .join('\n'),
+          emoji: '⚠️',
+          confirmText: isZh ? '确认风险并继续' : 'Accept Risk and Continue'
+        });
+        if (!acceptedHighRisk) {
+          await window.pywebview.api.discard_skill_import(preview.token);
+          continue;
+        }
+      }
+      let acceptedAiChanges = false;
+      if (preview.ai_used) {
+        acceptedAiChanges = await showCustomDialog({
+          title: isZh ? '审阅 AI 改写差异' : 'Review AI Changes',
+          message: formatAiImportDiff(preview),
+          emoji: '✨',
+          confirmText: isZh ? '接受改写并应用' : 'Accept Changes and Apply'
+        });
+        if (!acceptedAiChanges) {
+          await window.pywebview.api.discard_skill_import(preview.token);
+          continue;
+        }
+      }
+      const result = await window.pywebview.api.apply_skill_import(
+        preview.token,
+        Boolean(acceptedAiChanges),
+        Boolean(acceptedHighRisk)
+      );
       if (result.error) {
         showToast(`${item.filename}: ${result.error}`, 'error');
       } else {
