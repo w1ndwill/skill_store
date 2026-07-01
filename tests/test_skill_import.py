@@ -274,6 +274,74 @@ class SkillImportTests(unittest.TestCase):
             "ponytail-review",
         )))
 
+    def test_collection_same_name_with_new_content_is_an_update(self):
+        existing = os.path.join(self.sources_dir, "single-ponytail")
+        write_text(
+            os.path.join(existing, "SKILL.md"),
+            "---\nname: ponytail\ndescription: Version one.\n---\n\n# Version 1\n",
+        )
+        first = self.api.preview_skill_import(existing)
+        self.assertTrue(self.api.apply_skill_import(first["token"])["ok"])
+
+        repository = os.path.join(self.sources_dir, "ponytail-repository")
+        write_text(
+            os.path.join(repository, "skills", "ponytail", "SKILL.md"),
+            "---\nname: ponytail\ndescription: Version two.\n---\n\n# Version 2\n",
+        )
+
+        preview = self.api.preview_skill_import(repository)
+        item = preview["collection_items"][0]
+        self.assertEqual(item["action"], "update")
+        self.assertEqual(preview["update_count"], 1)
+        self.assertEqual(preview["duplicate_count"], 0)
+
+        result = self.api.apply_skill_import(preview["token"])
+        self.assertTrue(result["ok"])
+        with open(
+            os.path.join(self.skills_dir, "ponytail", "SKILL.md"),
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            self.assertIn("# Version 2", handle.read())
+
+    def test_collection_same_name_with_local_edits_requires_conflict_confirmation(self):
+        existing = os.path.join(self.sources_dir, "single-ponytail")
+        write_text(
+            os.path.join(existing, "SKILL.md"),
+            "---\nname: ponytail\ndescription: Version one.\n---\n\n# Version 1\n",
+        )
+        first = self.api.preview_skill_import(existing)
+        self.assertTrue(self.api.apply_skill_import(first["token"])["ok"])
+        active = os.path.join(self.skills_dir, "ponytail", "SKILL.md")
+        write_text(
+            active,
+            "---\nname: ponytail\ndescription: Local edit.\n---\n\n# Local\n",
+        )
+
+        repository = os.path.join(self.sources_dir, "ponytail-repository")
+        write_text(
+            os.path.join(repository, "skills", "ponytail", "SKILL.md"),
+            "---\nname: ponytail\ndescription: Version two.\n---\n\n# Version 2\n",
+        )
+
+        preview = self.api.preview_skill_import(repository)
+        item = preview["collection_items"][0]
+        self.assertEqual(item["action"], "conflict")
+        self.assertEqual(preview["conflict_count"], 1)
+
+        blocked = self.api.apply_skill_import(preview["token"])
+        self.assertTrue(blocked["requires_collection_confirmation"])
+        with open(active, "r", encoding="utf-8") as handle:
+            self.assertIn("# Local", handle.read())
+
+        result = self.api.apply_skill_import(
+            preview["token"],
+            accept_collection_conflicts=True,
+        )
+        self.assertTrue(result["ok"])
+        with open(active, "r", encoding="utf-8") as handle:
+            self.assertIn("# Version 2", handle.read())
+
     def test_zip_path_traversal_is_rejected(self):
         archive = os.path.join(self.sources_dir, "unsafe.zip")
         with zipfile.ZipFile(archive, "w") as handle:
@@ -292,6 +360,72 @@ class SkillImportTests(unittest.TestCase):
         preview = self.api.preview_skill_import(source)
         self.assertEqual(preview["active_name"], "release-helper.md")
         self.assertTrue(preview["can_import"])
+
+    def test_local_normalization_preserves_unknown_frontmatter(self):
+        source = os.path.join(self.sources_dir, "review.md")
+        write_text(
+            source,
+            (
+                "---\n"
+                "title: Review\n"
+                "allowed-tools:\n"
+                "  - Read\n"
+                "  - Grep\n"
+                "metadata:\n"
+                "  owner: platform\n"
+                "---\n\n"
+                "# Review\n\n"
+                "Check behavior.\n"
+            ),
+        )
+
+        preview = self.api.preview_skill_import(source)
+        result = self.api.apply_skill_import(preview["token"])
+        self.assertTrue(result["ok"])
+        with open(
+            os.path.join(self.skills_dir, result["filename"]),
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            content = handle.read()
+
+        self.assertIn("allowed-tools:\n  - Read\n  - Grep", content)
+        self.assertIn("metadata:\n  owner: platform", content)
+        self.assertEqual(content.count("title:"), 1)
+        self.assertIn("description:", content)
+
+    def test_standard_skill_metadata_completion_preserves_nested_yaml(self):
+        source = os.path.join(self.sources_dir, "release-helper")
+        write_text(
+            os.path.join(source, "SKILL.md"),
+            (
+                "---\n"
+                "name: release-helper\n"
+                "allowed-tools:\n"
+                "  - Read\n"
+                "  - Bash\n"
+                "metadata:\n"
+                "  owner: release-team\n"
+                "---\n\n"
+                "# Release Helper\n\n"
+                "Prepare a release safely.\n"
+            ),
+        )
+
+        preview = self.api.preview_skill_import(source)
+        result = self.api.apply_skill_import(preview["token"])
+        self.assertTrue(result["ok"])
+        with open(
+            os.path.join(self.skills_dir, result["filename"], "SKILL.md"),
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            content = handle.read()
+
+        self.assertIn("allowed-tools:\n  - Read\n  - Bash", content)
+        self.assertIn("metadata:\n  owner: release-team", content)
+        self.assertEqual(content.count("name:"), 1)
+        self.assertEqual(content.count("description:"), 1)
 
     def test_ai_toggle_without_key_falls_back_to_local_import(self):
         self.api.ai_import_optimization = True
@@ -355,7 +489,200 @@ class SkillImportTests(unittest.TestCase):
         self.assertTrue(preview["ai_requested"])
         self.assertTrue(preview["ai_used"])
         self.assertIn("ai_optimized", preview["changes"])
+        self.assertIn("-# Review", preview["ai_diff"])
+        self.assertIn("+# AI Review", preview["ai_diff"])
+        blocked = self.api.apply_skill_import(preview["token"])
+        self.assertTrue(blocked["requires_ai_confirmation"])
+        applied = self.api.apply_skill_import(
+            preview["token"],
+            accept_ai_changes=True,
+        )
+        self.assertTrue(applied["ok"])
         post.assert_called_once()
+
+    def test_ai_optimization_preserves_custom_frontmatter(self):
+        self.api.ai_import_optimization = True
+        self.api.deepseek_api_key = "sk-test-key"
+        source = os.path.join(self.sources_dir, "review.md")
+        write_text(
+            source,
+            (
+                "---\n"
+                "title: Review\n"
+                "allowed-tools:\n"
+                "  - Read\n"
+                "metadata:\n"
+                "  owner: platform\n"
+                "---\n\n"
+                "# Review\n\nCheck behavior.\n"
+            ),
+        )
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{
+                "message": {
+                    "content": (
+                        "---\n"
+                        "title: AI Review\n"
+                        "emoji: 🔍\n"
+                        "category: Engineering\n"
+                        "tags: Review\n"
+                        "description: Review behavior.\n"
+                        "---\n\n"
+                        "# AI Review\n"
+                    )
+                }
+            }]
+        }
+
+        with patch("main.requests.post", return_value=response):
+            preview = self.api.preview_skill_import(source)
+
+        self.assertTrue(preview["ai_used"])
+        result = self.api.apply_skill_import(
+            preview["token"],
+            accept_ai_changes=True,
+        )
+        self.assertTrue(result["ok"])
+        with open(
+            os.path.join(self.skills_dir, result["filename"]),
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            content = handle.read()
+        self.assertIn("allowed-tools:\n  - Read", content)
+        self.assertIn("metadata:\n  owner: platform", content)
+
+    def test_truncated_ai_diff_is_rejected_and_local_candidate_is_kept(self):
+        self.api.ai_import_optimization = True
+        self.api.deepseek_api_key = "sk-test-key"
+        source = os.path.join(self.sources_dir, "review.md")
+        write_text(source, "# Review\n\nCheck behavior.\n")
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{
+                "message": {
+                    "content": "# AI Review\n\n" + ("Changed behavior.\n" * 100)
+                }
+            }]
+        }
+
+        with (
+            patch("main.SKILL_IMPORT_DIFF_MAX_CHARS", 80),
+            patch("main.requests.post", return_value=response),
+        ):
+            preview = self.api.preview_skill_import(source)
+
+        self.assertFalse(preview["ai_used"])
+        self.assertNotIn("ai_optimized", preview["changes"])
+        self.assertTrue(any(
+            finding["code"] == "ai_optimization_fallback"
+            for finding in preview["findings"]
+        ))
+        result = self.api.apply_skill_import(preview["token"])
+        self.assertTrue(result["ok"])
+        with open(
+            os.path.join(self.skills_dir, result["filename"]),
+            "r",
+            encoding="utf-8",
+        ) as handle:
+            content = handle.read()
+        self.assertIn("# Review", content)
+        self.assertNotIn("# AI Review", content)
+
+    def test_bundle_workflows_are_exposed_as_switchable_collection_members(self):
+        bundle = os.path.join(self.skills_dir, "superpowers-template")
+        write_text(
+            os.path.join(bundle, "README.md"),
+            (
+                "---\n"
+                "title: Superpowers 工程工作流\n"
+                "description: 中大型工程任务工作流。\n"
+                "---\n\n"
+                "# Superpowers\n"
+            ),
+        )
+        for name in (
+            "brainstorm.md",
+            "planning.md",
+            "tdd_execution.md",
+            "verification.md",
+        ):
+            write_text(
+                os.path.join(bundle, ".agent", "skills", name),
+                f"# {name}\n\nWorkflow instructions.\n",
+            )
+
+        installed = {
+            skill["filename"]: skill
+            for skill in self.api.get_skills()
+        }
+        parent = installed["superpowers-template"]
+        collection_id = parent["collection"]["id"]
+        members = parent["collection"]["members"]
+        self.assertEqual(collection_id, "superpowers-template")
+        self.assertEqual(len(members), 5)
+
+        planning_id = next(
+            member for member in members
+            if installed[member].get("display_filename") == "planning.md"
+        )
+        disabled = self.api.set_collection_member_enabled(
+            collection_id,
+            planning_id,
+            False,
+        )
+        self.assertTrue(disabled["ok"])
+
+        refreshed = {
+            skill["filename"]: skill
+            for skill in self.api.get_skills()
+        }
+        enabled_members = [
+            member for member in members
+            if refreshed[member]["collection"]["enabled"]
+        ]
+        sync = self.api.sync_skills(self.project_dir, enabled_members)
+        self.assertTrue(sync["ok"])
+        self.assertTrue(os.path.isfile(os.path.join(
+            self.project_dir,
+            ".agent",
+            "skills",
+            "superpowers-template.md",
+        )))
+        self.assertTrue(os.path.isfile(os.path.join(
+            self.project_dir,
+            ".agent",
+            "skills",
+            "brainstorm.md",
+        )))
+        self.assertFalse(os.path.exists(os.path.join(
+            self.project_dir,
+            ".agent",
+            "skills",
+            "planning.md",
+        )))
+        statuses = self.api.get_projects()[0]["skills_status"]
+        self.assertEqual(statuses["superpowers-template"], "synced")
+        self.assertEqual(statuses[planning_id], "unloaded")
+
+        for member in members:
+            if member not in ("superpowers-template", planning_id):
+                self.api.set_collection_member_enabled(
+                    collection_id,
+                    member,
+                    False,
+                )
+        self.assertTrue(self.api.sync_skills(
+            self.project_dir,
+            ["superpowers-template"],
+        )["ok"])
+        self.assertEqual(
+            self.api.get_projects()[0]["skills_status"]["superpowers-template"],
+            "synced",
+        )
 
     def test_api_configuration_exposes_status_without_returning_secret(self):
         self.api.deepseek_api_key = "sk-example-12345678"
@@ -385,6 +712,98 @@ class SkillImportTests(unittest.TestCase):
             self.api.acknowledge_unregistered_skill("downloaded.md")["ok"]
         )
         self.assertEqual(self.api.scan_unregistered_skills()["skills"], [])
+
+    def test_registered_skill_hash_change_is_rediscovered_for_validation(self):
+        direct = os.path.join(self.skills_dir, "downloaded.md")
+        write_text(direct, "# Version 1\n")
+        self.api.scan_unregistered_skills()
+        write_text(direct, "# Version 2\n")
+
+        scan = self.api.scan_unregistered_skills()
+        self.assertEqual(len(scan["skills"]), 1)
+        self.assertEqual(scan["skills"][0]["filename"], "downloaded.md")
+        self.assertEqual(scan["skills"][0]["change_type"], "modified")
+        self.assertNotEqual(
+            scan["skills"][0]["hash"],
+            scan["skills"][0]["previous_hash"],
+        )
+
+        preview = self.api.preview_unregistered_skill("downloaded.md")
+        self.assertTrue(preview["can_import"])
+        self.assertEqual(preview["replace_existing"], "downloaded.md")
+
+    def test_import_source_cannot_overlap_library_or_staging(self):
+        source = os.path.join(self.skills_dir, "nested.md")
+        write_text(source, "# Nested\n")
+        inside = self.api.preview_skill_import(source)
+        self.assertIn("overlap", inside["error"].lower())
+
+        parent = self.api.preview_skill_import(self.root)
+        self.assertIn("overlap", parent["error"].lower())
+
+        pending = self.api._skill_import_paths()["pending"]
+        os.makedirs(pending, exist_ok=True)
+        staged = self.api.preview_skill_import(pending)
+        self.assertIn("overlap", staged["error"].lower())
+
+    def test_directory_reparse_point_is_rejected(self):
+        source = os.path.join(self.sources_dir, "linked-skill")
+        write_text(
+            os.path.join(source, "SKILL.md"),
+            "---\nname: linked-skill\ndescription: Linked.\n---\n",
+        )
+        linked = os.path.join(source, "linked")
+        os.makedirs(linked)
+
+        with patch(
+            "main.is_path_reparse_point",
+            side_effect=lambda path: os.path.normcase(path) == os.path.normcase(linked),
+        ):
+            preview = self.api.preview_skill_import(source)
+
+        self.assertIn("reparse point", preview["error"].lower())
+
+    def test_high_risk_import_requires_an_independent_confirmation(self):
+        source = os.path.join(self.sources_dir, "logging.md")
+        write_text(
+            source,
+            "# Logging\n\nLog the complete request body and cookie for diagnosis.\n",
+        )
+
+        preview = self.api.preview_skill_import(source)
+        self.assertTrue(preview["has_high_risk"])
+        blocked = self.api.apply_skill_import(preview["token"])
+        self.assertTrue(blocked["requires_high_risk_confirmation"])
+        self.assertFalse(os.path.exists(os.path.join(
+            self.skills_dir,
+            preview["active_name"],
+        )))
+
+        result = self.api.apply_skill_import(
+            preview["token"],
+            accept_high_risk=True,
+        )
+        self.assertTrue(result["ok"])
+
+    def test_direct_copy_ui_forwards_ai_and_high_risk_confirmations(self):
+        app_js_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "static",
+            "app.js",
+        )
+        with open(app_js_path, "r", encoding="utf-8") as handle:
+            app_js = handle.read()
+        direct_flow = app_js.split(
+            "async function checkForUnregisteredSkills()",
+            1,
+        )[1].split("async function formatSyncPreview", 1)[0]
+
+        self.assertRegex(
+            direct_flow,
+            r"apply_skill_import\(\s*preview\.token,\s*"
+            r"Boolean\(acceptedAiChanges\),\s*"
+            r"Boolean\(acceptedHighRisk\)",
+        )
 
     def test_direct_copy_can_be_optimized_in_place_with_original_archived(self):
         self.api.scan_unregistered_skills()

@@ -84,6 +84,56 @@ class SafeSyncTests(unittest.TestCase):
         self.assertTrue(applied["ok"])
         self.assertEqual(read_text(target), "# Global\n")
 
+    def test_bundle_root_files_require_separate_authorization(self):
+        bundle = self.skill_path("workflow")
+        write_text(os.path.join(bundle, "README.md"), "# Workflow\n")
+        write_text(
+            os.path.join(bundle, ".agent", "skills", "planning.md"),
+            "# Planning\n",
+        )
+        write_text(os.path.join(bundle, "docs", "notes.md"), "# Notes\n")
+
+        preview = self.api.preview_sync(self.project_dir, ["workflow"])
+        self.assertTrue(preview["has_restricted_bundle_files"])
+        self.assertEqual(preview["restricted_bundle_files"], ["docs/notes.md"])
+
+        blocked = self.api.sync_skills(self.project_dir, ["workflow"])
+        self.assertTrue(blocked["requires_bundle_file_confirmation"])
+        self.assertFalse(os.path.exists(self.project_path("docs/notes.md")))
+        self.assertFalse(os.path.exists(self.project_path(".agent/skills/planning.md")))
+
+        applied = self.api.sync_skills(
+            self.project_dir,
+            ["workflow"],
+            allow_bundle_files=True,
+        )
+        self.assertTrue(applied["ok"])
+        self.assertTrue(os.path.exists(self.project_path("docs/notes.md")))
+        self.assertTrue(os.path.exists(self.project_path(".agent/skills/planning.md")))
+
+    def test_sync_detects_windows_case_insensitive_target_collisions(self):
+        bundle = self.skill_path("workflow")
+        write_text(os.path.join(bundle, "README.md"), "# Workflow\n")
+        write_text(
+            os.path.join(bundle, ".agent", "skills", "Review.md"),
+            "# Bundled Review\n",
+        )
+        write_text(self.skill_path("review.MD"), "# Standalone Review\n")
+
+        preview = self.api.preview_sync(
+            self.project_dir,
+            ["workflow", "review.MD"],
+        )
+
+        self.assertTrue(preview["has_conflicts"])
+        matching = [
+            item for item in preview["changes"]
+            if item["path"].casefold() == ".agent/skills/review.md"
+        ]
+        self.assertEqual(len(matching), 1)
+        self.assertTrue(matching[0]["conflict"])
+        self.assertIn("multiple", matching[0]["reason"].lower())
+
     def test_changed_plan_requires_a_fresh_confirmation(self):
         write_text(self.skill_path("alpha.md"), "# Version 1\n")
         preview = self.api.preview_sync(self.project_dir, ["alpha.md"])
