@@ -2,7 +2,7 @@
 
 一个 Windows 桌面小工具，用来管理各个项目的 AI 编码规范。
 
-当前版本：**3.0.1** · [3.0 发布说明](docs/RELEASE_3.0.md) · [更新日志](CHANGELOG.md)
+当前版本：**3.0.2** · [3.0 发布说明](docs/RELEASE_3.0.md) · [更新日志](CHANGELOG.md)
 
 把开发规约写成 Markdown 文件，选好哪个项目需要哪些规则，一键同步过去。Cursor、Copilot、Windsurf、Claude 等工具会自动从 `.agent/skills/` 目录读取这些规范。
 
@@ -23,9 +23,7 @@
 
 去 [Releases](https://github.com/w1ndwill/skill_store/releases) 页面下载 `SkillHub.exe`，双击就能用，不用安装。
 
-第一次启动会在用户数据目录（Windows 默认是 `%LOCALAPPDATA%\SkillHub\skills`）创建可写活动技能库，并从只读的 `original-skills/` 原版基线初始化。本地初始化会自动补齐元数据、移除模板运行残留并消除组合技能冲突，不需要 AI。点击“导入技能”可以选择 `.md`、`.zip` 或技能文件夹；导入过程同样不依赖 AI。原始下载文件会归档在活动技能库的 `.skill-hub/imports/upstream/`，检查后的优化版本才会进入活动库。
-
-仓库不再保存第二份活动 `skills/` 副本：`original-skills/` 只负责保留原版，实际优化、导入和编辑都发生在设置中指定的外部活动技能库。
+第一次启动会在用户数据目录（Windows 默认是 `%LOCALAPPDATA%\SkillHub\skills`）创建空白的可写活动技能库。点击“导入技能”可以导入你自己的 `.md`、`.zip` 或技能文件夹，导入过程不依赖 AI。私人 Skill 保存在源码仓库之外；原始下载文件会归档在活动技能库的 `.skill-hub/imports/upstream/`，检查后的版本才会进入活动库。
 
 ## 从源码运行
 
@@ -53,7 +51,6 @@ pyinstaller SkillHub.spec
 
 ```
 ├── main.py              # 后端：文件读写、API 桥接、AI 对话
-├── original-skills/     # 随程序打包的只读原版技能基线
 ├── static/
 │   ├── index.html       # 页面结构
 │   ├── index.css        # 样式

@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('static', 'static'), ('original-skills', 'original-skills'), ('app.ico', '.')],
+    datas=[('static', 'static'), ('app.ico', '.')],
     hiddenimports=['ddgs', 'requests', 'lxml', 'httpx', 'h2'],
     hookspath=[],
     hooksconfig={},
