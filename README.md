@@ -11,7 +11,8 @@ Write your guidelines as Markdown files, pick which ones a project needs, and sy
 - **Skill library** — Keep all your coding standards, design conventions, and review checklists in one place as `.md` files.
 - **AI-free import validation** — Import Markdown, ZIP, one `SKILL.md` folder, or a collection containing `skills/*/SKILL.md` with local metadata normalization, per-skill deduplication, safety checks, and upstream archiving. No API key is required.
 - **Direct-copy discovery** — New files copied straight into the active `skills/` directory are detected on refresh or next launch and can be optimized in place or registered unchanged.
-- **Collapsed collections** — Collections containing `skills/*/SKILL.md` appear as one parent card; child skills can be enabled independently and only enabled members are synced.
+- **Collapsed collections** — Standard repositories and bundles containing `.agent/skills/*.md` appear as one parent card; child skills can be enabled independently and only enabled members are synced.
+- **Reviewable AI adaptation** — Existing frontmatter is preserved, and AI rewrites stay staged until their unified diff is explicitly accepted.
 - **Tagging & filtering** — Assign category tags to skills and filter by them in the UI.
 - **One-click sync** — Choose a project folder, tick the skills you want, and they get copied into `.agent/skills/` with an auto-generated `AGENTS.md` index.
 - **Sync status** — Compares MD5 hashes so you can tell at a glance which files are up to date, modified, or missing.
