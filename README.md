@@ -2,7 +2,7 @@
 
 A small Windows desktop app for managing AI coding rules across projects.
 
-Current version: **3.0.1** · [3.0 release notes](docs/RELEASE_3.0.md) · [Changelog](CHANGELOG.md)
+Current version: **3.0.2** · [3.0 release notes](docs/RELEASE_3.0.md) · [Changelog](CHANGELOG.md)
 
 Write your guidelines as Markdown files, pick which ones a project needs, and sync them over. Tools like Copilot, Cursor, Windsurf, and Claude will read them automatically from the `.agent/skills/` directory.
 
@@ -23,9 +23,7 @@ Write your guidelines as Markdown files, pick which ones a project needs, and sy
 
 Grab `SkillHub.exe` from the [Releases](https://github.com/w1ndwill/skill_store/releases) page and run it — no install needed.
 
-On first launch SkillHub creates a writable active library in the user data directory (`%LOCALAPPDATA%\SkillHub\skills` on Windows) and seeds it from the read-only `original-skills/` baseline. Local initialization completes metadata, removes template runtime residue, and resolves bundled-skill collisions without AI. Use **Import Skill** for `.md`, `.zip`, or skill folders; importing also works without AI. Original downloads are archived under the active library's `.skill-hub/imports/upstream/`, while only validated copies enter the active library.
-
-The repository no longer keeps a second active `skills/` copy: `original-skills/` preserves upstream originals, while optimization, imports, and edits happen only in the external active library selected in Settings.
+On first launch SkillHub creates an empty writable library in the user data directory (`%LOCALAPPDATA%\SkillHub\skills` on Windows). Use **Import Skill** for your own `.md`, `.zip`, or skill folders; importing works without AI. Private skills stay outside the source repository. Original downloads are archived under the active library's `.skill-hub/imports/upstream/`, while only validated copies enter the active library.
 
 ## Build from source
 
@@ -53,7 +51,6 @@ pyinstaller SkillHub.spec
 
 ```
 ├── main.py              # Backend: file I/O, API bridge, AI integration
-├── original-skills/     # Read-only upstream originals bundled with the app
 ├── static/
 │   ├── index.html       # Page structure
 │   ├── index.css        # Styles
