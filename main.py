@@ -31,8 +31,7 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-ORIGINAL_SKILLS_DIR = os.path.join(BASE_DIR, "original-skills")
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.0.2"
 
 
 def get_default_skills_dir() -> str:
@@ -476,94 +475,6 @@ def atomic_copy_file(source: str, destination: str):
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
-
-def adapt_seeded_originals(destination_dir: str):
-    """Create a safe local working copy while leaving bundled originals untouched."""
-    standalone_names = {
-        item.lower()
-        for item in os.listdir(destination_dir)
-        if item.lower().endswith(".md")
-        and os.path.isfile(os.path.join(destination_dir, item))
-    }
-
-    for item in os.listdir(destination_dir):
-        bundle_dir = os.path.join(destination_dir, item)
-        if not os.path.isdir(bundle_dir):
-            continue
-
-        root_agents = os.path.join(bundle_dir, "AGENTS.md")
-        if os.path.isfile(root_agents):
-            os.remove(root_agents)
-
-        runtime_task = os.path.join(bundle_dir, "docs", "plans", "task.md")
-        if os.path.isfile(runtime_task):
-            os.remove(runtime_task)
-            for empty_dir in (
-                os.path.dirname(runtime_task),
-                os.path.dirname(os.path.dirname(runtime_task)),
-            ):
-                if os.path.isdir(empty_dir) and not os.listdir(empty_dir):
-                    os.rmdir(empty_dir)
-
-        bundled_dir = os.path.join(bundle_dir, ".agent", "skills")
-        if os.path.isdir(bundled_dir):
-            for bundled_name in os.listdir(bundled_dir):
-                bundled_path = os.path.join(bundled_dir, bundled_name)
-                if (
-                    bundled_name.lower() in standalone_names
-                    and os.path.isfile(bundled_path)
-                ):
-                    os.remove(bundled_path)
-
-    for root, _dirs, files in os.walk(destination_dir):
-        for filename in files:
-            if not filename.lower().endswith(".md") or filename == "SKILL.md":
-                continue
-            path = os.path.join(root, filename)
-            with open(path, "rb") as handle:
-                raw = handle.read()
-            content = None
-            for encoding in ("utf-8-sig", "gb18030"):
-                try:
-                    content = raw.decode(encoding)
-                    break
-                except UnicodeDecodeError:
-                    continue
-            if content is None:
-                content = raw.decode("utf-8", errors="replace")
-            normalized, _changes, _metadata = normalize_skillhub_markdown(
-                content,
-                filename,
-            )
-            atomic_write_text(path, normalized)
-
-
-def seed_original_skills(source_dir: str, destination_dir: str) -> int:
-    """Copy original bundled skills into an empty writable library."""
-    if not os.path.isdir(source_dir):
-        return 0
-    os.makedirs(destination_dir, exist_ok=True)
-    visible_entries = [
-        item for item in os.listdir(destination_dir) if not item.startswith(".")
-    ]
-    if visible_entries:
-        return 0
-    copied = 0
-    for item in sorted(os.listdir(source_dir)):
-        if item.startswith("."):
-            continue
-        source = os.path.join(source_dir, item)
-        destination = os.path.join(destination_dir, item)
-        if os.path.isdir(source):
-            shutil.copytree(source, destination)
-        elif os.path.isfile(source):
-            atomic_copy_file(source, destination)
-        else:
-            continue
-        copied += 1
-    adapt_seeded_originals(destination_dir)
-    return copied
 
 
 def load_json_file(path: str, default):
@@ -1135,12 +1046,6 @@ class Api:
         self.ai_import_optimization = bool(
             config.get("ai_import_optimization", False)
         )
-        default_skills_dir = get_default_skills_dir()
-        if os.path.normcase(os.path.abspath(self.skills_dir)) == os.path.normcase(
-            os.path.abspath(default_skills_dir)
-        ):
-            seed_original_skills(ORIGINAL_SKILLS_DIR, self.skills_dir)
-
     def set_window(self, window):
         self._window = window
 
