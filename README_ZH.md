@@ -2,7 +2,7 @@
 
 一个 Windows 桌面小工具，用来管理各个项目的 AI 编码规范。
 
-当前版本：**3.0.0** · [3.0 发布说明](docs/RELEASE_3.0.md) · [更新日志](CHANGELOG.md)
+当前版本：**3.0.1** · [3.0 发布说明](docs/RELEASE_3.0.md) · [更新日志](CHANGELOG.md)
 
 把开发规约写成 Markdown 文件，选好哪个项目需要哪些规则，一键同步过去。Cursor、Copilot、Windsurf、Claude 等工具会自动从 `.agent/skills/` 目录读取这些规范。
 
