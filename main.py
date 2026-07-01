@@ -32,7 +32,7 @@ else:
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 ORIGINAL_SKILLS_DIR = os.path.join(BASE_DIR, "original-skills")
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 
 
 def get_default_skills_dir() -> str:

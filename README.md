@@ -2,7 +2,7 @@
 
 A small Windows desktop app for managing AI coding rules across projects.
 
-Current version: **3.0.0** · [3.0 release notes](docs/RELEASE_3.0.md) · [Changelog](CHANGELOG.md)
+Current version: **3.0.1** · [3.0 release notes](docs/RELEASE_3.0.md) · [Changelog](CHANGELOG.md)
 
 Write your guidelines as Markdown files, pick which ones a project needs, and sync them over. Tools like Copilot, Cursor, Windsurf, and Claude will read them automatically from the `.agent/skills/` directory.
 
