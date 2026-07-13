@@ -11,6 +11,7 @@ dist/
 
 # App runtime
 config.json
+chat_sessions.json
 
 # Claude
 .claude/

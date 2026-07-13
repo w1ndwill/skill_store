@@ -238,152 +238,6 @@ const locales = {
   }
 };
 
-const skillTranslations = {
-  zh: {
-    'Git提交规范.md': {
-      title: 'Git 提交规范',
-      category: 'Development',
-      description: '用于创建或审查提交信息与仓库卫生；不会自行提交、推送或改写历史。'
-    },
-    'frontend_optimization.md': {
-      title: '前端性能优化技能指南',
-      category: 'Development',
-      description: '现代 Web 应用全方位性能优化指南，旨在提升用户体验、Lighthouse 评分及核心网页指标。'
-    },
-    'handoff.md': {
-      title: 'AI 会话接力与状态恢复',
-      category: 'Workflow',
-      description: '用于跨会话继续任务或用户明确要求交接；不用于团队发布和代码移交。'
-    },
-    'process_optimization.md': {
-      title: '开发与运行流程优化',
-      category: 'Workflow',
-      description: '用于有数据支持的开发、构建、CI/CD 和运行时优化，强调先测量再改进。'
-    },
-    'python_env_isolation.md': {
-      title: 'Python 环境与依赖隔离',
-      category: 'Development',
-      description: '遵循项目已有包管理器和锁文件，安全隔离 Python 环境与依赖。'
-    },
-    'run_recording.md': {
-      title: '安全的运行记录与可观测性',
-      category: 'Development',
-      description: '设计日志、追踪和诊断记录，同时执行数据最小化、脱敏和受控留存。'
-    },
-    '代码移交标准.md': {
-      title: '团队代码与运维移交',
-      category: 'Workflow',
-      description: '用于版本发布、团队换手或运维接管前的长期可维护性交付。'
-    },
-    '前端性能优化规范.md': {
-      title: '前端性能优化',
-      category: 'Development',
-      description: '基于测量数据优化前端加载、交互、渲染与资源性能，避免固定阈值。'
-    },
-    'superpowers-template': {
-      title: 'Superpowers 工程工作流',
-      category: 'Workflow',
-      description: '为中大型实现任务提供按风险裁剪的分析、规划、执行和验证流程。'
-    },
-    'brainstorm.md': {
-      title: 'Superpowers 分析与方案探索',
-      category: 'Workflow',
-      description: '用于需求模糊、存在架构取舍或影响多个模块的任务。'
-    },
-    'planning.md': {
-      title: 'Superpowers 实施规划',
-      category: 'Workflow',
-      description: '用于多文件、多阶段、跨会话或高风险实现任务。'
-    },
-    'tdd_execution.md': {
-      title: 'Superpowers 测试驱动执行',
-      category: 'Development',
-      description: '对可测试的行为变化执行 TDD，并为其他任务提供等价验证路径。'
-    },
-    'verification.md': {
-      title: 'Superpowers 验证与交付',
-      category: 'Workflow',
-      description: '执行与风险匹配的验证、回归检查和结果说明。'
-    },
-    'codegraph_analysis.md': {
-      title: '代码图谱静态分析与依赖审计',
-      category: 'Development',
-      description: '分析模块依赖、调用链和耦合风险，并按需生成可验证的 Mermaid 图。'
-    }
-  },
-  en: {
-    'Git提交规范.md': {
-      title: 'Git Commit Guideline',
-      category: 'Development',
-      description: 'Create or review Conventional Commit messages and repository hygiene without automatically committing or pushing.'
-    },
-    'frontend_optimization.md': {
-      title: 'Frontend Performance Optimization Skill Guide',
-      category: 'Development',
-      description: 'Comprehensive performance optimization guide for modern web apps, aimed at improving user experience, Lighthouse scores, and Core Web Vitals.'
-    },
-    'handoff.md': {
-      title: 'AI Session Handoff & Context Resume',
-      category: 'Workflow',
-      description: 'Capture task state when work must continue in another session; not for release handoffs.'
-    },
-    'process_optimization.md': {
-      title: 'Development & Runtime Process Optimization',
-      category: 'Workflow',
-      description: 'Measure and improve observable development, build, CI/CD, and runtime bottlenecks.'
-    },
-    'python_env_isolation.md': {
-      title: 'Python Environment & Dependency Isolation',
-      category: 'Development',
-      description: 'Follow the project package manager and lockfile while isolating Python environments and dependencies.'
-    },
-    'run_recording.md': {
-      title: 'Secure Run Recording & Observability',
-      category: 'Development',
-      description: 'Design logs, traces, and diagnostics with data minimization, redaction, and controlled retention.'
-    },
-    '代码移交标准.md': {
-      title: 'Team Code & Operations Handoff',
-      category: 'Workflow',
-      description: 'Prepare maintainable delivery before a release, team transition, or operations takeover.'
-    },
-    '前端性能优化规范.md': {
-      title: 'Frontend Performance Optimization',
-      category: 'Development',
-      description: 'Optimize measured frontend loading, interaction, rendering, and asset performance without fixed thresholds.'
-    },
-    'superpowers-template': {
-      title: 'Superpowers Engineering Workflow',
-      category: 'Workflow',
-      description: 'Risk-scaled analysis, planning, execution, and verification for medium or large implementation tasks.'
-    },
-    'brainstorm.md': {
-      title: 'Superpowers Analysis & Design Exploration',
-      category: 'Workflow',
-      description: 'Use for ambiguous requirements, architectural tradeoffs, or changes spanning multiple modules.'
-    },
-    'planning.md': {
-      title: 'Superpowers Implementation Planning',
-      category: 'Workflow',
-      description: 'Plan multi-file, multi-stage, cross-session, or high-risk implementations.'
-    },
-    'tdd_execution.md': {
-      title: 'Superpowers Test-Driven Execution',
-      category: 'Development',
-      description: 'Apply TDD to testable behavior changes and equivalent validation to other task types.'
-    },
-    'verification.md': {
-      title: 'Superpowers Verification & Delivery',
-      category: 'Workflow',
-      description: 'Perform risk-scaled final verification, regression checks, and evidence-based delivery.'
-    },
-    'codegraph_analysis.md': {
-      title: 'Code Graph Static Analysis & Dependency Audit',
-      category: 'Development',
-      description: 'Analyze module dependencies, call paths, and coupling risks, with verifiable Mermaid diagrams when useful.'
-    }
-  }
-};
 
 const tagTranslations = {
   zh: {
@@ -453,14 +307,26 @@ const categoryTranslations = {
   zh: {
     'Development': '编程开发',
     'Workflow': '工作流程',
+    'Engineering Efficiency': '工程效率',
+    'Engineering Quality': '工程质量',
+    'Team Collaboration': '团队协作',
+    'Frontend Development': '前端开发',
+    'Code Analysis': '代码分析',
     'Uncategorized': '未分类',
     '编程开发': '编程开发',
     '工作流程': '工作流程',
+    '工作流': '工作流程',
     '未分类': '未分类'
   },
   en: {
     '编程开发': 'Development',
     '工作流程': 'Workflow',
+    '工作流': 'Workflow',
+    '工程效率': 'Engineering Efficiency',
+    '工程质量': 'Engineering Quality',
+    '团队协作': 'Team Collaboration',
+    '前端开发': 'Frontend Development',
+    '代码分析': 'Code Analysis',
     '未分类': 'Uncategorized',
     'Development': 'Development',
     'Workflow': 'Workflow',
@@ -775,10 +641,13 @@ function buildDisplaySkills() {
     const primary = members.find(member => member.filename === collectionId) || members[0];
     const enabledCount = members.filter(member => member.collection?.enabled).length;
     const tags = Array.from(new Set(members.flatMap(member => member.tags || []))).slice(0, 5);
+    const displayTitle = primary.collection?.display_title || primary.display_title || primary.title;
+    const displayDescription = primary.collection?.display_description || primary.display_description || primary.description;
     display.push({
       ...primary,
       filename: `@collection:${collectionId}`,
-      title: primary.collection?.title || primary.title,
+      title: displayTitle,
+      description: displayDescription,
       emoji: '🧰',
       tags,
       is_dir: true,
@@ -791,7 +660,9 @@ function buildDisplaySkills() {
       collection_enabled_count: enabledCount,
       search_text: members.map(member => [
         member.title,
+        member.display_title,
         member.description,
+        member.display_description,
         member.filename,
         ...(member.tags || [])
       ].join(' ')).join(' ')
@@ -901,22 +772,22 @@ cardsGrid.addEventListener('keydown', handleCardsGridKeydown);
 // Get canonical category name (e.g. 'Development', 'Workflow', 'Uncategorized', or raw custom string)
 function getCanonicalCategory(skill) {
   let cat = skill.category;
-  
-  // Check translation dictionary for override
-  const trans = skillTranslations['zh']?.[skill.filename];
-  if (trans && trans.category) {
-    cat = trans.category;
-  }
-  
+
   if (!cat) {
     cat = skill.is_dir ? 'Workflow' : 'Uncategorized';
   }
-  
+
   // Normalize known Chinese categories to canonical English keys
   if (cat === '编程开发') return 'Development';
   if (cat === '工作流程') return 'Workflow';
+  if (cat === '工作流') return 'Workflow';
+  if (cat === '工程效率') return 'Engineering Efficiency';
+  if (cat === '工程质量') return 'Engineering Quality';
+  if (cat === '团队协作') return 'Team Collaboration';
+  if (cat === '前端开发') return 'Frontend Development';
+  if (cat === '代码分析') return 'Code Analysis';
   if (cat === '未分类') return 'Uncategorized';
-  
+
   return cat;
 }
 
@@ -1055,14 +926,10 @@ function renderSkillsGrid() {
         : `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusReadonly}</span>`;
     }
 
-    // Apply Dynamic Bilingual Translation Mapping for Skill Content
-    let resolvedTitle = skill.title;
+    // Preserve source semantics; locale only changes generic interface text.
+    const resolvedTitle = skill.title;
     let resolvedDesc = skill.description;
-    const trans = skillTranslations[currentLanguage]?.[skill.filename];
-    if (trans) {
-      resolvedTitle = trans.title;
-      resolvedDesc = trans.description;
-    } else if (skill.description === '此技能暂无详细描述信息。') {
+    if (skill.description === '此技能暂无详细描述信息。') {
       resolvedDesc = locales[currentLanguage].defaultDesc;
     }
 
@@ -1290,9 +1157,8 @@ function openCollectionModal(collectionId) {
 
   collectionMembersList.innerHTML = collectionSkill.collection_members.map(member => {
     const displayFilename = member.display_filename || member.filename;
-    const translation = skillTranslations[currentLanguage]?.[displayFilename];
-    const title = translation?.title || member.title;
-    const description = translation?.description || member.description;
+    const title = member.display_title || member.title;
+    const description = member.display_description || member.description;
     const enabled = Boolean(member.collection?.enabled);
     const smart = getSmartEmojiAndTags(member);
     return `
@@ -2326,9 +2192,9 @@ function renderSessionList() {
     div.className = 'ai-session-item' + (s.id === currentSessionId ? ' active' : '');
     div.onclick = async () => { await switchToSession(s.id); };
     div.innerHTML = `
-      <div class="ai-session-item-title">${escapeHtml(s.title || '未命名')}</div>
-      <div class="ai-session-item-meta">${s.msg_count || 0} 条消息</div>
-      <button class="ai-session-del" onclick="event.stopPropagation();deleteSession('${s.id}')" title="删除">×</button>`;
+      <div class="ai-session-item-title">${escapeHtml(s.title || (currentLanguage === 'zh' ? '未命名' : 'Untitled'))}</div>
+      <div class="ai-session-item-meta">${s.msg_count || 0} ${currentLanguage === 'zh' ? '条消息' : 'messages'}</div>
+      <button class="ai-session-del" onclick="event.stopPropagation();deleteSession('${s.id}')" title="${currentLanguage === 'zh' ? '删除' : 'Delete'}">×</button>`;
     aiSessionList.appendChild(div);
   });
 }
@@ -2366,7 +2232,11 @@ async function createNewSession(saveBeforeCreate = true) {
   aiChatHistory = [];
   aiSkillPreview.style.display = 'none';
   aiGeneratedSkill = null;
-  allSessions.unshift({ id: currentSessionId, title: '新会话', msg_count: 0 });
+  allSessions.unshift({
+    id: currentSessionId,
+    title: currentLanguage === 'zh' ? '新会话' : 'New Chat',
+    msg_count: 0
+  });
   renderSessionList();
   renderChatHistory();
 }
@@ -2389,7 +2259,8 @@ async function deleteSession(sid) {
 
 async function saveCurrentSession() {
   if (!currentSessionId || aiChatHistory.length === 0) return true;
-  const title = aiChatHistory.find(m => m.role === 'user')?.content?.slice(0, 30) || '未命名';
+  const title = aiChatHistory.find(m => m.role === 'user')?.content?.slice(0, 30)
+    || (currentLanguage === 'zh' ? '未命名' : 'Untitled');
   const messages = aiChatHistory.map(message => ({ ...message }));
   try {
     const result = await window.pywebview.api.chat_save_session(
