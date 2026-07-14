@@ -1,66 +1,111 @@
 # SkillHub
 
-A small Windows desktop app for managing AI coding rules across projects.
+[中文说明](README_ZH.md) · [Download](https://github.com/w1ndwill/skill_store/releases) · [Changelog](CHANGELOG.md)
 
-Current version: **3.0.2** · [3.0 release notes](docs/RELEASE_3.0.md) · [Changelog](CHANGELOG.md)
+SkillHub is a local Windows workspace for collecting reusable AI coding skills, selecting the rules each project needs, and reviewing the exact changes before they are synchronized.
 
-Write your guidelines as Markdown files, pick which ones a project needs, and sync them over. Tools like Copilot, Cursor, Windsurf, and Claude will read them automatically from the `.agent/skills/` directory.
+![SkillHub skill library](docs/screenshots/skill-library.png)
 
-## What it does
+Current release: **3.0.2**. The redesigned interface shown here is available on the current development branch and will be included in a future release.
 
-- **Skill library** — Keep all your coding standards, design conventions, and review checklists in one place as `.md` files.
-- **AI-free import validation** — Import Markdown, ZIP, one `SKILL.md` folder, or a collection containing `skills/*/SKILL.md` with local metadata normalization, per-skill deduplication, safety checks, and upstream archiving. No API key is required.
-- **Direct-copy discovery** — New files copied straight into the active `skills/` directory are detected on refresh or next launch and can be optimized in place or registered unchanged.
-- **Collapsed collections** — Standard repositories and bundles containing `.agent/skills/*.md` appear as one parent card; child skills can be enabled independently and only enabled members are synced.
-- **Reviewable AI adaptation** — Existing frontmatter is preserved, and AI rewrites stay staged until their unified diff is explicitly accepted.
-- **Tagging & filtering** — Assign category tags to skills and filter by them in the UI.
-- **One-click sync** — Choose a project folder, tick the skills you want, and they get copied into `.agent/skills/` with an auto-generated `AGENTS.md` index.
-- **Sync status** — Compares MD5 hashes so you can tell at a glance which files are up to date, modified, or missing.
-- **AI chat** — Talk to an LLM (e.g. DeepSeek) to search the web and draft new skill files. Supports multiple chat sessions.
-- **Fully local** — Renders via the system's WebView2 engine. No local server, no open ports.
+## Why SkillHub
+
+- **One skill library** — Keep Markdown rules, standard `SKILL.md` folders, and multi-skill collections in one searchable library.
+- **Project-specific configuration** — Enable only the skills a project needs, preview additions, updates, and removals, then sync them into `.agent/skills/`.
+- **Clear collection semantics** — A disabled collection is inactive even if some child selections are remembered. Re-enabling the collection restores those selections without silently applying disabled skills.
+- **Reviewable AI assistance** — Draft or improve skills with an OpenAI-compatible API while keeping generated changes staged until you accept them.
+- **Safe local workflow** — Imports are validated locally, unmanaged project files are not overwritten, sync operations are backed up, and the most recent sync can be undone.
+- **No bundled private skills** — New installations start with an empty writable library outside the source tree.
+
+## Product flow
+
+1. Import a Markdown file, ZIP archive, standard Skill folder, or a collection containing `skills/*/SKILL.md`.
+2. Review the normalized metadata and any optional AI-assisted changes.
+3. Add a target project and enable the skills it should use.
+4. Open the sync preview, inspect the pending changes, and apply them.
+5. Continue editing the source skills in SkillHub; project status shows what is current, changed, or missing.
+
+## Interface
+
+### Project configuration and sync preview
+
+![Project skill configuration](docs/screenshots/project-configuration.png)
+
+The project view keeps filters and search visible while the skill list scrolls independently. Status, enable switches, collection controls, and row actions use fixed columns so controls stay aligned.
+
+### AI skill advisor
+
+![AI skill advisor](docs/screenshots/ai-assistant.png)
+
+Start from a concrete task, inspect an existing Skill, or turn a document into a reusable rule. AI access is optional; importing, organizing, and synchronizing skills do not require an API key.
+
+### Collection and child-skill management
+
+![Collection manager](docs/screenshots/collection-manager.png)
+
+Collections preserve child selections when the parent is paused, but paused collections do not affect a project or its generated `AGENTS.md`.
+
+### Markdown detail view
+
+![Skill detail drawer](docs/screenshots/skill-detail.png)
+
+Skill metadata and rendered Markdown can be reviewed without leaving the library. Source editing remains explicit, and deleted skills can be restored from the in-app trash.
 
 ## Getting started
 
-Grab `SkillHub.exe` from the [Releases](https://github.com/w1ndwill/skill_store/releases) page and run it — no install needed.
+Download `SkillHub.exe` from [GitHub Releases](https://github.com/w1ndwill/skill_store/releases). It is portable and does not require installation.
 
-On first launch SkillHub creates an empty writable library in the user data directory (`%LOCALAPPDATA%\SkillHub\skills` on Windows). Use **Import Skill** for your own `.md`, `.zip`, or skill folders; importing works without AI. Private skills stay outside the source repository. Original downloads are archived under the active library's `.skill-hub/imports/upstream/`, while only validated copies enter the active library.
+On first launch, SkillHub creates a writable library at `%LOCALAPPDATA%\SkillHub\skills`. Original imports are archived below `.skill-hub/imports/upstream/`; validated copies enter the active library. Runtime configuration, chat sessions, private skills, and sync backups stay outside the public repository.
 
-## Build from source
+## Run from source
 
-```bash
+```powershell
 git clone https://github.com/w1ndwill/skill_store.git
 cd skill_store
-pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-Package into a standalone exe:
+Build the portable executable:
 
-```bash
-pip install pyinstaller
+```powershell
+python -m pip install pyinstaller
 pyinstaller SkillHub.spec
 ```
 
+## Repository layout
+
+```text
+├── main.py                  # Backend, file operations, sync and AI bridge
+├── static/
+│   ├── index.html           # Application structure
+│   ├── index.css            # Responsive desktop UI
+│   ├── app.js               # Frontend state and interactions
+│   ├── lucide.min.js        # Bundled icons
+│   └── marked.min.js        # Bundled Markdown renderer
+├── docs/
+│   ├── screenshots/         # README product screenshots
+│   └── RELEASE_3.0.md       # Version 3.0 release notes
+├── SkillHub.spec            # PyInstaller build entry
+├── app.ico                  # Application icon
+└── requirements.txt
+```
+
+## Privacy and safety
+
+- API keys are stored only in the local runtime configuration and are displayed in masked form.
+- SkillHub does not execute hooks, MCP servers, or installer scripts found in imported repositories.
+- ZIP traversal, symbolic-link sources, path collisions, and preview-to-write file changes are rejected.
+- `build/`, `dist/`, caches, local configuration, private skills, and private tests are excluded from Git. Release binaries are uploaded separately.
+
 ## Tech stack
 
-- Python + [pywebview](https://pywebview.flowrl.com/) (native WebView2)
-- HTML / CSS / JS frontend
-- DeepSeek API + DuckDuckGo for AI chat & web search
-
-## Project layout
-
-```
-├── main.py              # Backend: file I/O, API bridge, AI integration
-├── static/
-│   ├── index.html       # Page structure
-│   ├── index.css        # Styles
-│   ├── app.js           # Frontend logic
-│   ├── lucide.min.js    # Icons (bundled)
-│   └── marked.min.js    # Markdown parser (bundled)
-├── app.ico              # App icon
-└── .gitignore
-```
+- Python + [pywebview](https://pywebview.flowrl.com/) using the system WebView2 runtime
+- HTML, CSS, and JavaScript with bundled UI dependencies
+- Optional OpenAI-compatible chat API and DuckDuckGo web search
 
 ## License
 
-MIT
+[MIT](LICENSE)

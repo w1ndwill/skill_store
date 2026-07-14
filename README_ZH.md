@@ -1,66 +1,111 @@
 # SkillHub
 
-一个 Windows 桌面小工具，用来管理各个项目的 AI 编码规范。
+[English](README.md) · [下载程序](https://github.com/w1ndwill/skill_store/releases) · [更新日志](CHANGELOG.md)
 
-当前版本：**3.0.2** · [3.0 发布说明](docs/RELEASE_3.0.md) · [更新日志](CHANGELOG.md)
+SkillHub 是一个本地运行的 Windows Skill 工作台：集中管理可复用的 AI 开发规约，为不同项目选择所需 Skill，并在写入项目前预览实际变化。
 
-把开发规约写成 Markdown 文件，选好哪个项目需要哪些规则，一键同步过去。Cursor、Copilot、Windsurf、Claude 等工具会自动从 `.agent/skills/` 目录读取这些规范。
+![SkillHub 技能库](docs/screenshots/skill-library.png)
 
-## 主要功能
+当前稳定版本为 **3.0.2**。截图中的新版界面位于当前开发分支，将随后续版本发布。
 
-- **技能库管理** — 把编码标准、设计约定、Review 检查项之类的东西统一写成 `.md` 文件，集中存放。
-- **无 AI 导入体检** — 导入 Markdown、ZIP、单个 `SKILL.md` 文件夹或包含 `skills/*/SKILL.md` 的技能集合时，本地完成元数据规范化、逐项去重、安全扫描和上游归档；不配置 API Key 也能完整使用。
-- **直接复制自动发现** — 直接放进活动 `skills/` 的新文件会在刷新或下次启动时提示体检，可原地优化或保留原样登记。
-- **集合折叠管理** — 标准技能仓库及包含 `.agent/skills/*.md` 的组合包在列表中显示为一张父卡；点开后可分别启用或停用子技能，项目同步只装载启用项。
-- **可审阅的 AI 适配** — 保留原有 frontmatter；AI 改写只停留在暂存区，展示统一差异并获得明确确认后才导入。
-- **标签分类** — 给技能打标签（比如"前端"、"Git"、"Python"），在界面上按标签筛选。
-- **一键同步** — 选个项目目录，勾上需要的技能，点一下就复制到项目的 `.agent/skills/` 下，同时生成 `AGENTS.md` 索引。
-- **同步状态** — 用 MD5 对比文件变化，一眼就能看出哪些是最新的、哪些改过了、哪些还没同步。
-- **AI 对话** — 接入 LLM（比如 DeepSeek），支持联网搜索，可以直接让 AI 帮你写技能文件。支持多轮会话。
-- **纯本地运行** — 用系统自带的 WebView2 渲染界面，不起本地服务，不占端口。
+## 它解决什么问题
 
-## 快速上手
+- **统一管理技能库** — Markdown 规则、标准 `SKILL.md` 文件夹和多 Skill 集合都能放进同一个可搜索的本地库。
+- **按项目配置** — 每个项目只启用自己需要的 Skill；同步前先看新增、更新、删除与冲突，再决定是否写入 `.agent/skills/`。
+- **集合开关语义明确** — 父集合停用后，即使保留了子 Skill 的选中状态，子 Skill 也不会生效；重新启用父集合时才恢复原选择。
+- **AI 改写可审阅** — 可以接入兼容 OpenAI 接口的模型生成或优化 Skill，所有改写先进入待确认状态，不会直接覆盖原文。
+- **同步可回退** — 不覆盖项目中未由 SkillHub 管理的同名文件，每次同步保留事务记录和备份，并支持撤销最近一次同步。
+- **私人 Skill 与程序分离** — 新安装从空白技能库开始，个人规则、配置、会话和备份都保存在源码仓库之外。
 
-去 [Releases](https://github.com/w1ndwill/skill_store/releases) 页面下载 `SkillHub.exe`，双击就能用，不用安装。
+## 使用流程
 
-第一次启动会在用户数据目录（Windows 默认是 `%LOCALAPPDATA%\SkillHub\skills`）创建空白的可写活动技能库。点击“导入技能”可以导入你自己的 `.md`、`.zip` 或技能文件夹，导入过程不依赖 AI。私人 Skill 保存在源码仓库之外；原始下载文件会归档在活动技能库的 `.skill-hub/imports/upstream/`，检查后的版本才会进入活动库。
+1. 导入 Markdown、ZIP、标准 Skill 文件夹，或包含 `skills/*/SKILL.md` 的集合。
+2. 检查补齐后的元数据和可选的 AI 优化差异。
+3. 添加目标项目，启用这个项目真正需要的 Skill。
+4. 打开同步预览，确认变化后写入项目。
+5. 后续继续维护源 Skill；列表会显示项目中的版本是否最新、被修改或尚未安装。
+
+## 界面预览
+
+### 项目配置与同步
+
+![项目 Skill 配置](docs/screenshots/project-configuration.png)
+
+筛选、搜索和表头保持可见，Skill 列表独立滚动；状态、开关、集合入口和行操作使用固定列位，不会因为某一行缺少按钮而错位。
+
+### AI 技能顾问
+
+![AI 技能顾问](docs/screenshots/ai-assistant.png)
+
+可以从具体任务开始，让 AI 生成开发规约、检查现有 Skill，或把一份文档整理成可复用规则。AI 是可选能力，不配置 API Key 也能完成导入、管理和同步。
+
+### 集合与子 Skill
+
+![集合与子 Skill 管理](docs/screenshots/collection-manager.png)
+
+停用父集合不会删除文件，也不会清空子 Skill 选择；但该集合在项目同步和生成的 `AGENTS.md` 中都视为未启用。
+
+### Markdown 详情
+
+![Skill 文档详情](docs/screenshots/skill-detail.png)
+
+不离开列表即可查看元数据和渲染后的 Markdown。源码编辑仍需明确触发；误删的 Skill 可以从应用内回收区恢复。
+
+## 快速开始
+
+前往 [GitHub Releases](https://github.com/w1ndwill/skill_store/releases) 下载 `SkillHub.exe`，直接运行即可，无需安装。
+
+第一次启动时，程序会在 `%LOCALAPPDATA%\SkillHub\skills` 创建可写技能库。导入的原始文件归档在 `.skill-hub/imports/upstream/`，通过检查的副本才进入活动库。运行配置、聊天记录、私人 Skill 和同步备份不会进入公开仓库。
 
 ## 从源码运行
 
-```bash
+```powershell
 git clone https://github.com/w1ndwill/skill_store.git
 cd skill_store
-pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-打包成单文件 exe：
+打包便携版：
 
-```bash
-pip install pyinstaller
+```powershell
+python -m pip install pyinstaller
 pyinstaller SkillHub.spec
 ```
 
+## 仓库结构
+
+```text
+├── main.py                  # 后端、文件操作、同步与 AI 桥接
+├── static/
+│   ├── index.html           # 应用结构
+│   ├── index.css            # 响应式桌面界面
+│   ├── app.js               # 前端状态与交互
+│   ├── lucide.min.js        # 本地图标库
+│   └── marked.min.js        # 本地 Markdown 渲染器
+├── docs/
+│   ├── screenshots/         # README 产品截图
+│   └── RELEASE_3.0.md       # 3.0 版本说明
+├── SkillHub.spec            # PyInstaller 构建入口
+├── app.ico                  # 应用图标
+└── requirements.txt
+```
+
+## 隐私与安全边界
+
+- API Key 只写入本地运行配置，界面中仅显示脱敏提示。
+- SkillHub 不执行导入仓库中的 hooks、MCP 服务或安装脚本。
+- ZIP 路径穿越、符号链接来源、目标路径冲突，以及预览后被替换的文件都会被拒绝。
+- `build/`、`dist/`、缓存、本地配置、私人 Skill 和私有测试均被 Git 忽略；发布程序单独上传到 Release。
+
 ## 技术栈
 
-- Python + [pywebview](https://pywebview.flowrl.com/)（系统原生 WebView2）
-- HTML / CSS / JS 前端
-- DeepSeek API + DuckDuckGo 联网搜索
-
-## 目录结构
-
-```
-├── main.py              # 后端：文件读写、API 桥接、AI 对话
-├── static/
-│   ├── index.html       # 页面结构
-│   ├── index.css        # 样式
-│   ├── app.js           # 前端逻辑
-│   ├── lucide.min.js    # 图标库（本地打包）
-│   └── marked.min.js    # Markdown 解析器（本地打包）
-├── app.ico              # 应用图标
-└── .gitignore
-```
+- Python + [pywebview](https://pywebview.flowrl.com/)，使用系统 WebView2
+- 原生 HTML、CSS、JavaScript，前端依赖随程序打包
+- 可选的 OpenAI 兼容聊天接口与 DuckDuckGo 联网搜索
 
 ## 开源协议
 
-MIT
+[MIT](LICENSE)
