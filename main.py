@@ -31,7 +31,7 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-APP_VERSION = "3.0.2"
+APP_VERSION = "3.1.0"
 
 # Display-only translations for upstream collections. These values are returned
 # separately from source metadata so SKILL.md trigger semantics stay untouched.
