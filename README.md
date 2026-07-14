@@ -1,66 +1,119 @@
 # SkillHub
 
-A small Windows desktop app for managing AI coding rules across projects.
+[English](README_EN.md) · [下载 SkillHub](https://github.com/w1ndwill/skill_store/releases) · [MIT License](LICENSE)
 
-Current version: **3.0.2** · [3.0 release notes](docs/RELEASE_3.0.md) · [Changelog](CHANGELOG.md)
+SkillHub 是一个本地运行的 Windows Skill 工作台，用来集中管理 AI 开发规约，并为每个项目维护清晰、可预览、可回退的 Skill 配置。
 
-Write your guidelines as Markdown files, pick which ones a project needs, and sync them over. Tools like Copilot, Cursor, Windsurf, and Claude will read them automatically from the `.agent/skills/` directory.
+![SkillHub 技能库](docs/screenshots/skill-library.png)
 
-## What it does
+当前版本：**3.1.0**
 
-- **Skill library** — Keep all your coding standards, design conventions, and review checklists in one place as `.md` files.
-- **AI-free import validation** — Import Markdown, ZIP, one `SKILL.md` folder, or a collection containing `skills/*/SKILL.md` with local metadata normalization, per-skill deduplication, safety checks, and upstream archiving. No API key is required.
-- **Direct-copy discovery** — New files copied straight into the active `skills/` directory are detected on refresh or next launch and can be optimized in place or registered unchanged.
-- **Collapsed collections** — Standard repositories and bundles containing `.agent/skills/*.md` appear as one parent card; child skills can be enabled independently and only enabled members are synced.
-- **Reviewable AI adaptation** — Existing frontmatter is preserved, and AI rewrites stay staged until their unified diff is explicitly accepted.
-- **Tagging & filtering** — Assign category tags to skills and filter by them in the UI.
-- **One-click sync** — Choose a project folder, tick the skills you want, and they get copied into `.agent/skills/` with an auto-generated `AGENTS.md` index.
-- **Sync status** — Compares MD5 hashes so you can tell at a glance which files are up to date, modified, or missing.
-- **AI chat** — Talk to an LLM (e.g. DeepSeek) to search the web and draft new skill files. Supports multiple chat sessions.
-- **Fully local** — Renders via the system's WebView2 engine. No local server, no open ports.
+## 主要功能
 
-## Getting started
+- **统一技能库**：管理 Markdown 规则、标准 `SKILL.md` 文件夹，以及包含多个子 Skill 的集合。
+- **项目独立配置**：每个项目单独选择所需 Skill，不同项目之间互不影响。
+- **同步预览**：写入前查看新增、更新、移除和冲突，确认后再同步到 `.agent/skills/`。
+- **集合管理**：集合总开关控制整个集合是否参与项目，子开关用于选择集合中的具体 Skill。
+- **文档查看与编辑**：直接查看 Skill 元数据和渲染后的 Markdown，并从界面进入源码编辑。
+- **AI 技能顾问**：使用兼容 OpenAI 接口的模型生成规约、检查 Skill 或整理已有文档。
+- **本地数据管理**：技能库、项目配置、聊天记录和同步备份保存在本机。
+- **同步撤销**：保留最近一次同步记录，可在项目文件未被继续修改时安全撤销。
 
-Grab `SkillHub.exe` from the [Releases](https://github.com/w1ndwill/skill_store/releases) page and run it — no install needed.
+## 界面
 
-On first launch SkillHub creates an empty writable library in the user data directory (`%LOCALAPPDATA%\SkillHub\skills` on Windows). Use **Import Skill** for your own `.md`, `.zip`, or skill folders; importing works without AI. Private skills stay outside the source repository. Original downloads are archived under the active library's `.skill-hub/imports/upstream/`, while only validated copies enter the active library.
+### 项目 Skill 配置
 
-## Build from source
+![项目 Skill 配置](docs/screenshots/project-configuration.png)
 
-```bash
+项目页面集中显示分类、搜索、同步状态和启用范围。底部操作栏汇总当前变化，并在执行前打开同步预览。
+
+### AI 技能顾问
+
+![AI 技能顾问](docs/screenshots/ai-assistant.png)
+
+可以从具体任务、现有 Skill 或参考文档开始对话。AI 功能为可选配置，不影响本地导入、整理和项目同步。
+
+### Skill 集合
+
+![Skill 集合管理](docs/screenshots/collection-manager.png)
+
+集合内的子 Skill 可以分别查看和选择。集合停用时，整个集合不参与项目配置；子项选择仍保存在本地。
+
+### Skill 文档
+
+![Skill 文档详情](docs/screenshots/skill-detail.png)
+
+详情面板同时展示来源、分类、标签、元数据和 Markdown 正文，方便在启用前了解 Skill 的实际内容。
+
+## 使用流程
+
+1. 导入 `.md`、`.zip`、标准 Skill 文件夹或 Skill 集合。
+2. 查看 Skill 的名称、说明、分类和正文。
+3. 添加目标项目，为项目选择需要的 Skill。
+4. 打开同步预览，确认文件变化。
+5. 同步后由项目中的 `AGENTS.md` 和 `.agent/skills/` 提供给 AI 开发工具使用。
+
+## 下载与运行
+
+前往 [GitHub Releases](https://github.com/w1ndwill/skill_store/releases) 下载 `SkillHub.exe`。程序为便携版，无需安装。
+
+首次启动时，SkillHub 会创建本地技能库：
+
+```text
+%LOCALAPPDATA%\SkillHub\skills
+```
+
+导入文件的归档、同步状态和备份由 SkillHub 在本地数据目录中维护。源码仓库不包含个人 Skill、API Key、聊天记录或项目配置。
+
+## 从源码运行
+
+```powershell
 git clone https://github.com/w1ndwill/skill_store.git
 cd skill_store
-pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-Package into a standalone exe:
+构建便携版：
 
-```bash
-pip install pyinstaller
-pyinstaller SkillHub.spec
+```powershell
+python -m pip install pyinstaller
+pyinstaller --clean --noconfirm SkillHub.spec
 ```
 
-## Tech stack
+## 仓库结构
 
-- Python + [pywebview](https://pywebview.flowrl.com/) (native WebView2)
-- HTML / CSS / JS frontend
-- DeepSeek API + DuckDuckGo for AI chat & web search
-
-## Project layout
-
-```
-├── main.py              # Backend: file I/O, API bridge, AI integration
+```text
+├── main.py                  # 后端、文件操作、同步与 AI 接口
 ├── static/
-│   ├── index.html       # Page structure
-│   ├── index.css        # Styles
-│   ├── app.js           # Frontend logic
-│   ├── lucide.min.js    # Icons (bundled)
-│   └── marked.min.js    # Markdown parser (bundled)
-├── app.ico              # App icon
-└── .gitignore
+│   ├── index.html           # 应用结构
+│   ├── index.css            # 界面样式
+│   ├── app.js               # 前端状态与交互
+│   ├── lucide.min.js        # 本地图标库
+│   └── marked.min.js        # 本地 Markdown 渲染器
+├── docs/screenshots/        # README 界面截图
+├── SkillHub.spec            # PyInstaller 构建入口
+├── app.ico                  # 应用图标
+└── requirements.txt         # 运行依赖
 ```
 
-## License
+## 安全边界
 
-MIT
+- API Key 只保存在本地配置中，界面仅显示脱敏状态。
+- 导入过程不执行仓库中的 hooks、MCP 服务或安装脚本。
+- ZIP 路径穿越、符号链接来源和目标路径冲突会被拒绝。
+- 项目中不受 SkillHub 管理的同名文件不会被静默覆盖。
+- 发布程序不包含私人 Skill、本地配置、测试目录或聊天记录。
+
+## 技术栈
+
+- Python + [pywebview](https://pywebview.flowrl.com/)
+- 系统 WebView2
+- HTML、CSS、JavaScript
+- 可选的 OpenAI 兼容接口与 DuckDuckGo 联网搜索
+
+## 开源协议
+
+[MIT](LICENSE)

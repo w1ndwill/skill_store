@@ -12,97 +12,87 @@
 </head>
 <body>
   <div class="app-container">
-    <!-- Left Sidebar -->
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-icon"><img src="app-icon.svg" alt="" aria-hidden="true"></div>
         <div class="brand-title">
           <h1>SkillHub</h1>
-          <p>本地技能可视化管理器</p>
+          <p>本地 Skill 工作台</p>
         </div>
       </div>
 
-      <!-- Global Skill Library Config -->
-      <div class="skills-dir-config">
-        <div class="config-header">
-          <span class="config-label">全局技能库</span>
-          <button class="btn-config" onclick="handleChangeSkillsDir()" title="更改全局技能库路径">
-            <i data-lucide="settings" style="width:13px;height:13px;"></i>
-          </button>
-        </div>
-        <div class="config-value" id="skills-dir-path" onclick="handleChangeSkillsDir()" title="点击选择新文件夹">加载中…</div>
-      </div>
+      <nav class="primary-nav" aria-label="主导航">
+        <button type="button" class="nav-item active" id="nav-library" onclick="handleShowLibrary()">
+          <i data-lucide="library" aria-hidden="true"></i>
+          <span>技能库</span>
+          <span class="nav-count" id="nav-skill-count">0</span>
+        </button>
+        <button type="button" class="nav-item" onclick="openAIModal()" id="btn-ai-search">
+          <i data-lucide="sparkles" aria-hidden="true"></i>
+          <span>AI 助手</span>
+          <span class="nav-status-dot" id="nav-ai-status" aria-hidden="true"></span>
+        </button>
+      </nav>
 
-      <!-- Action Buttons -->
-      <div class="sidebar-actions">
-        <button class="btn btn-primary" onclick="handlePickProject()" id="btn-add-project">
-          <i data-lucide="folder-plus" style="width:15px;height:15px;"></i>
-          关联项目
-        </button>
-        <button class="btn btn-success" onclick="handleCreateSkill()" id="btn-new-skill">
-          <i data-lucide="file-plus" style="width:15px;height:15px;"></i>
-          新建技能
-        </button>
-        <button class="btn btn-secondary" onclick="handleImportSkill()" id="btn-import-skill">
-          <i data-lucide="download" style="width:15px;height:15px;"></i>
-          导入技能
-        </button>
-        <button class="btn btn-ai" onclick="openAIModal()" id="btn-ai-search" style="flex:1; padding:0.5rem 0.5rem; font-size:0.75rem;">
-          <i data-lucide="sparkles" style="width:15px;height:15px;"></i>
-          AI 搜索
-        </button>
-      </div>
-      <div class="service-status-row">
-        <span id="api-config-summary" class="service-status neutral">AI 未配置</span>
-        <span id="import-mode-summary" class="service-status local">导入：本地体检</span>
-      </div>
-
-      <!-- Projects List -->
-      <section class="sidebar-section" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+      <section class="sidebar-section projects-section">
         <div class="section-title">
           <h2>目标项目</h2>
+          <button class="sidebar-icon-button" onclick="handlePickProject()" id="btn-add-project" title="关联项目" aria-label="关联项目">
+            <i data-lucide="plus" aria-hidden="true"></i>
+          </button>
         </div>
         <div id="project-list" class="project-list">
-          <div class="empty-state" style="padding:2rem 1rem;">
-            <div class="empty-state-icon">📂</div>
-            <h4>暂无关联项目</h4>
-            <p>点击上方按钮选取文件夹</p>
+          <div class="sidebar-empty-state">
+            <p>暂无关联项目</p>
+            <button type="button" onclick="handlePickProject()">关联第一个项目</button>
           </div>
         </div>
       </section>
-      
-      <!-- Sidebar Footer (Settings) -->
+
       <div class="sidebar-footer">
-        <button class="btn btn-secondary btn-settings" onclick="openSettingsModal()" id="btn-settings" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; padding: 0.65rem;">
-          <i data-lucide="settings" style="width:15px;height:15px;"></i>
+        <div class="skills-dir-config">
+          <div class="config-header">
+            <span class="config-label">全局技能库</span>
+            <button class="btn-config" onclick="handleChangeSkillsDir()" title="更改全局技能库路径">
+              <i data-lucide="folder-cog" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="config-value" id="skills-dir-path" onclick="handleChangeSkillsDir()" title="点击选择新文件夹">加载中…</div>
+        </div>
+        <div class="service-status-row">
+          <span id="api-config-summary" class="service-status neutral">AI 未配置</span>
+          <span id="import-mode-summary" class="service-status local">本地体检</span>
+        </div>
+        <button class="nav-item settings-nav-item" onclick="openSettingsModal()" id="btn-settings">
+          <i data-lucide="settings" aria-hidden="true"></i>
           <span id="sidebar-settings-text">系统设置</span>
         </button>
       </div>
     </aside>
 
-    <!-- Right Main Panel -->
     <main class="main-panel">
       <header class="main-header">
         <div class="header-title">
-          <h2 id="current-project-title">请选择一个项目进行配置</h2>
-          <p id="current-project-desc">选择左侧项目后，可在此管理技能装载</p>
+          <span class="workspace-kicker" id="workspace-kicker">技能库</span>
+          <h2 id="current-project-title">管理你的 Skill</h2>
+          <p id="current-project-desc">浏览、维护并组合可复用的本地开发规范</p>
         </div>
         <div class="header-actions">
-          <button id="undo-sync-btn" class="btn btn-secondary btn-icon sync-history-btn" onclick="handleUndoSync()" disabled title="撤销最近同步">
-            <i data-lucide="undo-2" style="width:16px;height:16px;"></i>
+          <button class="btn btn-secondary header-action" onclick="handleImportSkill()" id="btn-import-skill">
+            <i data-lucide="download" aria-hidden="true"></i>
+            导入
           </button>
-          <button id="sync-btn" class="btn btn-primary pulsing-btn" onclick="handleSyncSkills()" disabled>
-            <i data-lucide="refresh-cw" style="width:16px;height:16px;"></i>
-            一键同步技能
+          <button class="btn btn-primary header-action" onclick="handleCreateSkill()" id="btn-new-skill">
+            <i data-lucide="plus" aria-hidden="true"></i>
+            新建 Skill
           </button>
         </div>
       </header>
 
-      <!-- Search + Cards -->
       <div class="main-content">
         <div class="content-toolbar">
           <div class="content-toolbar-left">
-            <h3>全局技能列表</h3>
+            <h3>全部 Skill</h3>
             <div class="toolbar-stats" id="toolbar-stats" style="display:none;">
               <span><span class="toolbar-stat-dot synced"></span><span id="stat-synced">0</span> 已装载</span>
               <span>·</span>
@@ -120,13 +110,67 @@
           </div>
         </div>
         <div id="category-filter-bar" class="category-filter-bar"></div>
-        <div id="cards-grid" class="cards-grid"></div>
+        <div class="skill-list-shell">
+          <div class="skill-list-header" aria-hidden="true">
+            <span>Skill</span>
+            <span>说明</span>
+            <span>分类</span>
+            <span>状态</span>
+            <span></span>
+          </div>
+          <div id="cards-grid" class="cards-grid skill-list"></div>
+        </div>
+      </div>
+
+      <div class="sync-action-bar" id="sync-action-bar" aria-live="polite">
+        <div class="sync-bar-copy">
+          <span class="sync-bar-icon"><i data-lucide="git-compare-arrows" aria-hidden="true"></i></span>
+          <div>
+            <strong id="sync-bar-title">项目变更</strong>
+            <span id="sync-bar-summary">正在检查待同步内容…</span>
+          </div>
+        </div>
+        <div class="sync-bar-actions">
+          <button id="undo-sync-btn" class="btn btn-secondary btn-icon sync-history-btn" onclick="handleUndoSync()" disabled title="撤销最近同步">
+            <i data-lucide="undo-2" aria-hidden="true"></i>
+          </button>
+          <button id="sync-btn" class="btn btn-primary" onclick="handleSyncSkills()" disabled>
+            <i data-lucide="refresh-cw" aria-hidden="true"></i>
+            预览并同步
+          </button>
+        </div>
       </div>
     </main>
   </div>
 
+  <div class="skill-drawer-backdrop" id="skill-drawer-backdrop" onclick="closeSkillDrawer()"></div>
+  <aside class="skill-detail-drawer" id="skill-detail-drawer" role="dialog" aria-modal="false" aria-labelledby="skill-detail-title" aria-hidden="true">
+    <header class="skill-detail-header">
+      <div class="skill-detail-heading">
+        <span class="skill-detail-emoji" id="skill-detail-emoji">📄</span>
+        <div>
+          <span class="workspace-kicker" id="skill-detail-kind">Skill 文档</span>
+          <h2 id="skill-detail-title">Skill</h2>
+        </div>
+      </div>
+      <button class="btn btn-secondary btn-icon" onclick="closeSkillDrawer()" aria-label="关闭详情">
+        <i data-lucide="x" aria-hidden="true"></i>
+      </button>
+    </header>
+    <div class="skill-detail-meta" id="skill-detail-meta"></div>
+    <div class="skill-detail-content markdown-preview" id="skill-detail-content"></div>
+    <footer class="skill-detail-footer">
+      <button class="btn btn-secondary" id="skill-detail-edit">
+        <i data-lucide="pencil" aria-hidden="true"></i>编辑源码
+      </button>
+      <button class="btn btn-quiet-danger" id="skill-detail-delete">
+        <i data-lucide="trash-2" aria-hidden="true"></i>移至回收区
+      </button>
+    </footer>
+  </aside>
+
   <!-- Editor Modal -->
-  <div id="editor-modal" class="modal-overlay">
+  <div id="editor-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-hidden="true">
     <div class="modal-container">
       <header class="modal-header">
         <div class="modal-title-info">
@@ -162,7 +206,7 @@
   </div>
 
   <!-- Skill Collection Modal -->
-  <div id="collection-modal" class="modal-overlay">
+  <div id="collection-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="collection-modal-title" aria-hidden="true">
     <div class="modal-container collection-modal-container">
       <header class="modal-header">
         <div class="modal-title-info">
@@ -185,7 +229,7 @@
   </div>
 
   <!-- Settings Modal -->
-  <div id="settings-modal" class="modal-overlay">
+  <div id="settings-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" aria-hidden="true">
     <div class="modal-container modal-settings-container">
       <header class="modal-header">
         <div class="modal-title-info">
@@ -321,7 +365,7 @@
 
   <!-- AI Chat Modal -->
 
-  <div id="ai-modal" class="modal-overlay">
+  <div id="ai-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title" aria-hidden="true">
     <div class="modal-container" style="max-width: 900px; height: 88vh; flex-direction: row;">
       <!-- Session List Panel -->
       <div class="ai-session-panel" id="ai-session-panel">
@@ -342,15 +386,16 @@
             <h3 class="modal-title" id="ai-modal-title">AI 技能顾问</h3>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;">
-            <label class="switch-label" style="margin-right:0.25rem;" title="联网搜索">
+            <div class="switch-label ai-web-search-control" style="margin-right:0.25rem;" title="联网检索">
               <span style="font-size:0.65rem;">🔍</span>
+              <span id="ai-web-search-label">联网检索</span>
               <label class="switch" style="width:28px;height:16px;">
                 <input type="checkbox" id="ai-web-search-toggle">
                 <span class="slider"></span>
               </label>
-            </label>
-            <button class="btn btn-secondary btn-icon" onclick="handleAIGenerateSkill()" id="ai-btn-generate" title="生成技能" style="padding:0.3rem 0.55rem;font-size:0.7rem;display:inline-flex;align-items:center;gap:3px;">
-              <i data-lucide="file-text" style="width:13px;height:13px;"></i> 生成
+            </div>
+            <button class="btn btn-secondary btn-icon" onclick="handleAIGenerateSkill()" id="ai-btn-generate" title="生成技能" disabled style="padding:0.3rem 0.55rem;font-size:0.7rem;display:inline-flex;align-items:center;gap:3px;">
+              <i data-lucide="file-text" style="width:13px;height:13px;"></i> <span id="ai-generate-label">生成技能</span>
             </button>
             <button class="btn btn-secondary btn-icon" onclick="closeAIModal()">
               <i data-lucide="x" style="width:16px;height:16px;"></i>
@@ -361,9 +406,23 @@
         <!-- Chat Messages -->
         <div class="ai-chat-messages" id="ai-chat-messages">
           <div class="ai-chat-empty">
-            <div style="font-size:2.5rem;margin-bottom:0.5rem;">✨</div>
-            <h4 style="font-weight:700;margin-bottom:0.25rem;color:var(--text-primary);">AI 技能顾问</h4>
-            <p style="color:var(--text-tertiary);font-size:0.78rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
+            <div class="ai-empty-mark"><i data-lucide="sparkles" aria-hidden="true"></i></div>
+            <h4>从一个具体任务开始</h4>
+            <p>描述项目和目标，AI 会先帮你梳理规则，再生成可保存的 Skill。</p>
+            <div class="ai-prompt-suggestions">
+              <button type="button" onclick="useAISuggestion('根据当前项目技术栈，帮我生成一份代码审查 Skill')">
+                <i data-lucide="scan-search" aria-hidden="true"></i>
+                <span><strong>生成代码审查规范</strong><small>从技术栈和风险点开始</small></span>
+              </button>
+              <button type="button" onclick="useAISuggestion('检查现有 Skill 是否有冲突、重复或不清晰的规则')">
+                <i data-lucide="list-checks" aria-hidden="true"></i>
+                <span><strong>检查现有 Skill</strong><small>发现冲突、重复和缺口</small></span>
+              </button>
+              <button type="button" onclick="useAISuggestion('帮我把项目文档整理成一份结构清晰的开发 Skill')">
+                <i data-lucide="file-input" aria-hidden="true"></i>
+                <span><strong>从文档提取规范</strong><small>整理为可复用的规则</small></span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -395,7 +454,7 @@
   </div>
 
   <!-- Custom Dialog Modal (Prompt/Confirm) -->
-  <div id="dialog-modal" class="modal-overlay">
+  <div id="dialog-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-hidden="true">
     <div class="modal-container" style="max-width: 560px; height: auto; display: flex; flex-direction: column;">
       <header class="modal-header" style="padding: 1.25rem 1.5rem;">
         <div class="modal-title-info">

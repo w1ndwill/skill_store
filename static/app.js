@@ -10,6 +10,10 @@ let editingFilename = null;
 let isViewingSkill = false;
 let displaySkillsByFilename = new Map();
 let activeCollectionId = null;
+let pendingSyncSummary = null;
+let pendingSyncRequestId = 0;
+let pendingSyncTimer = null;
+const modalReturnFocus = new WeakMap();
 
 // i18n & Theme State
 let currentLanguage = 'zh';
@@ -25,6 +29,8 @@ let aiGeneratedSkill = null; // cached AI result
 let activeCategoryFilter = null; // active category filter (null = show all)
 let searchRenderTimer = null;
 let hasRenderedSkillCards = false;
+let activeDrawerFilename = null;
+let drawerReturnFocus = null;
 
 // DOM cache
 const projectList = document.getElementById('project-list');
@@ -53,6 +59,97 @@ const collectionModalTitle = document.getElementById('collection-modal-title');
 const collectionModalSummary = document.getElementById('collection-modal-summary');
 const collectionMembersList = document.getElementById('collection-members-list');
 const collectionModalHint = document.getElementById('collection-modal-hint');
+const navLibrary = document.getElementById('nav-library');
+const navSkillCount = document.getElementById('nav-skill-count');
+const workspaceKicker = document.getElementById('workspace-kicker');
+const syncActionBar = document.getElementById('sync-action-bar');
+const syncBarTitle = document.getElementById('sync-bar-title');
+const syncBarSummary = document.getElementById('sync-bar-summary');
+const skillDrawer = document.getElementById('skill-detail-drawer');
+const skillDrawerBackdrop = document.getElementById('skill-drawer-backdrop');
+const skillDetailEmoji = document.getElementById('skill-detail-emoji');
+const skillDetailTitle = document.getElementById('skill-detail-title');
+const skillDetailKind = document.getElementById('skill-detail-kind');
+const skillDetailMeta = document.getElementById('skill-detail-meta');
+const skillDetailContent = document.getElementById('skill-detail-content');
+const skillDetailEdit = document.getElementById('skill-detail-edit');
+const skillDetailDelete = document.getElementById('skill-detail-delete');
+
+function getModalFocusableElements(modal) {
+  return Array.from(modal.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+  )).filter(element => element.offsetParent !== null);
+}
+
+function activateModal(modal, preferredFocus = null) {
+  if (!modal.classList.contains('active')) {
+    modalReturnFocus.set(modal, document.activeElement);
+  }
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+  setTimeout(() => {
+    const focusTarget = preferredFocus || getModalFocusableElements(modal)[0];
+    if (focusTarget) focusTarget.focus();
+  }, 0);
+}
+
+function deactivateModal(modal) {
+  modal.classList.remove('active');
+  modal.setAttribute('aria-hidden', 'true');
+  const returnFocus = modalReturnFocus.get(modal);
+  modalReturnFocus.delete(modal);
+  if (returnFocus && document.contains(returnFocus)) {
+    setTimeout(() => returnFocus.focus(), 0);
+  }
+}
+
+function trapModalFocus(event, modal) {
+  const focusable = getModalFocusableElements(modal);
+  if (!focusable.length) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  } else if (!modal.contains(document.activeElement)) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+document.addEventListener('keydown', event => {
+  const activeModals = Array.from(document.querySelectorAll('.modal-overlay.active'));
+  const modal = activeModals[activeModals.length - 1];
+  if (!modal) {
+    if (event.key === 'Escape' && skillDrawer?.classList.contains('active')) {
+      event.preventDefault();
+      closeSkillDrawer();
+    }
+    return;
+  }
+  if (event.key === 'Tab') {
+    trapModalFocus(event, modal);
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    const closeActions = {
+      'dialog-modal': closeDialogModal,
+      'editor-modal': closeEditorModal,
+      'collection-modal': closeCollectionModal,
+      'settings-modal': closeSettingsModal,
+      'ai-modal': closeAIModal,
+    };
+    closeActions[modal.id]?.();
+  }
+}, true);
 
 // ------------------------------------------
 // Bilingual i18n Dictionary
@@ -60,16 +157,17 @@ const collectionModalHint = document.getElementById('collection-modal-hint');
 const locales = {
   zh: {
     sidebarTitle: 'SkillHub',
-    sidebarSub: '本地技能可视化管理器',
+    sidebarSub: '本地 Skill 工作台',
     btnAssociate: '关联项目',
     btnNewSkill: '新建技能',
     headingProjects: '目标项目',
     emptyProjects: '暂无关联项目',
     emptyProjectsSub: '点击上方按钮选取文件夹',
     btnSettings: '系统设置',
-    noProjectTitle: '请选择一个项目进行配置',
-    noProjectDesc: '选择左侧项目后，可在此管理技能装载',
-    syncBtn: '一键同步技能',
+    noProjectTitle: '管理你的 Skill',
+    noProjectDesc: '浏览、维护并组合可复用的本地开发规范',
+    syncBtn: '预览并同步',
+    checkingBtn: '检查变更…',
     syncingBtn: '同步中…',
     syncPreviewTitle: '同步变更预览',
     syncPreviewIntro: '确认后才会写入项目：',
@@ -84,16 +182,21 @@ const locales = {
     toastUndoFail: '撤销失败: ',
     statTotal: '全局技能库',
     statSynced: '已装载',
-    statUnsynced: '待更新',
-    listHeader: '全局技能列表',
-    listHeaderProject: '项目技能装载配置',
+    statUnsynced: '技能有更新',
+    statPendingFiles: '个文件待应用',
+    statUpToDate: '已是最新',
+    listHeader: '全部 Skill',
+    listHeaderProject: '项目 Skill 配置',
     searchPlaceholder: '搜索技能名称、标签…',
     statusSynced: '已同步',
     statusUpdated: '有更新',
     statusPendingMount: '待装载',
     statusPendingUnmount: '待移除',
     statusUnloaded: '未装载',
-    statusReadonly: '全局只读',
+    statusReadonly: '未选择项目',
+    btnAI: 'AI 助手',
+    aiWebSearch: '联网检索',
+    aiGenerate: '生成技能',
     btnViewSkill: '查看文档',
     btnEditSkill: '编辑技能',
     toggleLabel: '启用装载',
@@ -124,41 +227,42 @@ const locales = {
     settingsCancel: '取消',
     settingsSave: '保存配置',
     settingsHeadingGeneral: '通用偏好',
-    settingsLabelLang: '系统语言 (Language)',
+    settingsLabelLang: '系统语言',
     settingsDescLang: '切换整个界面的显示语言',
-    settingsLabelTheme: '界面主题 (Theme)',
+    settingsLabelTheme: '界面主题',
     settingsDescTheme: '选择明亮模式或护眼深色模式',
-    settingsThemeLight: '☀️ 明亮模式 (Light)',
-    settingsThemeDark: '🌙 深色模式 (Dark)',
+    settingsThemeLight: '☀️ 明亮模式',
+    settingsThemeDark: '🌙 深色模式',
     settingsHeadingPaths: '路径管理',
     settingsLabelSkillsdir: '全局技能库路径',
     settingsDescSkillsdir: '存放全局技能规约 Markdown 文件的目录',
     settingsLabelScandir: '项目默认扫描起点',
     settingsDescScandir: '点击“关联项目”时，默认打开的初始目录',
     settingsHeadingAI: 'AI 与大模型配置',
-    settingsLabelApibase: 'API 接口地址 (Base URL)',
+    settingsLabelApibase: 'API 接口地址',
     settingsDescApibase: '自定义 OpenAI 兼容接口，例如：官方 https://api.deepseek.com/v1，本地 Ollama 填 http://localhost:11434/v1，SiliconFlow 填 https://api.siliconflow.cn/v1',
-    settingsLabelApikey: 'API 密钥 (API Key)',
+    settingsLabelApikey: 'API 密钥',
     settingsDescApikey: '用于 AI 智能编写和辅助生成技能内容',
-    settingsLabelAimodel: 'AI 模型名称 (Model)',
+    settingsLabelAimodel: 'AI 模型名称',
     settingsDescAimodel: '输入你要调用的模型，如 deepseek-chat, qwen2.5:7b, gpt-4o 等',
     btnTestConnection: '测试连接',
-    exitProjectMode: '已退出项目配置模式，返回全局只读视图',
+    exitProjectMode: '已返回技能库',
     confirmRemove: '确定要移除此项目的关联吗？\n不会删除项目中的任何文件。',
     defaultDesc: '此技能暂无详细描述信息。'
   },
   en: {
     sidebarTitle: 'SkillHub',
-    sidebarSub: 'Local Skill Manager',
+    sidebarSub: 'Local Skill workspace',
     btnAssociate: 'Link Project',
     btnNewSkill: 'New Skill',
     headingProjects: 'Target Projects',
     emptyProjects: 'No Linked Projects',
     emptyProjectsSub: 'Click button above to select folder',
     btnSettings: 'Settings',
-    noProjectTitle: 'Select a project to configure',
-    noProjectDesc: 'Select a project on the left to manage skill mounts',
-    syncBtn: 'Sync Skills Now',
+    noProjectTitle: 'Manage your Skills',
+    noProjectDesc: 'Browse, maintain, and combine reusable local development guidance',
+    syncBtn: 'Preview & Sync',
+    checkingBtn: 'Checking changes...',
     syncingBtn: 'Syncing...',
     syncPreviewTitle: 'Sync Change Preview',
     syncPreviewIntro: 'Files will only be written after confirmation:',
@@ -173,16 +277,21 @@ const locales = {
     toastUndoFail: 'Undo failed: ',
     statTotal: 'Global Skill Library',
     statSynced: 'Currently Loaded',
-    statUnsynced: 'Pending Update',
-    listHeader: 'Global Skills List',
-    listHeaderProject: 'Project Skill Mount Configs',
+    statUnsynced: 'Skills Updated',
+    statPendingFiles: 'files to apply',
+    statUpToDate: 'Up to date',
+    listHeader: 'All Skills',
+    listHeaderProject: 'Project Skill Setup',
     searchPlaceholder: 'Search skills, tags...',
     statusSynced: 'Synced',
     statusUpdated: 'Updated',
     statusPendingMount: 'Pending Mount',
     statusPendingUnmount: 'Pending Removal',
     statusUnloaded: 'Unloaded',
-    statusReadonly: 'Global Read-Only',
+    statusReadonly: 'No Project Selected',
+    btnAI: 'AI Assistant',
+    aiWebSearch: 'Web search',
+    aiGenerate: 'Generate Skill',
     btnViewSkill: 'View Docs',
     btnEditSkill: 'Edit Skill',
     toggleLabel: 'Enable Mount',
@@ -232,7 +341,7 @@ const locales = {
     settingsLabelAimodel: 'AI Model Name',
     settingsDescAimodel: 'Enter target model name, e.g. deepseek-chat, qwen2.5:7b, gpt-4o',
     btnTestConnection: 'Test Link',
-    exitProjectMode: 'Exited project configuration mode, returned to global read-only view',
+    exitProjectMode: 'Back to the Skill library',
     confirmRemove: 'Are you sure you want to unlink this project?\nNo files will be deleted from your disk.',
     defaultDesc: 'No detailed description available for this skill.'
   }
@@ -386,25 +495,23 @@ function applyLanguage(lang) {
   // Sidebar
   document.querySelector('.brand-title h1').textContent = t.sidebarTitle;
   document.querySelector('.brand-title p').textContent = t.sidebarSub;
-  document.getElementById('btn-add-project').innerHTML = `<i data-lucide="folder-plus" style="width:15px;height:15px;"></i> ${t.btnAssociate}`;
-  document.getElementById('btn-new-skill').innerHTML = `<i data-lucide="file-plus" style="width:15px;height:15px;"></i> ${t.btnNewSkill}`;
-  document.getElementById('btn-import-skill').innerHTML = `<i data-lucide="download" style="width:15px;height:15px;"></i> ${lang === 'zh' ? '导入技能' : 'Import Skill'}`;
+  const addProjectButton = document.getElementById('btn-add-project');
+  addProjectButton.title = t.btnAssociate;
+  addProjectButton.setAttribute('aria-label', t.btnAssociate);
+  document.getElementById('btn-new-skill').innerHTML = `<i data-lucide="plus"></i> ${lang === 'zh' ? '新建 Skill' : 'New Skill'}`;
+  document.getElementById('btn-import-skill').innerHTML = `<i data-lucide="download"></i> ${lang === 'zh' ? '导入' : 'Import'}`;
+  document.querySelector('#btn-ai-search span:not(.nav-status-dot)').textContent = t.btnAI;
+  document.querySelector('#nav-library span:not(.nav-count)').textContent = lang === 'zh' ? '技能库' : 'Skill Library';
+  document.getElementById('ai-web-search-label').textContent = t.aiWebSearch;
+  document.getElementById('ai-generate-label').textContent = t.aiGenerate;
   document.querySelector('.sidebar-section .section-title h2').textContent = t.headingProjects;
   document.getElementById('sidebar-settings-text').textContent = t.btnSettings;
 
   // Main Header / Project View
-  if (!currentProjectPath) {
-    currentProjectTitle.textContent = t.noProjectTitle;
-    currentProjectDesc.textContent = t.noProjectDesc;
-  } else {
-    const proj = projects.find(p => p.path === currentProjectPath);
-    if (proj) {
-      currentProjectTitle.textContent = proj.name;
-    }
-  }
+  updateWorkspaceMode();
   
   // Sync Button Text
-  syncBtn.innerHTML = `<i data-lucide="refresh-cw" style="width:16px;height:16px;"></i> ${t.syncBtn}`;
+  syncBtn.innerHTML = `<i data-lucide="refresh-cw"></i> ${t.syncBtn}`;
   undoSyncBtn.title = t.undoSyncTitle;
   
   // Search Controls & Header Title
@@ -491,6 +598,8 @@ async function fetchProjects() {
 function updateStatistics() {
   if (!currentProjectPath) {
     toolbarStats.style.display = 'none';
+    pendingSyncSummary = null;
+    if (syncBarSummary) syncBarSummary.textContent = currentLanguage === 'zh' ? '选择项目后可预览同步变更' : 'Select a project to preview sync changes';
     return;
   }
   const proj = projects.find(p => p.path === currentProjectPath);
@@ -502,25 +611,107 @@ function updateStatistics() {
     });
   }
   const t = locales[currentLanguage];
+  const pendingCount = pendingSyncSummary
+    ? (pendingSyncSummary.add || 0) + (pendingSyncSummary.modify || 0) + (pendingSyncSummary.delete || 0)
+    : null;
+  const pendingText = pendingCount === null
+    ? t.checkingBtn
+    : pendingCount > 0
+      ? `${pendingCount} ${t.statPendingFiles}`
+      : t.statUpToDate;
   toolbarStats.innerHTML = `
     <span><span class="toolbar-stat-dot synced"></span>${synced} ${t.statSynced}</span>
+    ${unsynced ? `<span>·</span><span><span class="toolbar-stat-dot unsynced"></span>${unsynced} ${t.statUnsynced}</span>` : ''}
     <span>·</span>
-    <span><span class="toolbar-stat-dot unsynced"></span>${unsynced} ${t.statUnsynced}</span>`;
+    <span class="${pendingCount > 0 ? 'pending-files' : 'up-to-date'}">${escapeHtml(pendingText)}</span>`;
   toolbarStats.style.display = 'flex';
+  if (syncBarSummary) {
+    if (pendingCount === null) {
+      syncBarSummary.textContent = t.checkingBtn;
+    } else if (pendingCount === 0) {
+      syncBarSummary.textContent = currentLanguage === 'zh' ? `${synced} 个 Skill 已装载，无待处理变更` : `${synced} Skills loaded, no pending changes`;
+    } else {
+      const summary = pendingSyncSummary || {};
+      syncBarSummary.textContent = currentLanguage === 'zh'
+        ? `新增 ${summary.add || 0} · 更新 ${summary.modify || 0} · 移除 ${summary.delete || 0}`
+        : `Add ${summary.add || 0} · Update ${summary.modify || 0} · Remove ${summary.delete || 0}`;
+    }
+  }
+}
+
+async function refreshPendingSyncSummary() {
+  const projectPath = currentProjectPath;
+  if (!projectPath) return;
+  const requestId = ++pendingSyncRequestId;
+  try {
+    const preview = await window.pywebview.api.preview_sync(
+      projectPath,
+      Array.from(enabledSkills)
+    );
+    if (requestId !== pendingSyncRequestId || projectPath !== currentProjectPath) return;
+    pendingSyncSummary = preview && !preview.error ? preview.summary : null;
+  } catch (_error) {
+    if (requestId !== pendingSyncRequestId || projectPath !== currentProjectPath) return;
+    pendingSyncSummary = null;
+  }
+  updateStatistics();
+}
+
+function queuePendingSyncSummary() {
+  clearTimeout(pendingSyncTimer);
+  pendingSyncSummary = null;
+  updateStatistics();
+  pendingSyncTimer = setTimeout(refreshPendingSyncSummary, 100);
 }
 
 // ------------------------------------------
 // Rendering
 // ------------------------------------------
 
+function updateWorkspaceMode() {
+  const t = locales[currentLanguage];
+  const project = currentProjectPath
+    ? projects.find(item => item.path === currentProjectPath)
+    : null;
+  const isProjectMode = Boolean(project);
+  document.body.classList.toggle('project-mode', isProjectMode);
+  navLibrary?.classList.toggle('active', !isProjectMode);
+  syncActionBar?.classList.toggle('visible', isProjectMode);
+  if (workspaceKicker) {
+    workspaceKicker.textContent = isProjectMode
+      ? (currentLanguage === 'zh' ? '项目配置' : 'Project setup')
+      : (currentLanguage === 'zh' ? '技能库' : 'Skill library');
+  }
+  if (isProjectMode) {
+    currentProjectTitle.textContent = project.name;
+    currentProjectDesc.textContent = project.path;
+    if (syncBarTitle) syncBarTitle.textContent = currentLanguage === 'zh' ? `${project.name} 的同步变更` : `Sync changes for ${project.name}`;
+  } else {
+    currentProjectTitle.textContent = t.noProjectTitle;
+    currentProjectDesc.textContent = t.noProjectDesc;
+    if (syncBarTitle) syncBarTitle.textContent = currentLanguage === 'zh' ? '项目变更' : 'Project changes';
+  }
+  const heading = document.querySelector('.content-toolbar h3');
+  if (heading) heading.textContent = isProjectMode ? t.listHeaderProject : t.listHeader;
+}
+
+function handleShowLibrary() {
+  if (currentProjectPath) {
+    handleSelectProject(currentProjectPath);
+    return;
+  }
+  updateWorkspaceMode();
+  renderProjectsList();
+}
+
 function renderProjectsList() {
+  updateWorkspaceMode();
   projectList.innerHTML = '';
   if (projects.length === 0) {
     projectList.innerHTML = `
-      <div class="empty-state" style="padding:2rem 1rem;">
-        <div class="empty-state-icon">📂</div>
-        <h4>${locales[currentLanguage].emptyProjects}</h4>
-        <p>${locales[currentLanguage].emptyProjectsSub}</p>
+      <div class="sidebar-empty-state">
+        <p>${locales[currentLanguage].emptyProjects}</p>
+        <button type="button" onclick="handlePickProject()">${currentLanguage === 'zh' ? '关联第一个项目' : 'Link your first project'}</button>
       </div>`;
     return;
   }
@@ -614,8 +805,22 @@ function sanitizeHtml(html) {
   return template.innerHTML;
 }
 
+function splitMarkdownFrontmatter(markdown) {
+  const source = String(markdown || '');
+  const match = source.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
+  if (!match) return { frontmatter: '', body: source };
+  return {
+    frontmatter: match[1].trim(),
+    body: source.slice(match[0].length)
+  };
+}
+
 function renderMarkdown(markdown) {
-  return sanitizeHtml(marked.parse(markdown || ''));
+  const { frontmatter, body } = splitMarkdownFrontmatter(markdown);
+  const metadata = frontmatter
+    ? `<details class="frontmatter-panel"><summary>${currentLanguage === 'zh' ? '文档元数据' : 'Document metadata'}</summary><pre>${escapeHtml(frontmatter)}</pre></details>`
+    : '';
+  return metadata + sanitizeHtml(marked.parse(body || ''));
 }
 
 function buildDisplaySkills() {
@@ -639,7 +844,8 @@ function buildDisplaySkills() {
     emitted.add(collectionId);
     const members = groups.get(collectionId) || [];
     const primary = members.find(member => member.filename === collectionId) || members[0];
-    const enabledCount = members.filter(member => member.collection?.enabled).length;
+    const enabledCount = members.filter(member => member.collection?.effective_enabled).length;
+    const configuredCount = members.filter(member => member.collection?.enabled).length;
     const tags = Array.from(new Set(members.flatMap(member => member.tags || []))).slice(0, 5);
     const displayTitle = primary.collection?.display_title || primary.display_title || primary.title;
     const displayDescription = primary.collection?.display_description || primary.display_description || primary.description;
@@ -658,6 +864,9 @@ function buildDisplaySkills() {
         member => member.filename !== collectionId
       ).length,
       collection_enabled_count: enabledCount,
+      collection_configured_count: configuredCount,
+      collection_controller: primary.collection?.controller || '',
+      collection_controller_enabled: primary.collection?.controller_enabled !== false,
       search_text: members.map(member => [
         member.title,
         member.display_title,
@@ -721,6 +930,7 @@ function updateAIConfigurationIndicators() {
   const importSummary = document.getElementById('import-mode-summary');
   const keyInput = document.getElementById('settings-apikey');
   const toggle = document.getElementById('settings-ai-import-optimization');
+  const navAiStatus = document.getElementById('nav-ai-status');
 
   if (status) {
     status.className = `config-status ${hasAiKey ? 'ready' : 'neutral'}`;
@@ -734,12 +944,18 @@ function updateAIConfigurationIndicators() {
       ? `${isZh ? 'AI 已配置' : 'AI configured'} ${apiKeyHint}`
       : (isZh ? 'AI 未配置' : 'AI not configured');
   }
+  if (navAiStatus) {
+    navAiStatus.classList.toggle('ready', hasAiKey);
+    navAiStatus.title = hasAiKey
+      ? (isZh ? 'AI 已配置' : 'AI configured')
+      : (isZh ? 'AI 未配置' : 'AI not configured');
+  }
   if (importSummary) {
     const usingAi = aiImportOptimization && hasAiKey;
     importSummary.className = `service-status ${usingAi ? 'ai' : 'local'}`;
     importSummary.textContent = usingAi
-      ? (isZh ? '导入：本地 + AI' : 'Import: Local + AI')
-      : (isZh ? '导入：本地体检' : 'Import: Local checks');
+      ? (isZh ? '本地 + AI' : 'Local + AI')
+      : (isZh ? '本地体检' : 'Local checks');
     importSummary.title = aiImportOptimization && !hasAiKey
       ? (isZh ? 'AI 优化已开启，但未配置 API Key；导入时自动使用本地结果。' : 'AI optimization is enabled without an API key; imports automatically use local results.')
       : '';
@@ -830,6 +1046,7 @@ window.handleSelectCategory = function(canonicalCat) {
 function renderSkillsGrid() {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
   let filtered = buildDisplaySkills();
+  if (navSkillCount) navSkillCount.textContent = filtered.length;
   
   // Filter by Search Query
   if (query) {
@@ -854,6 +1071,24 @@ function renderSkillsGrid() {
 
   cardsGrid.innerHTML = '';
   if (filtered.length === 0) {
+    if (skills.length === 0 && !query && !activeCategoryFilter) {
+      cardsGrid.innerHTML = `
+        <div class="empty-state first-run-empty" style="grid-column:1/-1;">
+          <div class="empty-state-icon">🧭</div>
+          <h4>${currentLanguage === 'zh' ? '从第一个技能开始' : 'Start with your first skill'}</h4>
+          <p>${currentLanguage === 'zh' ? '导入已有 Skill，或创建一份自己的项目规范；之后关联项目并预览同步变更。' : 'Import an existing Skill or create your own guideline, then link a project and preview the sync.'}</p>
+          <div class="first-run-steps">
+            <span>1. ${currentLanguage === 'zh' ? '准备技能' : 'Prepare skills'}</span>
+            <span>2. ${currentLanguage === 'zh' ? '关联项目' : 'Link a project'}</span>
+            <span>3. ${currentLanguage === 'zh' ? '预览并同步' : 'Preview and sync'}</span>
+          </div>
+          <div class="first-run-actions">
+            <button class="btn btn-primary" onclick="handleImportSkill()">${currentLanguage === 'zh' ? '开始导入' : 'Import a Skill'}</button>
+            <button class="btn btn-secondary" onclick="handleCreateSkill()">${currentLanguage === 'zh' ? '新建技能' : 'Create a Skill'}</button>
+          </div>
+        </div>`;
+      return;
+    }
     cardsGrid.innerHTML = `
       <div class="empty-state" style="grid-column:1/-1;">
         <div class="empty-state-icon">🔍</div>
@@ -869,7 +1104,7 @@ function renderSkillsGrid() {
 
   filtered.forEach((skill, index) => {
     const card = document.createElement('div');
-    card.className = `skill-card${skill.is_collection ? ' collection-card' : ''}`;
+    card.className = `skill-card skill-row${skill.is_collection ? ' collection-card' : ''}`;
     card.dataset.filename = skill.filename;
     card.style.transitionDelay = `${index * 35}ms`;
 
@@ -886,7 +1121,7 @@ function renderSkillsGrid() {
       let isLocallyEnabled = enabledSkills.has(skill.filename);
       if (skill.is_collection) {
         const activeMembers = skill.collection_members.filter(
-          member => member.collection?.enabled
+          member => member.collection?.effective_enabled
         );
         const memberStatuses = activeMembers.map(
           member => statusMap[member.filename] || 'unloaded'
@@ -923,7 +1158,7 @@ function renderSkillsGrid() {
     } else {
       badgeHTML = skill.is_collection
         ? `<span class="status-badge unloaded"><span class="status-dot"></span>${skill.collection_enabled_count}/${skill.collection_members.length} ${currentLanguage === 'zh' ? '已启用' : 'enabled'}</span>`
-        : `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusReadonly}</span>`;
+        : `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '可用' : 'Available'}</span>`;
     }
 
     // Preserve source semantics; locale only changes generic interface text.
@@ -956,47 +1191,44 @@ function renderSkillsGrid() {
     const cardTitle = skill.is_collection
       ? (currentLanguage === 'zh' ? `点击管理 ${resolvedTitle} 的子技能` : `Manage child skills in ${resolvedTitle}`)
       : (currentLanguage === 'zh' ? `点击查看 ${resolvedTitle} 的 Markdown 文档` : `Click to view the Markdown document for ${resolvedTitle}`);
+    const localizedCategory = getLocalizedCategory(getCanonicalCategory(skill));
     const actionButtons = skill.is_collection
       ? `
-          <button type="button" class="btn btn-secondary btn-icon js-edit-skill" title="${currentLanguage === 'zh' ? '管理子技能' : 'Manage child skills'}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
-            <i data-lucide="list-tree" style="width:14px;height:14px;"></i>${currentLanguage === 'zh' ? '管理子技能' : 'Manage'}
+          <button type="button" class="row-action-button js-edit-skill" title="${currentLanguage === 'zh' ? '管理子技能' : 'Manage child skills'}" aria-label="${currentLanguage === 'zh' ? '管理子技能' : 'Manage child skills'}">
+            <i data-lucide="list-tree"></i>
           </button>`
       : `
-          <button type="button" class="btn btn-secondary btn-icon js-edit-skill" title="${escapeHtml(locales[currentLanguage].btnEditSkill)}" style="padding: 0.5rem; height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 0.8rem;">
-            <i data-lucide="edit-3" style="width:14px;height:14px;"></i>${locales[currentLanguage].btnEditSkill}
+          <button type="button" class="row-action-button js-edit-skill" title="${escapeHtml(locales[currentLanguage].btnEditSkill)}" aria-label="${escapeHtml(locales[currentLanguage].btnEditSkill)}">
+            <i data-lucide="pencil"></i>
           </button>
-          <button type="button" class="btn btn-danger-outline btn-icon js-delete-skill" title="${currentLanguage === 'zh' ? '删除技能' : 'Delete Skill'}" style="padding: 0.5rem; height: 32px; width: 32px; display: inline-flex; align-items: center; justify-content: center;">
-            <i data-lucide="trash-2" style="width:14px;height:14px;"></i>
+          <button type="button" class="row-action-button danger js-delete-skill" title="${currentLanguage === 'zh' ? '移至回收区' : 'Move to trash'}" aria-label="${currentLanguage === 'zh' ? '移至回收区' : 'Move to trash'}">
+            <i data-lucide="trash-2"></i>
           </button>`;
 
     card.innerHTML = `
-      <div class="card-header">
-        <div class="skill-meta">
-          <div class="skill-emoji">${escapeHtml(resolvedEmoji)}</div>
-          <div class="skill-info">
+      <div class="skill-row-primary">
+        <div class="skill-emoji">${escapeHtml(resolvedEmoji)}</div>
+        <div class="skill-info">
+          <div class="skill-title-line">
             <h4 class="skill-title" title="${safeTitle}">${safeMainTitle}</h4>
             ${subTitle ? `<span class="skill-subtitle" title="${safeSubTitle}">${safeSubTitle}</span>` : ''}
           </div>
+          <span class="skill-file" title="${safeFilename}">${skill.is_collection ? '<i data-lucide="layers-3"></i>' : ''}${safeFilename}</span>
         </div>
-        ${badgeHTML}
       </div>
-      <p class="card-body" title="${safeDesc}">${safeDesc}</p>
-      <div class="card-meta-line">
-        <span class="skill-tag${skill.is_collection ? ' collection-count' : ''}" title="${safeFilename}">${skill.is_collection ? '🧩 ' : (skill.is_dir ? '📁 ' : '')}${safeFilename}</span>
+      <p class="skill-row-description" title="${safeDesc}">${safeDesc}</p>
+      <div class="skill-row-category">
+        <span>${escapeHtml(localizedCategory)}</span>
         <div class="card-tags">${tagsHTML}</div>
       </div>
-      <div class="card-footer">
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-          ${actionButtons}
-        </div>
+      <div class="skill-row-status">${badgeHTML}</div>
+      <div class="skill-row-actions">
         ${currentProjectPath && activeProj && !activeProj.error ? `
-          <label class="switch-label">
-            <span>${locales[currentLanguage].toggleLabel}</span>
-            <label class="switch">
-              <input type="checkbox" class="js-toggle-skill" ${isChecked ? 'checked' : ''}>
-              <span class="slider"></span>
-            </label>
+          <label class="switch row-mount-toggle" title="${locales[currentLanguage].toggleLabel}">
+            <input type="checkbox" class="js-toggle-skill" ${isChecked ? 'checked' : ''}>
+            <span class="slider"></span>
           </label>` : ''}
+        <div class="row-secondary-actions">${actionButtons}</div>
       </div>`;
     card.title = cardTitle;
     card.tabIndex = 0;
@@ -1043,10 +1275,12 @@ async function handlePickProject() {
 async function handleCreateSkill() {
   const filename = await showCustomDialog({
     title: currentLanguage === 'zh' ? '新建技能' : 'New Skill',
-    message: currentLanguage === 'zh' ? '请输入新技能文件名 (例如: 代码安全规范.md)' : 'Enter new skill filename (e.g. CodeSafety.md)',
+    message: currentLanguage === 'zh'
+      ? '输入技能名称即可，文件名会自动补齐 .md；创建后可继续编辑适用场景和具体规则。'
+      : 'Enter a skill name. The .md extension is added automatically, and you can edit its triggers and rules next.',
     emoji: '💡',
     isPrompt: true,
-    placeholder: 'CodeSafety.md'
+    placeholder: currentLanguage === 'zh' ? '例如：代码安全规范' : 'e.g. Code Safety'
   });
   if (!filename) return;
   try {
@@ -1066,6 +1300,9 @@ async function handleCreateSkill() {
 function handleSelectProject(path) {
   if (currentProjectPath === path) {
     currentProjectPath = null;
+    pendingSyncRequestId++;
+    clearTimeout(pendingSyncTimer);
+    pendingSyncSummary = null;
     enabledSkills.clear();
     currentProjectTitle.textContent = locales[currentLanguage].noProjectTitle;
     currentProjectDesc.textContent = locales[currentLanguage].noProjectDesc;
@@ -1112,6 +1349,7 @@ function _loadProjectState(proj) {
   renderProjectsList();
   renderSkillsGrid();
   updateStatistics();
+  queuePendingSyncSummary();
   lucide.createIcons();
 }
 
@@ -1120,17 +1358,19 @@ function handleToggleSkill(filename, isEnabled) {
   else enabledSkills.delete(filename);
   syncBtn.classList.add('active');
   renderSkillsGrid();
+  queuePendingSyncSummary();
 }
 
 function handleToggleCollectionMount(collectionSkill, isEnabled) {
   collectionSkill.collection_members
-    .filter(member => member.collection?.enabled)
+    .filter(member => member.collection?.effective_enabled)
     .forEach(member => {
       if (isEnabled) enabledSkills.add(member.filename);
       else enabledSkills.delete(member.filename);
     });
   syncBtn.classList.add('active');
   renderSkillsGrid();
+  queuePendingSyncSummary();
 }
 
 function getCollectionDisplaySkill(collectionId) {
@@ -1147,26 +1387,49 @@ function openCollectionModal(collectionId) {
   const hasPrimary = collectionSkill.collection_members.some(
     member => member.filename === collectionId
   );
+  const controller = collectionSkill.collection_controller;
+  const controllerEnabled = collectionSkill.collection_controller_enabled;
   const childCount = collectionSkill.collection_child_count;
   collectionModalSummary.textContent = currentLanguage === 'zh'
-    ? `${hasPrimary ? '1 个主控 + ' : ''}${childCount} 个子技能，可分别启用或停用`
-    : `${hasPrimary ? '1 controller + ' : ''}${childCount} child skills; enable each independently`;
+    ? `${hasPrimary ? '1 个主控 + ' : ''}${childCount} 个子技能；主控关闭时整组暂停`
+    : `${hasPrimary ? '1 controller + ' : ''}${childCount} child skills; the controller pauses the whole collection`;
   collectionModalHint.textContent = currentLanguage === 'zh'
-    ? '停用不会删除文件；项目将在下次同步时移除该子技能。'
-    : 'Disabling keeps the files in the library; projects remove the child on next sync.';
+    ? (controller && !controllerEnabled
+      ? '主控已关闭：子技能选择已保留，但不会生效；下次同步会从项目移除整组。'
+      : '停用不会删除文件；项目将在下次同步时应用变更。')
+    : (controller && !controllerEnabled
+      ? 'Controller is off: child choices are preserved but inactive; the next sync removes the collection.'
+      : 'Disabling keeps source files; the next sync applies the change to projects.');
 
-  collectionMembersList.innerHTML = collectionSkill.collection_members.map(member => {
+  const orderedMembers = [...collectionSkill.collection_members].sort((left, right) => {
+    if (left.collection?.is_controller) return -1;
+    if (right.collection?.is_controller) return 1;
+    return 0;
+  });
+  collectionMembersList.innerHTML = orderedMembers.map(member => {
     const displayFilename = member.display_filename || member.filename;
     const title = member.display_title || member.title;
     const description = member.display_description || member.description;
     const enabled = Boolean(member.collection?.enabled);
+    const effectiveEnabled = Boolean(member.collection?.effective_enabled);
+    const isController = Boolean(member.collection?.is_controller);
+    const pausedByController = Boolean(controller && !controllerEnabled && !isController);
+    const stateText = isController
+      ? (enabled
+        ? (currentLanguage === 'zh' ? '主控开启' : 'Controller on')
+        : (currentLanguage === 'zh' ? '主控关闭' : 'Controller off'))
+      : pausedByController && enabled
+        ? (currentLanguage === 'zh' ? '选择已保留' : 'Choice preserved')
+        : effectiveEnabled
+          ? (currentLanguage === 'zh' ? '启用' : 'On')
+          : (currentLanguage === 'zh' ? '停用' : 'Off');
     const smart = getSmartEmojiAndTags(member);
     return `
-      <div class="collection-member ${enabled ? 'enabled' : ''}" data-filename="${escapeHtml(member.filename)}">
+      <div class="collection-member ${effectiveEnabled ? 'enabled' : ''} ${pausedByController ? 'controller-paused' : ''} ${isController ? 'collection-controller' : ''}" data-filename="${escapeHtml(member.filename)}">
         <div class="collection-member-main">
           <span class="collection-member-emoji">${escapeHtml(smart.emoji)}</span>
           <div class="collection-member-copy">
-            <div class="collection-member-title">${escapeHtml(title)}</div>
+            <div class="collection-member-title">${escapeHtml(title)}${isController ? `<span class="controller-badge">${currentLanguage === 'zh' ? '主控' : 'Controller'}</span>` : ''}</div>
             <div class="collection-member-description">${escapeHtml(description)}</div>
             <div class="collection-member-file">${escapeHtml(displayFilename)}</div>
           </div>
@@ -1175,20 +1438,20 @@ function openCollectionModal(collectionId) {
           <button type="button" class="btn btn-secondary btn-icon js-view-collection-member" data-filename="${escapeHtml(member.filename)}" title="${currentLanguage === 'zh' ? '查看文档' : 'View docs'}">
             <i data-lucide="eye" style="width:14px;height:14px;"></i>
           </button>
-          <span class="collection-member-state">${enabled ? (currentLanguage === 'zh' ? '启用' : 'On') : (currentLanguage === 'zh' ? '停用' : 'Off')}</span>
+          <span class="collection-member-state">${stateText}</span>
           <label class="switch">
-            <input type="checkbox" class="js-collection-member-toggle" data-filename="${escapeHtml(member.filename)}" ${enabled ? 'checked' : ''}>
+            <input type="checkbox" class="js-collection-member-toggle" data-filename="${escapeHtml(member.filename)}" ${enabled ? 'checked' : ''} ${pausedByController ? 'disabled' : ''}>
             <span class="slider"></span>
           </label>
         </div>
       </div>`;
   }).join('');
-  collectionModal.classList.add('active');
+  activateModal(collectionModal, collectionModal.querySelector('.js-collection-member-toggle:not([disabled])'));
   lucide.createIcons();
 }
 
 function closeCollectionModal() {
-  collectionModal.classList.remove('active');
+  deactivateModal(collectionModal);
   activeCollectionId = null;
 }
 
@@ -1197,6 +1460,10 @@ collectionMembersList.addEventListener('change', async event => {
   const input = event.target;
   const filename = input.dataset.filename;
   const enabled = input.checked;
+  const collectionBefore = getCollectionDisplaySkill(activeCollectionId);
+  const memberBefore = collectionBefore?.collection_members?.find(
+    item => item.filename === filename
+  );
   input.disabled = true;
   try {
     const result = await window.pywebview.api.set_collection_member_enabled(
@@ -1205,9 +1472,14 @@ collectionMembersList.addEventListener('change', async event => {
       enabled
     );
     if (result.error) throw new Error(result.error);
-    if (!enabled) enabledSkills.delete(filename);
+    if (!enabled && !memberBefore?.collection?.is_controller) {
+      enabledSkills.delete(filename);
+    }
     await fetchSkills();
-    if (currentProjectPath) syncBtn.classList.add('active');
+    if (currentProjectPath) {
+      syncBtn.classList.add('active');
+      queuePendingSyncSummary();
+    }
     const collectionId = activeCollectionId;
     if (collectionId) openCollectionModal(collectionId);
     const member = getCollectionDisplaySkill(collectionId)?.collection_members?.find(
@@ -1251,6 +1523,9 @@ async function handleDeleteProject(event, path) {
     showToast(locales[currentLanguage].toastRemoveSuccess, 'success');
     if (currentProjectPath === path) {
       currentProjectPath = null;
+      pendingSyncRequestId++;
+      clearTimeout(pendingSyncTimer);
+      pendingSyncSummary = null;
       currentProjectTitle.textContent = locales[currentLanguage].noProjectTitle;
       currentProjectDesc.textContent = locales[currentLanguage].noProjectDesc;
       syncBtn.setAttribute('disabled', 'true');
@@ -1267,10 +1542,24 @@ async function handleDeleteProject(event, path) {
 
 async function handleSyncSkills() {
   if (!currentProjectPath) return;
-  syncBtn.setAttribute('disabled', 'true');
-  syncBtn.classList.remove('active');
   const originalHTML = syncBtn.innerHTML;
-  syncBtn.innerHTML = `<span class="loading-spinner"></span> ${locales[currentLanguage].syncingBtn}`;
+  let needsSyncAttention = syncBtn.classList.contains('active');
+  const setBusy = label => {
+    syncBtn.setAttribute('disabled', 'true');
+    syncBtn.classList.remove('active');
+    syncBtn.innerHTML = `<span class="loading-spinner"></span> ${label}`;
+    lucide.createIcons();
+  };
+  const restoreButton = () => {
+    syncBtn.innerHTML = originalHTML;
+    if (currentProjectPath) syncBtn.removeAttribute('disabled');
+    syncBtn.classList.add('pulsing-btn');
+    if (needsSyncAttention) syncBtn.classList.add('active');
+    else syncBtn.classList.remove('active');
+    lucide.createIcons();
+  };
+
+  setBusy(locales[currentLanguage].checkingBtn);
 
   try {
     const selectedSkills = Array.from(enabledSkills);
@@ -1279,10 +1568,12 @@ async function handleSyncSkills() {
 
     const changedCount = preview.summary.add + preview.summary.modify + preview.summary.delete + preview.summary.preserve;
     if (changedCount === 0) {
+      needsSyncAttention = false;
       showToast(locales[currentLanguage].syncPreviewNoChanges, 'success');
       return;
     }
 
+    restoreButton();
     const confirmed = await showCustomDialog({
       title: locales[currentLanguage].syncPreviewTitle,
       message: formatSyncPreview(preview),
@@ -1308,6 +1599,7 @@ async function handleSyncSkills() {
       if (!acceptedBundleFiles) return;
     }
 
+    setBusy(locales[currentLanguage].syncingBtn);
     let result = await window.pywebview.api.sync_skills(
       currentProjectPath,
       selectedSkills,
@@ -1317,6 +1609,7 @@ async function handleSyncSkills() {
     );
     if (result.requires_confirmation) {
       preview = result.preview;
+      restoreButton();
       const reconfirmed = await showCustomDialog({
         title: locales[currentLanguage].syncPreviewTitle,
         message: formatSyncPreview(preview),
@@ -1334,6 +1627,7 @@ async function handleSyncSkills() {
         });
         if (!acceptedBundleFiles) return;
       }
+      setBusy(locales[currentLanguage].syncingBtn);
       result = await window.pywebview.api.sync_skills(
         currentProjectPath,
         selectedSkills,
@@ -1344,6 +1638,7 @@ async function handleSyncSkills() {
     }
     if (result.requires_bundle_file_confirmation) {
       preview = result.preview;
+      restoreButton();
       acceptedBundleFiles = await showCustomDialog({
         title: currentLanguage === 'zh' ? '授权 Bundle 额外文件' : 'Authorize Extra Bundle Files',
         message: preview.restricted_bundle_files.map(path => `• ${path}`).join('\n'),
@@ -1351,6 +1646,7 @@ async function handleSyncSkills() {
         confirmText: currentLanguage === 'zh' ? '授权这些文件' : 'Authorize Files'
       });
       if (!acceptedBundleFiles) return;
+      setBusy(locales[currentLanguage].syncingBtn);
       result = await window.pywebview.api.sync_skills(
         currentProjectPath,
         selectedSkills,
@@ -1360,18 +1656,16 @@ async function handleSyncSkills() {
       );
     }
     if (result.error) throw new Error(result.error);
+    needsSyncAttention = false;
     showToast(locales[currentLanguage].toastSyncSuccess + result.synced_count + (currentLanguage === 'zh' ? ' 项技能' : ' skills'), 'success');
     await fetchProjects();
     refreshCurrentProject();
   } catch (e) {
+    needsSyncAttention = true;
     showToast(locales[currentLanguage].toastSyncFail + e, 'error');
   } finally {
-    syncBtn.innerHTML = originalHTML;
-    if (currentProjectPath) {
-      syncBtn.removeAttribute('disabled');
-      syncBtn.classList.add('pulsing-btn');
-    }
-    lucide.createIcons();
+    restoreButton();
+    if (currentProjectPath) queuePendingSyncSummary();
   }
 }
 
@@ -1880,7 +2174,7 @@ async function openEditorModal(filename) {
   modalTitle.textContent = (currentLanguage === 'zh' ? `编辑技能: ` : 'Edit Skill: ') + (skill ? skill.title : filename);
   markdownTextarea.value = currentLanguage === 'zh' ? '加载中…' : 'Loading...';
   markdownTextarea.setAttribute('disabled', 'true');
-  editorModal.classList.add('active');
+  activateModal(editorModal, markdownTextarea);
   try {
     const data = await window.pywebview.api.get_skill_content(filename);
     if (data.error) throw new Error(data.error);
@@ -1896,33 +2190,60 @@ async function openEditorModal(filename) {
 }
 
 async function openSkillViewer(filename) {
-  resetSkillModalForViewing();
-  modalBody.className = 'modal-body tab-preview';
-  modalTabEdit.classList.remove('active');
-  modalTabPreview.classList.add('active');
   const skill = skills.find(s => s.filename === filename);
-  modalEmoji.textContent = skill ? skill.emoji : '📄';
-  modalTitle.textContent = `${locales[currentLanguage].viewModalTitle}: ${skill ? skill.title : filename}`;
-  markdownTextarea.value = currentLanguage === 'zh' ? '加载中...' : 'Loading...';
-  markdownPreview.innerHTML = `<p>${currentLanguage === 'zh' ? '加载中...' : 'Loading...'}</p>`;
-  markdownTextarea.setAttribute('disabled', 'true');
-  editorModal.classList.add('active');
+  if (!skill || !skillDrawer) return;
+  activeDrawerFilename = filename;
+  drawerReturnFocus = document.activeElement;
+  const smart = getSmartEmojiAndTags(skill);
+  const category = getLocalizedCategory(getCanonicalCategory(skill));
+  const displayTitle = skill.display_title || skill.title || filename;
+  skillDetailEmoji.textContent = smart.emoji;
+  skillDetailTitle.textContent = displayTitle;
+  skillDetailKind.textContent = currentLanguage === 'zh' ? 'Skill 文档' : 'Skill document';
+  skillDetailMeta.innerHTML = `
+    <span><i data-lucide="folder"></i>${escapeHtml(filename)}</span>
+    <span><i data-lucide="tag"></i>${escapeHtml(category)}</span>
+    ${(smart.tags || []).slice(0, 3).map(tag => `<span class="detail-tag">${escapeHtml(tagTranslations[currentLanguage]?.[tag] || tag)}</span>`).join('')}`;
+  skillDetailContent.innerHTML = `<div class="drawer-loading"><span class="loading-spinner"></span>${currentLanguage === 'zh' ? '加载文档…' : 'Loading document…'}</div>`;
+  skillDrawer.classList.add('active');
+  skillDrawerBackdrop?.classList.add('active');
+  skillDrawer.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('drawer-open');
+  skillDetailEdit.onclick = () => {
+    closeSkillDrawer(false);
+    openEditorModal(filename);
+  };
+  skillDetailDelete.onclick = () => {
+    closeSkillDrawer(false);
+    handleDeleteSkill(filename);
+  };
   try {
     const data = await window.pywebview.api.get_skill_content(filename);
     if (data.error) throw new Error(data.error);
-    markdownTextarea.value = data.content;
-    markdownPreview.innerHTML = renderMarkdown(data.content);
+    if (activeDrawerFilename !== filename) return;
+    skillDetailContent.innerHTML = renderMarkdown(data.content);
   } catch (e) {
     showToast((currentLanguage === 'zh' ? '加载失败: ' : 'Failed to load: ') + e, 'error');
-    closeEditorModal();
-  } finally {
-    markdownTextarea.removeAttribute('disabled');
+    closeSkillDrawer();
   }
   lucide.createIcons();
 }
 
+function closeSkillDrawer(restoreFocus = true) {
+  if (!skillDrawer) return;
+  skillDrawer.classList.remove('active');
+  skillDrawerBackdrop?.classList.remove('active');
+  skillDrawer.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('drawer-open');
+  activeDrawerFilename = null;
+  if (restoreFocus && drawerReturnFocus && document.contains(drawerReturnFocus)) {
+    drawerReturnFocus.focus();
+  }
+  drawerReturnFocus = null;
+}
+
 function closeEditorModal() {
-  editorModal.classList.remove('active');
+  deactivateModal(editorModal);
   editingFilename = null;
   isViewingSkill = false;
   markdownTextarea.readOnly = false;
@@ -1965,7 +2286,7 @@ async function handleSaveSkill() {
 // Toast System
 // ------------------------------------------
 
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', options = {}) {
   const toast = document.createElement('div');
   toast.className = 'toast';
   let icon = 'check', iconClass = 'success';
@@ -1975,14 +2296,27 @@ function showToast(message, type = 'success') {
     <div class="toast-icon ${iconClass}">
       <i data-lucide="${icon}" style="width:14px;height:14px;"></i>
     </div>
-    <span class="toast-message">${message}</span>`;
+    <span class="toast-message">${escapeHtml(message)}</span>
+    ${options.actionLabel ? `<button type="button" class="toast-action">${escapeHtml(options.actionLabel)}</button>` : ''}`;
   toastContainer.appendChild(toast);
   lucide.createIcons();
   setTimeout(() => toast.classList.add('show'), 10);
-  setTimeout(() => {
+  let removed = false;
+  const removeToast = () => {
+    if (removed) return;
+    removed = true;
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 300);
-  }, 3500);
+  };
+  const action = toast.querySelector('.toast-action');
+  if (action && options.onAction) {
+    action.addEventListener('click', async () => {
+      action.disabled = true;
+      await options.onAction();
+      removeToast();
+    });
+  }
+  setTimeout(removeToast, options.duration || (options.actionLabel ? 8000 : 3500));
 }
 
 async function handleChangeSkillsDir() {
@@ -2011,16 +2345,8 @@ async function handleRefreshSkills() {
       
       const proj = projects.find(p => p.path === currentProjectPath);
       if (proj) {
-        enabledSkills.clear();
-        Object.entries(proj.skills_status || {}).forEach(([fname, status]) => {
-          if (status === 'synced' || status === 'out_of_sync') enabledSkills.add(fname);
-        });
-        currentProjectTitle.textContent = proj.name;
-        currentProjectDesc.innerHTML = `<i data-lucide="folder" style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;"></i>${escapeHtml(proj.path)}`;
-        updateStatistics();
+        _loadProjectState(proj);
       }
-      renderProjectsList();
-      renderSkillsGrid();
     }
     showToast(locales[currentLanguage].toastRefreshSuccess, 'success');
   } catch (e) {
@@ -2057,12 +2383,12 @@ function openSettingsModal() {
   document.getElementById('settings-ai-import-optimization').checked = aiImportOptimization;
   updateAIConfigurationIndicators();
 
-  settingsModal.classList.add('active');
+  activateModal(settingsModal, settingsLanguage);
   lucide.createIcons();
 }
 
 function closeSettingsModal() {
-  settingsModal.classList.remove('active');
+  deactivateModal(settingsModal);
 }
 
 async function handleSettingsPickSkillsDir() {
@@ -2157,14 +2483,14 @@ async function openAIModal() {
   aiIsLoading = false;
   aiGeneratedSkill = null;
   aiSkillPreview.style.display = 'none';
-  aiModal.classList.add('active');
+  activateModal(aiModal, aiChatInput);
   await loadSessionList(true);
   lucide.createIcons();
   setTimeout(() => aiChatInput.focus(), 200);
 }
 
 async function closeAIModal() {
-  aiModal.classList.remove('active');
+  deactivateModal(aiModal);
   await saveCurrentSession();
 }
 
@@ -2295,19 +2621,34 @@ function renderChatHistory() {
   if (aiChatHistory.length === 0) {
     aiChatMessages.innerHTML = `
       <div class="ai-chat-empty">
-        <div style="font-size:2.5rem;margin-bottom:0.5rem;">✨</div>
-        <h4 style="font-weight:700;margin-bottom:0.25rem;color:var(--text-primary);">AI 技能顾问</h4>
-        <p style="color:var(--text-tertiary);font-size:0.78rem;">告诉我你的项目需求，我帮你梳理并生成专业的开发技能规范</p>
+        <div class="ai-empty-mark"><i data-lucide="sparkles"></i></div>
+        <h4>${currentLanguage === 'zh' ? '从一个具体任务开始' : 'Start with a concrete task'}</h4>
+        <p>${currentLanguage === 'zh' ? '描述项目和目标，AI 会先帮你梳理规则，再生成可保存的 Skill。' : 'Describe your project and goal. AI will clarify the rules before generating a reusable Skill.'}</p>
+        <div class="ai-prompt-suggestions">
+          <button type="button" onclick="useAISuggestion('根据当前项目技术栈，帮我生成一份代码审查 Skill')"><i data-lucide="scan-search"></i><span><strong>生成代码审查规范</strong><small>从技术栈和风险点开始</small></span></button>
+          <button type="button" onclick="useAISuggestion('检查现有 Skill 是否有冲突、重复或不清晰的规则')"><i data-lucide="list-checks"></i><span><strong>检查现有 Skill</strong><small>发现冲突、重复和缺口</small></span></button>
+          <button type="button" onclick="useAISuggestion('帮我把项目文档整理成一份结构清晰的开发 Skill')"><i data-lucide="file-input"></i><span><strong>从文档提取规范</strong><small>整理为可复用的规则</small></span></button>
+        </div>
       </div>`;
+    lucide.createIcons();
   } else {
     aiChatHistory.forEach(m => {
       appendChatBubble(m.role, m.content);
     });
   }
   aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  const generateButton = document.getElementById('ai-btn-generate');
+  if (generateButton) generateButton.disabled = aiChatHistory.length === 0 || aiIsLoading;
 }
 
 // --- Chat interaction ---
+
+function useAISuggestion(prompt) {
+  if (!aiChatInput) return;
+  aiChatInput.value = prompt;
+  aiChatInput.focus();
+  aiChatInput.setSelectionRange(prompt.length, prompt.length);
+}
 
 function handleChatKeydown(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -2341,6 +2682,8 @@ async function sendAIMessage() {
   const typingId = showTypingIndicator();
   aiIsLoading = true;
   aiSendBtn.setAttribute('disabled', 'true');
+  const generateButton = document.getElementById('ai-btn-generate');
+  if (generateButton) generateButton.disabled = true;
 
   try {
     const result = await window.pywebview.api.ai_chat(
@@ -2362,6 +2705,7 @@ async function sendAIMessage() {
   } finally {
     aiIsLoading = false;
     aiSendBtn.removeAttribute('disabled');
+    if (generateButton) generateButton.disabled = aiChatHistory.length === 0;
     aiChatInput.focus();
   }
 }
@@ -2375,6 +2719,8 @@ async function handleAIGenerateSkill() {
   if (aiChatHistory.length === 0 || aiIsLoading) return;
   const typingId = showTypingIndicator();
   aiIsLoading = true;
+  const generateButton = document.getElementById('ai-btn-generate');
+  if (generateButton) generateButton.disabled = true;
   try {
     const result = await window.pywebview.api.ai_chat(
       aiChatHistory.map(m => ({ role: m.role, content: m.content })),
@@ -2397,6 +2743,7 @@ async function handleAIGenerateSkill() {
     appendChatBubble('ai', '❌ ' + (e.message || e));
   } finally {
     aiIsLoading = false;
+    if (generateButton) generateButton.disabled = aiChatHistory.length === 0;
   }
 }
 
@@ -2568,7 +2915,7 @@ function showCustomDialog({
       const resolve = dialogResolve;
       dialogResolve = null;
       const modal = document.getElementById('dialog-modal');
-      if (modal) modal.classList.remove('active');
+      if (modal) deactivateModal(modal);
       if (resolve) resolve(secondaryValue);
     };
     
@@ -2579,25 +2926,20 @@ function showCustomDialog({
       dialogResolve = null;
       
       const modal = document.getElementById('dialog-modal');
-      if (modal) modal.classList.remove('active');
+      if (modal) deactivateModal(modal);
       
       if (resolve) resolve(val);
     };
     
-    document.getElementById('dialog-modal').classList.add('active');
-    
-    if (isPrompt) {
-      setTimeout(() => {
-        inputEl.focus();
-        inputEl.select();
-      }, 50);
-    }
+    const dialogModal = document.getElementById('dialog-modal');
+    activateModal(dialogModal, isPrompt ? inputEl : confirmBtn);
+    if (isPrompt) setTimeout(() => inputEl.select(), 50);
   });
 }
 
 function closeDialogModal() {
   const modal = document.getElementById('dialog-modal');
-  if (modal) modal.classList.remove('active');
+  if (modal) deactivateModal(modal);
   if (dialogResolve) {
     const resolve = dialogResolve;
     dialogResolve = null;
@@ -2612,8 +2954,6 @@ if (dialogInput) {
     if (e.key === 'Enter') {
       const confirmBtn = document.getElementById('dialog-btn-confirm');
       if (confirmBtn) confirmBtn.click();
-    } else if (e.key === 'Escape') {
-      closeDialogModal();
     }
   });
 }
@@ -2625,7 +2965,9 @@ if (dialogInput) {
 async function handleDeleteSkill(filename) {
   const confirmed = await showCustomDialog({
     title: currentLanguage === 'zh' ? '删除技能' : 'Delete Skill',
-    message: currentLanguage === 'zh' ? `确定要从全局技能库中物理删除 "${filename}" 吗？该操作不可撤销！` : `Are you sure you want to permanently delete "${filename}" from the global library? This cannot be undone!`,
+    message: currentLanguage === 'zh'
+      ? `将 "${filename}" 移入 SkillHub 回收站。删除后可在提示条中立即撤销。`
+      : `Move "${filename}" to SkillHub trash. You can undo it from the confirmation toast.`,
     emoji: '🗑️'
   });
   if (!confirmed) return;
@@ -2633,12 +2975,35 @@ async function handleDeleteSkill(filename) {
   try {
     const result = await window.pywebview.api.delete_skill(filename);
     if (result.error) throw new Error(result.error);
-    showToast(currentLanguage === 'zh' ? '🗑️ 技能已物理删除' : '🗑️ Skill file permanently deleted', 'success');
     await fetchSkills();
     if (currentProjectPath) {
       await fetchProjects();
       refreshCurrentProject();
     }
+    showToast(
+      currentLanguage === 'zh' ? '技能已移入回收站' : 'Skill moved to trash',
+      'success',
+      {
+        actionLabel: currentLanguage === 'zh' ? '撤销' : 'Undo',
+        duration: 9000,
+        onAction: async () => {
+          const restored = await window.pywebview.api.restore_deleted_skill(result.trash_token);
+          if (restored.error) {
+            showToast(
+              (currentLanguage === 'zh' ? '恢复失败: ' : 'Restore failed: ') + restored.error,
+              'error'
+            );
+            return;
+          }
+          await fetchSkills();
+          if (currentProjectPath) {
+            await fetchProjects();
+            refreshCurrentProject();
+          }
+          showToast(currentLanguage === 'zh' ? '技能已恢复' : 'Skill restored', 'success');
+        }
+      }
+    );
   } catch (e) {
     showToast((currentLanguage === 'zh' ? '删除失败: ' : 'Failed to delete: ') + e, 'error');
   }

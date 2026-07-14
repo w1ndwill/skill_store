@@ -31,7 +31,7 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-APP_VERSION = "3.0.2"
+APP_VERSION = "3.1.0"
 
 # Display-only translations for upstream collections. These values are returned
 # separately from source metadata so SKILL.md trigger semantics stay untouched.
@@ -1592,6 +1592,8 @@ description: <一句话描述这个技能的用途>
             if len(members) < 2:
                 continue
             enabled_members = set(collection.get("enabled_members", []))
+            controller = self._collection_controller(collection)
+            controller_enabled = not controller or controller in enabled_members
             for member in members:
                 member_locale = collection_locale.get("members", {}).get(
                     member,
@@ -1617,6 +1619,12 @@ description: <一句话描述这个技能的用途>
                     "members": members,
                     "member_count": len(members),
                     "enabled": member in enabled_members,
+                    "effective_enabled": (
+                        member in enabled_members and controller_enabled
+                    ),
+                    "controller": controller,
+                    "is_controller": member == controller,
+                    "controller_enabled": controller_enabled,
                 }
         return skills
 
@@ -1655,16 +1663,35 @@ description: <一句话描述这个技能的用途>
             return {"error": str(e)}
 
     def delete_skill(self, filename):
-        """Delete a global skill file or directory physically."""
+        """Move a global skill into SkillHub trash so it can be restored."""
         fp = safe_child_path(self.skills_dir, filename)
         if not fp:
             return {"error": "Invalid filename"}
+        trash_root = ""
+        trash_item = ""
+        collection_snapshot = None
         try:
             if os.path.exists(fp):
-                if os.path.isdir(fp):
-                    shutil.rmtree(fp)
-                else:
-                    os.remove(fp)
+                collection_snapshot = self._load_skill_collections()
+                trash_token = uuid.uuid4().hex
+                trash_root = safe_real_child_path(
+                    os.path.join(self.skills_dir, SKILL_LIBRARY_STATE_DIR, "trash"),
+                    trash_token,
+                )
+                if not trash_root:
+                    return {"error": "Invalid trash path"}
+                os.makedirs(trash_root, exist_ok=False)
+                trash_item = safe_real_child_path(trash_root, filename)
+                if not trash_item:
+                    shutil.rmtree(trash_root, ignore_errors=True)
+                    return {"error": "Invalid trash item path"}
+                shutil.move(fp, trash_item)
+                atomic_write_json(os.path.join(trash_root, "metadata.json"), {
+                    "version": 1,
+                    "filename": filename,
+                    "deleted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "collections": collection_snapshot,
+                })
                 self._unregister_library_entry(filename)
                 state = self._load_skill_collections()
                 changed = False
@@ -1690,10 +1717,57 @@ description: <一句话描述这个技能的用途>
                 if changed:
                     state["collections"] = retained
                     self._save_skill_collections(state)
-                return {"ok": True}
+                return {
+                    "ok": True,
+                    "filename": filename,
+                    "trash_token": trash_token,
+                }
             return {"error": "文件不存在" if self.language == "zh" else "File does not exist"}
         except Exception as e:
+            if trash_item and os.path.exists(trash_item) and not os.path.exists(fp):
+                try:
+                    shutil.move(trash_item, fp)
+                    if isinstance(collection_snapshot, dict):
+                        self._save_skill_collections(collection_snapshot)
+                except OSError:
+                    pass
+            if trash_root:
+                shutil.rmtree(trash_root, ignore_errors=True)
             return {"error": str(e)}
+
+    def restore_deleted_skill(self, trash_token: str):
+        """Restore one skill and its collection metadata from SkillHub trash."""
+        if not re.fullmatch(r"[0-9a-f]{32}", trash_token or ""):
+            return {"error": "Invalid trash token"}
+        trash_root = safe_real_child_path(
+            os.path.join(self.skills_dir, SKILL_LIBRARY_STATE_DIR, "trash"),
+            trash_token,
+        )
+        if not trash_root or not os.path.isdir(trash_root):
+            return {"error": "Deleted skill is no longer available"}
+        metadata = load_json_file(os.path.join(trash_root, "metadata.json"), {})
+        filename = metadata.get("filename", "") if isinstance(metadata, dict) else ""
+        source = safe_real_child_path(trash_root, filename)
+        target = safe_child_path(self.skills_dir, filename)
+        if not filename or not source or not os.path.exists(source) or not target:
+            return {"error": "Deleted skill metadata is invalid"}
+        if os.path.exists(target):
+            return {"error": "A skill with the same name already exists"}
+        try:
+            shutil.move(source, target)
+            collections = metadata.get("collections")
+            if isinstance(collections, dict):
+                self._save_skill_collections(collections)
+            self._register_library_entry(filename, source="restored")
+            shutil.rmtree(trash_root, ignore_errors=True)
+            return {"ok": True, "filename": filename}
+        except Exception as exc:
+            if os.path.exists(target) and not os.path.exists(source):
+                try:
+                    shutil.move(target, source)
+                except OSError:
+                    pass
+            return {"error": str(exc)}
 
     def create_skill(self, filename):
         """Create a new skill file with a dynamic bilingual template based on current settings."""
@@ -1705,16 +1779,20 @@ description: <一句话描述这个技能的用途>
             return {"error": "Invalid filename"}
         if os.path.exists(fp):
             return {"error": "该文件已存在" if self.language == "zh" else "This file already exists"}
-        
+
+        title = os.path.splitext(filename)[0].replace("_", " ").replace("-", " ").strip()
+        if not title:
+            title = "New Skill Guideline" if self.language == "en" else "新增技能指南"
+
         if self.language == "en":
-            template = """---
-title: New Skill Guideline
+            template = f"""---
+title: {title}
 emoji: 💡
 tags: Rules, Basic
-description: A brief description of the purpose and development constraints of this skill guideline.
+description: Define the purpose, usage triggers, and development constraints for {title}.
 ---
 
-# 💡 New Skill Guideline
+# 💡 {title}
 
 Write down the specific development guidelines, design principles, and quality red lines for this skill here.
 
@@ -1723,14 +1801,14 @@ Write down the specific development guidelines, design principles, and quality r
 - **Rule 2**: ...
 """
         else:
-            template = """---
-title: 新增技能指南
+            template = f"""---
+title: {title}
 emoji: 💡
 tags: 规范, 基础
-description: 简短说明此项技能指南的目的与开发约束规范。
+description: 定义“{title}”的适用场景、触发条件与开发约束。
 ---
 
-# 💡 新增技能指南
+# 💡 {title}
 
 在这里编写针对此项技能的具体开发指南、设计原则与质量红线规约。
 
@@ -1789,6 +1867,18 @@ description: 简短说明此项技能指南的目的与开发约束规范。
             candidate,
         ).strip("-_. ")
         return candidate or "skill-collection"
+
+    @staticmethod
+    def _collection_controller(collection: dict) -> str:
+        """Return the member that controls whether the collection can take effect."""
+        members = set(collection.get("members", []))
+        bundle_parent = collection.get("bundle_parent", "")
+        if bundle_parent and bundle_parent in members:
+            return bundle_parent
+        collection_id = collection.get("id", "")
+        if collection_id and collection_id in members:
+            return collection_id
+        return ""
 
     def _load_skill_collections(self) -> dict:
         """Load collection state and recover records from older import catalogs."""
@@ -2020,7 +2110,11 @@ description: 简短说明此项技能指南的目的与开发约束规范。
         for collection in self._load_skill_collections().get("collections", []):
             members = set(collection.get("members", []))
             enabled = set(collection.get("enabled_members", []))
-            disabled_members.update(members - enabled)
+            controller = self._collection_controller(collection)
+            if controller and controller not in enabled:
+                disabled_members.update(members)
+            else:
+                disabled_members.update(members - enabled)
         return [
             filename for filename in (enabled_skills or [])
             if filename not in disabled_members
@@ -3941,6 +4035,7 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
             "ok": True,
             "summary": summary,
             "changes": changes,
+            "enabled_skills": list(plan["enabled_skills"]),
             "synced_count": len(plan["active_metadata"]),
             "has_conflicts": summary["conflict"] > 0,
             "has_restricted_bundle_files": bool(restricted_bundle_files),
@@ -4224,9 +4319,9 @@ if __name__ == "__main__":
         'SkillHub',
         url=os.path.join(BASE_DIR, 'static', 'index.html'),
         js_api=api,
-        width=1400,
-        height=900,
-        min_size=(1100, 750),
+        width=1280,
+        height=840,
+        min_size=(720, 620),
         background_color='#f6f8fa'
     )
     api.set_window(window)
