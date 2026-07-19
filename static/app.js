@@ -31,6 +31,8 @@ let searchRenderTimer = null;
 let hasRenderedSkillCards = false;
 let activeDrawerFilename = null;
 let drawerReturnFocus = null;
+let loadedEditorCategory = '';
+let pendingEditorCategories = new Set();
 
 // DOM cache
 const projectList = document.getElementById('project-list');
@@ -49,6 +51,13 @@ const modalTabEdit = document.getElementById('modal-tab-edit');
 const modalTabPreview = document.getElementById('modal-tab-preview');
 const modalCloseFooter = document.getElementById('modal-close-footer');
 const modalSaveBtn = document.getElementById('modal-save-btn');
+const skillMetadataBar = document.getElementById('skill-metadata-bar');
+const skillCategoryLabel = document.getElementById('skill-category-label');
+const skillCategorySelect = document.getElementById('skill-category-select');
+const skillCategoryAddLabel = document.getElementById('skill-category-add-label');
+const skillCategoryDelete = document.getElementById('skill-category-delete');
+const skillCategoryDeleteLabel = document.getElementById('skill-category-delete-label');
+const skillCategoryHint = document.getElementById('skill-category-hint');
 const toastContainer = document.getElementById('toast-container');
 const searchInput = document.getElementById('search-input');
 const skillsDirPath = document.getElementById('skills-dir-path');
@@ -187,6 +196,11 @@ const locales = {
     statUpToDate: '已是最新',
     listHeader: '全部 Skill',
     listHeaderProject: '项目 Skill 配置',
+    tableSkill: 'Skill',
+    tableDescription: '说明',
+    tableCategory: '分类',
+    tableStatus: '状态',
+    tableActions: '操作',
     searchPlaceholder: '搜索技能名称、标签…',
     statusSynced: '已同步',
     statusUpdated: '有更新',
@@ -205,6 +219,18 @@ const locales = {
     viewModalTabPreview: '文档预览',
     viewModalClose: '关闭',
     editModalTitle: '编辑技能',
+    editCategoryLabel: '分类',
+    editCategoryUncategorized: '未分类',
+    editCategoryAdd: '新增类别',
+    editCategoryAddTitle: '新增 Skill 类别',
+    editCategoryAddMessage: '输入新类别名称；保存当前 Skill 后，该类别会出现在分类列表中。',
+    editCategoryAddPlaceholder: '例如：安全工程',
+    editCategoryDelete: '删除类别',
+    editCategoryDeleteTitle: '删除 Skill 类别',
+    editCategoryDeletePending: '尚未保存的新类别已移除',
+    editCategoryDeleteEmpty: '这个类别没有可修改的全局 Skill，无法删除',
+    editCategoryDeleteSuccess: '类别已删除，相关 Skill 已归入未分类',
+    editCategoryHint: '保存时会同步更新 Skill 文件中的 category 字段',
     editModalTabSource: '编辑源码',
     editModalTabPreview: '实时预览',
     editModalCancel: '取消',
@@ -282,6 +308,11 @@ const locales = {
     statUpToDate: 'Up to date',
     listHeader: 'All Skills',
     listHeaderProject: 'Project Skill Setup',
+    tableSkill: 'Skill',
+    tableDescription: 'Description',
+    tableCategory: 'Category',
+    tableStatus: 'Status',
+    tableActions: 'Actions',
     searchPlaceholder: 'Search skills, tags...',
     statusSynced: 'Synced',
     statusUpdated: 'Updated',
@@ -300,6 +331,18 @@ const locales = {
     viewModalTabPreview: 'Document Preview',
     viewModalClose: 'Close',
     editModalTitle: 'Edit Skill',
+    editCategoryLabel: 'Category',
+    editCategoryUncategorized: 'Uncategorized',
+    editCategoryAdd: 'Add category',
+    editCategoryAddTitle: 'Add Skill Category',
+    editCategoryAddMessage: 'Enter a category name. It will appear in the category list after this Skill is saved.',
+    editCategoryAddPlaceholder: 'e.g. Security Engineering',
+    editCategoryDelete: 'Delete category',
+    editCategoryDeleteTitle: 'Delete Skill Category',
+    editCategoryDeletePending: 'The unsaved category was removed',
+    editCategoryDeleteEmpty: 'No editable global Skill uses this category',
+    editCategoryDeleteSuccess: 'Category deleted; related Skills are now uncategorized',
+    editCategoryHint: 'Saving updates the category field in the Skill file',
     editModalTabSource: 'Edit Source',
     editModalTabPreview: 'Live Preview',
     editModalCancel: 'Cancel',
@@ -522,12 +565,22 @@ function applyLanguage(lang) {
   }
   searchInput.placeholder = t.searchPlaceholder;
   document.getElementById('btn-refresh-skills').title = lang === 'zh' ? '刷新全局技能库' : 'Refresh Global Skills';
+  document.getElementById('skill-list-header-skill').textContent = t.tableSkill;
+  document.getElementById('skill-list-header-description').textContent = t.tableDescription;
+  document.getElementById('skill-list-header-category').textContent = t.tableCategory;
+  document.getElementById('skill-list-header-status').textContent = t.tableStatus;
+  document.getElementById('skill-list-header-actions').textContent = t.tableActions;
 
   // Modals (Editor)
   modalTabEdit.textContent = isViewingSkill ? t.viewModalTabSource : t.editModalTabSource;
   modalTabPreview.textContent = isViewingSkill ? t.viewModalTabPreview : t.editModalTabPreview;
   modalCloseFooter.textContent = isViewingSkill ? t.viewModalClose : t.editModalCancel;
   modalSaveBtn.innerHTML = `<i data-lucide="save" style="width:16px;height:16px;"></i> ${t.editModalSave}`;
+  skillCategoryLabel.textContent = t.editCategoryLabel;
+  skillCategoryAddLabel.textContent = t.editCategoryAdd;
+  skillCategoryDeleteLabel.textContent = t.editCategoryDelete;
+  skillCategoryHint.textContent = t.editCategoryHint;
+  if (!skillMetadataBar.hidden) populateSkillCategoryOptions(skillCategorySelect.value);
 
   // Modals (Settings)
   document.getElementById('settings-modal-title').textContent = t.settingsTitle;
@@ -807,12 +860,68 @@ function sanitizeHtml(html) {
 
 function splitMarkdownFrontmatter(markdown) {
   const source = String(markdown || '');
-  const match = source.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
+  const match = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
   if (!match) return { frontmatter: '', body: source };
   return {
     frontmatter: match[1].trim(),
     body: source.slice(match[0].length)
   };
+}
+
+function getMarkdownFrontmatterCategory(markdown) {
+  const { frontmatter } = splitMarkdownFrontmatter(markdown);
+  if (!frontmatter) return '';
+  const line = frontmatter.split(/\r?\n/).find(item => /^\s*category\s*:/i.test(item));
+  if (!line) return '';
+  const value = line.replace(/^\s*category\s*:\s*/i, '').trim();
+  if (
+    value.length >= 2
+    && ((value.startsWith('"') && value.endsWith('"'))
+      || (value.startsWith("'") && value.endsWith("'")))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+function formatFrontmatterScalar(value) {
+  const normalized = String(value || '').trim();
+  if (/^[^:#\[\]{}'",\r\n\t]+$/.test(normalized)) return normalized;
+  return JSON.stringify(normalized);
+}
+
+function setMarkdownFrontmatterCategory(markdown, category) {
+  const source = String(markdown || '');
+  const normalizedCategory = String(category || '').trim();
+  const newline = source.includes('\r\n') ? '\r\n' : '\n';
+  const match = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+
+  if (!match) {
+    if (!normalizedCategory) return source;
+    return [
+      '---',
+      `category: ${formatFrontmatterScalar(normalizedCategory)}`,
+      '---',
+      '',
+      source,
+    ].join(newline);
+  }
+
+  const lines = match[1].split(/\r?\n/);
+  const categoryIndex = lines.findIndex(line => /^\s*category\s*:/i.test(line));
+  if (categoryIndex >= 0) {
+    if (normalizedCategory) {
+      const indentation = lines[categoryIndex].match(/^\s*/)?.[0] || '';
+      lines[categoryIndex] = `${indentation}category: ${formatFrontmatterScalar(normalizedCategory)}`;
+    } else {
+      lines.splice(categoryIndex, 1);
+    }
+  } else if (normalizedCategory) {
+    lines.push(`category: ${formatFrontmatterScalar(normalizedCategory)}`);
+  }
+
+  const replacement = `---${newline}${lines.join(newline)}${newline}---${newline}`;
+  return replacement + source.slice(match[0].length);
 }
 
 function renderMarkdown(markdown) {
@@ -877,6 +986,16 @@ function buildDisplaySkills() {
       ].join(' ')).join(' ')
     });
   });
+
+  // Project-only skills are a read-only supplement in project mode. Keeping
+  // them out of `skills` ensures imports, collections, and sync inputs remain
+  // based solely on the global library.
+  if (currentProjectPath) {
+    const activeProject = projects.find(project => project.path === currentProjectPath);
+    if (activeProject && !activeProject.error) {
+      (activeProject.project_skills || []).forEach(skill => display.push(skill));
+    }
+  }
   displaySkillsByFilename = new Map(
     display.map(skill => [skill.filename, skill])
   );
@@ -1104,7 +1223,7 @@ function renderSkillsGrid() {
 
   filtered.forEach((skill, index) => {
     const card = document.createElement('div');
-    card.className = `skill-card skill-row${skill.is_collection ? ' collection-card' : ''}`;
+    card.className = `skill-card skill-row${skill.is_collection ? ' collection-card' : ''}${skill.project_only ? ' project-only-card' : ''}`;
     card.dataset.filename = skill.filename;
     card.style.transitionDelay = `${index * 35}ms`;
 
@@ -1116,7 +1235,9 @@ function renderSkillsGrid() {
     let badgeHTML = '';
     let isChecked = false;
 
-    if (currentProjectPath && activeProj && !activeProj.error) {
+    if (skill.project_only) {
+      badgeHTML = `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '项目独有 · 只读' : 'Project-only · Read-only'}</span>`;
+    } else if (currentProjectPath && activeProj && !activeProj.error) {
       let physicalStatus = statusMap[skill.filename] || 'unloaded';
       let isLocallyEnabled = enabledSkills.has(skill.filename);
       if (skill.is_collection) {
@@ -1156,9 +1277,7 @@ function renderSkillsGrid() {
         }
       }
     } else {
-      badgeHTML = skill.is_collection
-        ? `<span class="status-badge unloaded"><span class="status-dot"></span>${skill.collection_enabled_count}/${skill.collection_members.length} ${currentLanguage === 'zh' ? '已启用' : 'enabled'}</span>`
-        : `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '可用' : 'Available'}</span>`;
+      badgeHTML = `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '可用' : 'Available'}</span>`;
     }
 
     // Preserve source semantics; locale only changes generic interface text.
@@ -1186,15 +1305,24 @@ function renderSkillsGrid() {
     const safeDesc = escapeHtml(resolvedDesc);
     const displayFilename = skill.is_collection
       ? `${skill.collection_child_count} ${currentLanguage === 'zh' ? '个子技能' : 'child skills'}`
-      : skill.filename;
+      : (skill.display_filename || skill.filename);
     const safeFilename = escapeHtml(displayFilename);
     const cardTitle = skill.is_collection
-      ? (currentLanguage === 'zh' ? `点击管理 ${resolvedTitle} 的子技能` : `Manage child skills in ${resolvedTitle}`)
-      : (currentLanguage === 'zh' ? `点击查看 ${resolvedTitle} 的 Markdown 文档` : `Click to view the Markdown document for ${resolvedTitle}`);
+      ? currentProjectPath
+        ? (currentLanguage === 'zh' ? `点击管理 ${resolvedTitle} 的子技能` : `Manage child skills in ${resolvedTitle}`)
+        : (currentLanguage === 'zh' ? `点击查看 ${resolvedTitle} 的子技能` : `View child skills in ${resolvedTitle}`)
+      : skill.project_only
+        ? (currentLanguage === 'zh' ? `只读查看项目 Skill：${resolvedTitle}` : `View project Skill read-only: ${resolvedTitle}`)
+        : (currentLanguage === 'zh' ? `点击查看 ${resolvedTitle} 的 Markdown 文档` : `Click to view the Markdown document for ${resolvedTitle}`);
     const localizedCategory = getLocalizedCategory(getCanonicalCategory(skill));
-    const actionButtons = skill.is_collection
+    const collectionActionLabel = currentProjectPath
+      ? (currentLanguage === 'zh' ? '管理子技能' : 'Manage child skills')
+      : (currentLanguage === 'zh' ? '查看子技能' : 'View child skills');
+    const actionButtons = skill.project_only
+      ? ''
+      : skill.is_collection
       ? `
-          <button type="button" class="row-action-button js-edit-skill" title="${currentLanguage === 'zh' ? '管理子技能' : 'Manage child skills'}" aria-label="${currentLanguage === 'zh' ? '管理子技能' : 'Manage child skills'}">
+          <button type="button" class="row-action-button js-edit-skill" title="${collectionActionLabel}" aria-label="${collectionActionLabel}">
             <i data-lucide="list-tree"></i>
           </button>`
       : `
@@ -1223,7 +1351,7 @@ function renderSkillsGrid() {
       </div>
       <div class="skill-row-status">${badgeHTML}</div>
       <div class="skill-row-actions">
-        ${currentProjectPath && activeProj && !activeProj.error ? `
+        ${currentProjectPath && activeProj && !activeProj.error && !skill.project_only ? `
           <label class="switch row-mount-toggle" title="${locales[currentLanguage].toggleLabel}">
             <input type="checkbox" class="js-toggle-skill" ${isChecked ? 'checked' : ''}>
             <span class="slider"></span>
@@ -1310,6 +1438,7 @@ function handleSelectProject(path) {
     undoSyncBtn.setAttribute('disabled', 'true');
     syncBtn.classList.remove('pulsing-btn', 'active');
     renderProjectsList();
+    renderCategoryFilterBar();
     renderSkillsGrid();
     updateStatistics();
     lucide.createIcons();
@@ -1347,6 +1476,7 @@ function _loadProjectState(proj) {
   syncBtn.classList.add('pulsing-btn');
   undoSyncBtn.disabled = !proj.can_undo_sync;
   renderProjectsList();
+  renderCategoryFilterBar();
   renderSkillsGrid();
   updateStatistics();
   queuePendingSyncSummary();
@@ -1382,6 +1512,7 @@ function getCollectionDisplaySkill(collectionId) {
 function openCollectionModal(collectionId) {
   const collectionSkill = getCollectionDisplaySkill(collectionId);
   if (!collectionSkill) return;
+  const readOnly = !currentProjectPath;
   activeCollectionId = collectionId;
   collectionModalTitle.textContent = collectionSkill.title;
   const hasPrimary = collectionSkill.collection_members.some(
@@ -1391,15 +1522,19 @@ function openCollectionModal(collectionId) {
   const controllerEnabled = collectionSkill.collection_controller_enabled;
   const childCount = collectionSkill.collection_child_count;
   collectionModalSummary.textContent = currentLanguage === 'zh'
-    ? `${hasPrimary ? '1 个主控 + ' : ''}${childCount} 个子技能；主控关闭时整组暂停`
-    : `${hasPrimary ? '1 controller + ' : ''}${childCount} child skills; the controller pauses the whole collection`;
-  collectionModalHint.textContent = currentLanguage === 'zh'
-    ? (controller && !controllerEnabled
-      ? '主控已关闭：子技能选择已保留，但不会生效；下次同步会从项目移除整组。'
-      : '停用不会删除文件；项目将在下次同步时应用变更。')
-    : (controller && !controllerEnabled
-      ? 'Controller is off: child choices are preserved but inactive; the next sync removes the collection.'
-      : 'Disabling keeps source files; the next sync applies the change to projects.');
+    ? `${hasPrimary ? '1 个主控 + ' : ''}${childCount} 个子技能；${readOnly ? '当前仅供查看' : '主控关闭时整组暂停'}`
+    : `${hasPrimary ? '1 controller + ' : ''}${childCount} child skills; ${readOnly ? 'view only' : 'the controller pauses the whole collection'}`;
+  collectionModalHint.textContent = readOnly
+    ? (currentLanguage === 'zh'
+      ? '尚未选择目标项目：可以查看文档，选择项目后才能调整启用状态。'
+      : 'No target project selected: documents are available, but enablement can only be changed in project mode.')
+    : currentLanguage === 'zh'
+      ? (controller && !controllerEnabled
+        ? '主控已关闭：子技能选择已保留，但不会生效；下次同步会从项目移除整组。'
+        : '停用不会删除文件；项目将在下次同步时应用变更。')
+      : (controller && !controllerEnabled
+        ? 'Controller is off: child choices are preserved but inactive; the next sync removes the collection.'
+        : 'Disabling keeps source files; the next sync applies the change to projects.');
 
   const orderedMembers = [...collectionSkill.collection_members].sort((left, right) => {
     if (left.collection?.is_controller) return -1;
@@ -1425,7 +1560,7 @@ function openCollectionModal(collectionId) {
           : (currentLanguage === 'zh' ? '停用' : 'Off');
     const smart = getSmartEmojiAndTags(member);
     return `
-      <div class="collection-member ${effectiveEnabled ? 'enabled' : ''} ${pausedByController ? 'controller-paused' : ''} ${isController ? 'collection-controller' : ''}" data-filename="${escapeHtml(member.filename)}">
+      <div class="collection-member ${!readOnly && effectiveEnabled ? 'enabled' : ''} ${!readOnly && pausedByController ? 'controller-paused' : ''} ${isController ? 'collection-controller' : ''}" data-filename="${escapeHtml(member.filename)}">
         <div class="collection-member-main">
           <span class="collection-member-emoji">${escapeHtml(smart.emoji)}</span>
           <div class="collection-member-copy">
@@ -1438,15 +1573,23 @@ function openCollectionModal(collectionId) {
           <button type="button" class="btn btn-secondary btn-icon js-view-collection-member" data-filename="${escapeHtml(member.filename)}" title="${currentLanguage === 'zh' ? '查看文档' : 'View docs'}">
             <i data-lucide="eye" style="width:14px;height:14px;"></i>
           </button>
-          <span class="collection-member-state">${stateText}</span>
-          <label class="switch">
-            <input type="checkbox" class="js-collection-member-toggle" data-filename="${escapeHtml(member.filename)}" ${enabled ? 'checked' : ''} ${pausedByController ? 'disabled' : ''}>
-            <span class="slider"></span>
-          </label>
+          ${readOnly ? '' : `
+            <span class="collection-member-state">${stateText}</span>
+            <label class="switch">
+              <input type="checkbox" class="js-collection-member-toggle" data-filename="${escapeHtml(member.filename)}" ${enabled ? 'checked' : ''} ${pausedByController ? 'disabled' : ''}>
+              <span class="slider"></span>
+            </label>`}
         </div>
       </div>`;
   }).join('');
-  activateModal(collectionModal, collectionModal.querySelector('.js-collection-member-toggle:not([disabled])'));
+  activateModal(
+    collectionModal,
+    collectionModal.querySelector(
+      readOnly
+        ? '.js-view-collection-member'
+        : '.js-collection-member-toggle:not([disabled])'
+    )
+  );
   lucide.createIcons();
 }
 
@@ -1457,6 +1600,17 @@ function closeCollectionModal() {
 
 collectionMembersList.addEventListener('change', async event => {
   if (!event.target.matches('.js-collection-member-toggle')) return;
+  if (!currentProjectPath) {
+    const collectionId = activeCollectionId;
+    if (collectionId) openCollectionModal(collectionId);
+    showToast(
+      currentLanguage === 'zh'
+        ? '请先选择目标项目，再调整子技能状态。'
+        : 'Select a target project before changing child skill state.',
+      'warning'
+    );
+    return;
+  }
   const input = event.target;
   const filename = input.dataset.filename;
   const enabled = input.checked;
@@ -2144,9 +2298,131 @@ function handleSearch() {
 // Editor Modal
 // ------------------------------------------
 
+function isDefaultSkillCategory(category) {
+  return ['未分类', 'Uncategorized'].includes(String(category || '').trim());
+}
+
+function getSkillCategorySelectValue(category) {
+  const normalized = String(category || '').trim();
+  return isDefaultSkillCategory(normalized) ? '' : normalized;
+}
+
+function populateSkillCategoryOptions(selectedCategory = '') {
+  const normalizedSelection = getSkillCategorySelectValue(selectedCategory);
+  const categories = Array.from(new Set([
+    ...skills.map(skill => String(skill.category || '').trim()),
+    ...pendingEditorCategories,
+    normalizedSelection,
+  ].filter(category => category && !isDefaultSkillCategory(category))))
+    .sort((left, right) => left.localeCompare(right, currentLanguage));
+  skillCategorySelect.innerHTML = [
+    `<option value="">${escapeHtml(locales[currentLanguage].editCategoryUncategorized)}</option>`,
+    ...categories.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`),
+  ].join('');
+  skillCategorySelect.value = normalizedSelection;
+  updateSkillCategoryDeleteButton();
+}
+
+function updateSkillCategoryDeleteButton() {
+  const category = getSkillCategorySelectValue(skillCategorySelect.value);
+  skillCategoryDelete.disabled = skillCategorySelect.disabled || !category;
+  skillCategoryDelete.title = category
+    ? `${locales[currentLanguage].editCategoryDelete}: ${category}`
+    : locales[currentLanguage].editCategoryDelete;
+}
+
+function getEditorContentWithCategory() {
+  const selectedCategory = skillCategorySelect.value.trim();
+  if (selectedCategory === getSkillCategorySelectValue(loadedEditorCategory)) {
+    return markdownTextarea.value;
+  }
+  return setMarkdownFrontmatterCategory(markdownTextarea.value, selectedCategory);
+}
+
+async function handleAddSkillCategory() {
+  const t = locales[currentLanguage];
+  const requestedCategory = await showCustomDialog({
+    title: t.editCategoryAddTitle,
+    message: t.editCategoryAddMessage,
+    emoji: '🏷️',
+    isPrompt: true,
+    placeholder: t.editCategoryAddPlaceholder,
+    confirmText: t.editCategoryAdd,
+  });
+  const normalized = String(requestedCategory || '').trim();
+  if (!normalized) return;
+  const knownCategories = [
+    ...skills.map(skill => String(skill.category || '').trim()),
+    ...pendingEditorCategories,
+  ];
+  const existing = knownCategories.find(category => (
+    category.localeCompare(normalized, currentLanguage, { sensitivity: 'base' }) === 0
+  ));
+  const selectedCategory = getSkillCategorySelectValue(existing || normalized);
+  if (selectedCategory) pendingEditorCategories.add(selectedCategory);
+  populateSkillCategoryOptions(selectedCategory);
+  skillCategorySelect.focus();
+}
+
+async function handleDeleteSkillCategory() {
+  const t = locales[currentLanguage];
+  const category = getSkillCategorySelectValue(skillCategorySelect.value);
+  if (!category) return;
+
+  try {
+    const preview = await window.pywebview.api.preview_delete_skill_category(category);
+    if (preview?.error) throw new Error(preview.error);
+    if (!preview?.affected_count) {
+      if (pendingEditorCategories.has(category)) {
+        pendingEditorCategories.delete(category);
+        populateSkillCategoryOptions('');
+        showToast(t.editCategoryDeletePending, 'success');
+        return;
+      }
+      showToast(t.editCategoryDeleteEmpty, 'warning');
+      return;
+    }
+
+    const confirmed = await showCustomDialog({
+      title: t.editCategoryDeleteTitle,
+      message: currentLanguage === 'zh'
+        ? `删除“${category}”后，${preview.affected_count} 个全局 Skill 将归入“未分类”。这会移除这些 Skill 文件 Frontmatter 中的 category 字段。`
+        : `Deleting “${category}” will move ${preview.affected_count} global Skill(s) to “Uncategorized” by removing the category field from their Frontmatter.`,
+      emoji: '🗑️',
+      confirmText: t.editCategoryDelete,
+    });
+    if (!confirmed) return;
+
+    skillCategoryDelete.disabled = true;
+    const result = await window.pywebview.api.delete_skill_category(category);
+    if (result?.error) throw new Error(result.error);
+    pendingEditorCategories.delete(category);
+    await fetchSkills();
+    populateSkillCategoryOptions('');
+    if (currentProjectPath) {
+      await fetchProjects();
+      refreshCurrentProject();
+    }
+    showToast(`${t.editCategoryDeleteSuccess} (${result.affected_count})`, 'success');
+  } catch (e) {
+    showToast(
+      (currentLanguage === 'zh' ? '删除类别失败: ' : 'Failed to delete category: ') + (e.message || e),
+      'error'
+    );
+  } finally {
+    updateSkillCategoryDeleteButton();
+    lucide.createIcons();
+  }
+}
+
+skillCategorySelect.addEventListener('change', updateSkillCategoryDeleteButton);
+
 function resetSkillModalForEditing() {
   isViewingSkill = false;
   markdownTextarea.readOnly = false;
+  skillMetadataBar.hidden = false;
+  skillCategorySelect.disabled = false;
+  updateSkillCategoryDeleteButton();
   modalSaveBtn.style.display = '';
   modalTabEdit.textContent = locales[currentLanguage].editModalTabSource;
   modalTabPreview.textContent = locales[currentLanguage].editModalTabPreview;
@@ -2157,6 +2433,9 @@ function resetSkillModalForViewing() {
   isViewingSkill = true;
   editingFilename = null;
   markdownTextarea.readOnly = true;
+  skillMetadataBar.hidden = true;
+  skillCategorySelect.disabled = true;
+  updateSkillCategoryDeleteButton();
   modalSaveBtn.style.display = 'none';
   modalTabEdit.textContent = locales[currentLanguage].viewModalTabSource;
   modalTabPreview.textContent = locales[currentLanguage].viewModalTabPreview;
@@ -2170,6 +2449,10 @@ async function openEditorModal(filename) {
   modalTabEdit.classList.add('active');
   modalTabPreview.classList.remove('active');
   const skill = skills.find(s => s.filename === filename);
+  pendingEditorCategories = new Set();
+  loadedEditorCategory = '';
+  populateSkillCategoryOptions();
+  skillCategorySelect.disabled = true;
   modalEmoji.textContent = skill ? skill.emoji : '📄';
   modalTitle.textContent = (currentLanguage === 'zh' ? `编辑技能: ` : 'Edit Skill: ') + (skill ? skill.title : filename);
   markdownTextarea.value = currentLanguage === 'zh' ? '加载中…' : 'Loading...';
@@ -2179,18 +2462,24 @@ async function openEditorModal(filename) {
     const data = await window.pywebview.api.get_skill_content(filename);
     if (data.error) throw new Error(data.error);
     markdownTextarea.value = data.content;
+    loadedEditorCategory = (
+      getMarkdownFrontmatterCategory(data.content)
+      || String(skill?.category || '').trim()
+    );
+    populateSkillCategoryOptions(loadedEditorCategory);
   } catch (e) {
     showToast((currentLanguage === 'zh' ? '加载失败: ' : 'Failed to load: ') + e, 'error');
     closeEditorModal();
   } finally {
     markdownTextarea.removeAttribute('disabled');
+    skillCategorySelect.disabled = false;
     markdownTextarea.focus();
   }
   lucide.createIcons();
 }
 
 async function openSkillViewer(filename) {
-  const skill = skills.find(s => s.filename === filename);
+  const skill = displaySkillsByFilename.get(filename) || skills.find(s => s.filename === filename);
   if (!skill || !skillDrawer) return;
   activeDrawerFilename = filename;
   drawerReturnFocus = document.activeElement;
@@ -2199,9 +2488,11 @@ async function openSkillViewer(filename) {
   const displayTitle = skill.display_title || skill.title || filename;
   skillDetailEmoji.textContent = smart.emoji;
   skillDetailTitle.textContent = displayTitle;
-  skillDetailKind.textContent = currentLanguage === 'zh' ? 'Skill 文档' : 'Skill document';
+  skillDetailKind.textContent = skill.project_only
+    ? (currentLanguage === 'zh' ? '项目 Skill · 只读' : 'Project Skill · Read-only')
+    : (currentLanguage === 'zh' ? 'Skill 文档' : 'Skill document');
   skillDetailMeta.innerHTML = `
-    <span><i data-lucide="folder"></i>${escapeHtml(filename)}</span>
+    <span><i data-lucide="folder"></i>${escapeHtml(skill.display_filename || filename)}</span>
     <span><i data-lucide="tag"></i>${escapeHtml(category)}</span>
     ${(smart.tags || []).slice(0, 3).map(tag => `<span class="detail-tag">${escapeHtml(tagTranslations[currentLanguage]?.[tag] || tag)}</span>`).join('')}`;
   skillDetailContent.innerHTML = `<div class="drawer-loading"><span class="loading-spinner"></span>${currentLanguage === 'zh' ? '加载文档…' : 'Loading document…'}</div>`;
@@ -2209,16 +2500,23 @@ async function openSkillViewer(filename) {
   skillDrawerBackdrop?.classList.add('active');
   skillDrawer.setAttribute('aria-hidden', 'false');
   document.body.classList.add('drawer-open');
-  skillDetailEdit.onclick = () => {
+  skillDetailEdit.style.display = skill.project_only ? 'none' : '';
+  skillDetailDelete.style.display = skill.project_only ? 'none' : '';
+  skillDetailEdit.onclick = skill.project_only ? null : () => {
     closeSkillDrawer(false);
     openEditorModal(filename);
   };
-  skillDetailDelete.onclick = () => {
+  skillDetailDelete.onclick = skill.project_only ? null : () => {
     closeSkillDrawer(false);
     handleDeleteSkill(filename);
   };
   try {
-    const data = await window.pywebview.api.get_skill_content(filename);
+    const data = skill.project_only
+      ? await window.pywebview.api.get_project_skill_content(
+          currentProjectPath,
+          skill.project_relative_path
+        )
+      : await window.pywebview.api.get_skill_content(filename);
     if (data.error) throw new Error(data.error);
     if (activeDrawerFilename !== filename) return;
     skillDetailContent.innerHTML = renderMarkdown(data.content);
@@ -2246,6 +2544,9 @@ function closeEditorModal() {
   deactivateModal(editorModal);
   editingFilename = null;
   isViewingSkill = false;
+  loadedEditorCategory = '';
+  pendingEditorCategories = new Set();
+  populateSkillCategoryOptions();
   markdownTextarea.readOnly = false;
   modalSaveBtn.style.display = '';
 }
@@ -2259,7 +2560,7 @@ function switchModalTab(tab) {
     modalTabEdit.classList.remove('active');
     modalTabPreview.classList.add('active');
     modalBody.className = 'modal-body tab-preview';
-    markdownPreview.innerHTML = renderMarkdown(markdownTextarea.value);
+    markdownPreview.innerHTML = renderMarkdown(getEditorContentWithCategory());
   }
 }
 
@@ -2267,7 +2568,8 @@ async function handleSaveSkill() {
   if (isViewingSkill) return;
   if (!editingFilename) return;
   try {
-    const result = await window.pywebview.api.save_skill(editingFilename, markdownTextarea.value);
+    const content = getEditorContentWithCategory();
+    const result = await window.pywebview.api.save_skill(editingFilename, content);
     if (result.error) throw new Error(result.error);
     showToast(locales[currentLanguage].toastSaveSuccess, 'success');
     closeEditorModal();
@@ -3029,6 +3331,8 @@ window.handleSyncSkills = handleSyncSkills;
 window.handleSearch = handleSearch;
 window.openSkillViewer = openSkillViewer;
 window.openEditorModal = openEditorModal;
+window.handleAddSkillCategory = handleAddSkillCategory;
+window.handleDeleteSkillCategory = handleDeleteSkillCategory;
 window.openCollectionModal = openCollectionModal;
 window.closeCollectionModal = closeCollectionModal;
 window.closeEditorModal = closeEditorModal;

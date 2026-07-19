@@ -6,15 +6,16 @@ SkillHub is a local Windows workspace for organizing reusable AI development rul
 
 ![SkillHub skill library](docs/screenshots/skill-library.png)
 
-Current version: **3.1.0**
+Current version: **3.1.1**
 
 ## Features
 
-- **Unified Skill library** — Manage Markdown rules, standard `SKILL.md` folders, and collections containing multiple child Skills.
+- **Unified Skill library** — Manage Markdown rules, standard `SKILL.md` folders, and collections containing multiple child Skills; add, change, or delete categories from the editor.
 - **Per-project configuration** — Select the Skills each project needs without affecting other projects.
 - **Sync preview** — Review additions, updates, removals, and conflicts before writing to `.agent/skills/`.
 - **Collection controls** — The collection switch controls whether the collection participates in a project; child switches select individual Skills.
 - **Document viewer and editor** — Review metadata and rendered Markdown, then open the source explicitly when editing is needed.
+- **Clear view-only mode** — Browse Skills without selecting a project; choose a project before changing enablement.
 - **AI Skill advisor** — Use an OpenAI-compatible model to draft rules, inspect Skills, or organize an existing document.
 - **Local data model** — Skill libraries, project settings, chat sessions, and sync backups remain on the local machine.
 - **Reversible sync** — The most recent sync can be undone when affected project files have not been edited again.
