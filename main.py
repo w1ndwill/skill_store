@@ -31,7 +31,7 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.1.1"
 
 # Display-only translations for upstream collections. These values are returned
 # separately from source metadata so SKILL.md trigger semantics stay untouched.
@@ -472,6 +472,53 @@ def split_markdown_frontmatter_source(content: str) -> tuple:
     raw_frontmatter = "".join(lines[1:closing_index])
     body = "".join(lines[closing_index + 1:]).lstrip("\r\n")
     return raw_frontmatter, body, True
+
+
+def remove_markdown_frontmatter_field(content: str, field_name: str) -> str:
+    """Remove every top-level field occurrence while preserving the source layout."""
+    text = content or ""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].lstrip("\ufeff").strip() != "---":
+        return text
+    closing_index = next(
+        (
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.strip() == "---"
+        ),
+        -1,
+    )
+    if closing_index < 0:
+        return text
+
+    field_pattern = re.compile(
+        rf"^{re.escape((field_name or '').strip())}\s*:\s*(.*)$",
+        re.IGNORECASE,
+    )
+    kept = [lines[0]]
+    index = 1
+    changed = False
+    while index < closing_index:
+        line_without_ending = lines[index].rstrip("\r\n")
+        match = field_pattern.match(line_without_ending)
+        if not match:
+            kept.append(lines[index])
+            index += 1
+            continue
+        changed = True
+        block_style = match.group(1).strip() in (">", ">-", ">+", "|", "|-", "|+")
+        index += 1
+        if block_style:
+            while index < closing_index:
+                continuation = lines[index].rstrip("\r\n")
+                if continuation and not continuation[:1].isspace():
+                    break
+                index += 1
+
+    if not changed:
+        return text
+    kept.extend(lines[closing_index:])
+    return "".join(kept)
 
 
 def frontmatter_top_level_keys(raw_frontmatter: str) -> set:
@@ -1646,6 +1693,51 @@ description: <一句话描述这个技能的用途>
         except Exception as e:
             return {"error": str(e)}
 
+    def get_project_skill_content(self, project_path: str, relative_path: str):
+        """Read a discovered project-only skill without adopting or modifying it."""
+        requested_project = os.path.normcase(
+            os.path.realpath(os.path.abspath(project_path or ""))
+        )
+        registered_project = next(
+            (
+                item.get("path", "")
+                for item in self.projects
+                if os.path.normcase(
+                    os.path.realpath(os.path.abspath(item.get("path", "")))
+                ) == requested_project
+            ),
+            "",
+        )
+        if not registered_project:
+            return {"error": "Project is not registered"}
+
+        project_entry = next(
+            (
+                item
+                for item in self.get_projects()
+                if os.path.normcase(
+                    os.path.realpath(os.path.abspath(item.get("path", "")))
+                ) == requested_project
+            ),
+            {},
+        )
+        allowed_paths = {
+            item.get("project_relative_path", "")
+            for item in project_entry.get("project_skills", [])
+        }
+        if relative_path not in allowed_paths:
+            return {"error": "Project skill is not available"}
+
+        skills_root = os.path.join(registered_project, ".agent", "skills")
+        target = safe_real_child_path(skills_root, relative_path)
+        if not target or not os.path.isfile(target):
+            return {"error": "File not found"}
+        try:
+            with open(target, "r", encoding="utf-8") as handle:
+                return {"content": handle.read()}
+        except Exception as e:
+            return {"error": str(e)}
+
     def save_skill(self, filename, content):
         """Save content to a global skill file or a skill directory's README.md."""
         fp = safe_child_path(self.skills_dir, filename)
@@ -1661,6 +1753,121 @@ description: <一句话描述这个技能的用途>
             return {"ok": True}
         except Exception as e:
             return {"error": str(e)}
+
+    def _editable_skill_source(self, filename: str) -> dict:
+        """Resolve a global skill to the source file that owns its Frontmatter."""
+        fp = safe_child_path(self.skills_dir, filename)
+        owner = filename
+        if fp and os.path.isdir(fp):
+            skill_fp = os.path.join(fp, "SKILL.md")
+            readme_fp = os.path.join(fp, "README.md")
+            fp = skill_fp if os.path.isfile(skill_fp) else readme_fp
+        elif not fp or not os.path.isfile(fp):
+            virtual = self._resolve_virtual_skill(filename)
+            fp = virtual.get("path", "")
+            owner = virtual.get("parent", "")
+        if not fp or not os.path.isfile(fp):
+            return {}
+        return {"path": fp, "owner": owner or filename}
+
+    def _skill_category_sources(self, category: str) -> list:
+        """Collect unique editable global source files using an exact category."""
+        requested = str(category or "").strip()
+        if not requested or requested in ("未分类", "Uncategorized"):
+            return []
+        sources = {}
+        for skill in self.get_skills():
+            if str(skill.get("category", "")).strip() != requested:
+                continue
+            resolved = self._editable_skill_source(skill.get("filename", ""))
+            path = resolved.get("path", "")
+            if not path:
+                continue
+            normalized_path = os.path.normcase(os.path.realpath(path))
+            if normalized_path in sources:
+                sources[normalized_path]["filenames"].append(skill.get("filename", ""))
+                continue
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    content = handle.read()
+            except OSError:
+                continue
+            metadata, _body = split_markdown_frontmatter(content)
+            if str(metadata.get("category", "")).strip() != requested:
+                continue
+            raw_frontmatter, _body, has_frontmatter = split_markdown_frontmatter_source(content)
+            if not has_frontmatter or "category" not in frontmatter_top_level_keys(raw_frontmatter):
+                continue
+            sources[normalized_path] = {
+                "path": path,
+                "owner": resolved.get("owner", skill.get("filename", "")),
+                "content": content,
+                "filenames": [skill.get("filename", "")],
+                "title": skill.get("display_title") or skill.get("title") or skill.get("filename", ""),
+            }
+        return list(sources.values())
+
+    def preview_delete_skill_category(self, category: str) -> dict:
+        """Preview global source files that would become uncategorized."""
+        requested = str(category or "").strip()
+        if not requested or requested in ("未分类", "Uncategorized"):
+            return {"error": "The default category cannot be deleted"}
+        sources = self._skill_category_sources(requested)
+        return {
+            "ok": True,
+            "category": requested,
+            "affected_count": len(sources),
+            "affected": [
+                {
+                    "filename": source["filenames"][0],
+                    "title": source["title"],
+                }
+                for source in sources
+            ],
+        }
+
+    def delete_skill_category(self, category: str) -> dict:
+        """Remove a category from global Skill Frontmatter with rollback on failure."""
+        requested = str(category or "").strip()
+        if not requested or requested in ("未分类", "Uncategorized"):
+            return {"error": "The default category cannot be deleted"}
+        sources = self._skill_category_sources(requested)
+        if not sources:
+            return {"error": "No editable global Skill uses this category"}
+
+        written = []
+        try:
+            for source in sources:
+                updated = remove_markdown_frontmatter_field(source["content"], "category")
+                if updated == source["content"]:
+                    raise ValueError(f"Category field not found: {source['path']}")
+                atomic_write_text(source["path"], updated)
+                written.append(source)
+        except Exception as error:
+            rollback_errors = []
+            for source in reversed(written):
+                try:
+                    atomic_write_text(source["path"], source["content"])
+                except Exception as rollback_error:
+                    rollback_errors.append(str(rollback_error))
+            message = str(error)
+            if rollback_errors:
+                message += "; rollback failed: " + "; ".join(rollback_errors)
+            return {"error": message, "rolled_back": not rollback_errors}
+
+        index_warnings = []
+        for owner in dict.fromkeys(source["owner"] for source in sources):
+            try:
+                self._register_library_entry(owner, source="edited")
+            except Exception as error:
+                index_warnings.append(str(error))
+        return {
+            "ok": True,
+            "category": requested,
+            "affected_count": len(sources),
+            "affected": [source["filenames"][0] for source in sources],
+            "warning": "; ".join(index_warnings),
+        }
 
     def delete_skill(self, filename):
         """Move a global skill into SkillHub trash so it can be restored."""
@@ -3474,6 +3681,7 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
                 "name": proj["name"],
                 "path": path,
                 "skills_status": {},
+                "project_skills": [],
                 "can_undo_sync": os.path.isfile(state_paths["last_transaction"]),
                 "enabled_skills": (
                     sync_manifest.get("enabled_skills", [])
@@ -3581,22 +3789,55 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
                     if os.path.exists(target_fp):
                         entry["skills_status"][fname] = "orphan"
 
-            # Finally, scan the project's own skills dir for other files not managed by any loaded source.
+            # Finally, expose project-only skills as read-only supplemental data.
+            # They remain outside the global library, enabled-skill state, and sync plan.
             skills_dir = os.path.join(path, ".agent", "skills")
             if os.path.exists(skills_dir):
+                managed_names = {
+                    name.casefold()
+                    for name in entry["skills_status"]
+                }
                 for item in os.listdir(skills_dir):
                     if item.lower().endswith(".md"):
-                        managed_names = {
-                            name.casefold()
-                            for name in entry["skills_status"]
-                        }
                         if (
                             item.casefold() not in managed_names
                             and item.casefold() not in bundled_files
                             and item.casefold() not in bundled_refs
                         ):
                             entry["skills_status"][item] = "orphan"
-                            
+                            source = safe_real_child_path(skills_dir, item)
+                            if source and os.path.isfile(source):
+                                metadata = parse_markdown_metadata(source)
+                                metadata.update({
+                                    "filename": f"@project:{item}",
+                                    "display_filename": item,
+                                    "project_relative_path": item,
+                                    "is_dir": False,
+                                    "project_only": True,
+                                })
+                                entry["project_skills"].append(metadata)
+                        continue
+
+                    skill_relative = normalize_relative_path(
+                        os.path.join(item, "SKILL.md")
+                    )
+                    source = safe_real_child_path(skills_dir, skill_relative)
+                    if (
+                        item.casefold() not in managed_names
+                        and source
+                        and os.path.isfile(source)
+                    ):
+                        metadata = parse_markdown_metadata(source)
+                        metadata.update({
+                            "filename": f"@project:{skill_relative}",
+                            "display_filename": item,
+                            "project_relative_path": skill_relative,
+                            "is_dir": True,
+                            "folder_kind": "standard",
+                            "project_only": True,
+                        })
+                        entry["project_skills"].append(metadata)
+
             result.append(entry)
         return result
 
