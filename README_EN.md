@@ -6,7 +6,7 @@ SkillHub is a local Windows workspace for organizing reusable AI development rul
 
 ![SkillHub skill library](docs/screenshots/skill-library.png)
 
-Current version: **3.1.1**
+Current version: **3.1.2**
 
 ## Features
 
