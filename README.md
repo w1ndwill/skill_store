@@ -1,12 +1,12 @@
 # SkillHub
 
-[English](README_EN.md) · [下载 SkillHub](https://github.com/w1ndwill/skill_store/releases) · [MIT License](LICENSE)
+[English](README_EN.md) · [使用说明书](docs/SkillHub使用说明书.md) · [下载 SkillHub](https://github.com/w1ndwill/skill_store/releases) · [MIT License](LICENSE)
 
 SkillHub 是一个本地运行的 Windows Skill 工作台，用来集中管理 AI 开发规约，并为每个项目维护清晰、可预览、可回退的 Skill 配置。
 
 ![SkillHub 技能库](docs/screenshots/skill-library.png)
 
-当前版本：**3.1.1**
+当前版本：**3.1.2**
 
 ## 主要功能
 
