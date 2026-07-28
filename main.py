@@ -3064,10 +3064,10 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
             and os.path.normcase(os.path.realpath(source_path))
             == os.path.normcase(os.path.realpath(direct_source))
         )
-        if paths_overlap(source_path, paths["pending"]):
-            return {"error": "Import source cannot overlap the staging directory"}
         if paths_overlap(source_path, self.skills_dir) and not is_direct_adoption:
             return {"error": "Import source cannot overlap the skill library"}
+        if paths_overlap(source_path, paths["pending"]):
+            return {"error": "Import source cannot overlap the staging directory"}
         if os.path.isdir(paths["pending"]):
             cutoff = time.time() - (24 * 60 * 60)
             for item in os.listdir(paths["pending"]):

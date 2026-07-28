@@ -257,8 +257,8 @@ const locales = {
     settingsDescLang: '切换整个界面的显示语言',
     settingsLabelTheme: '界面主题',
     settingsDescTheme: '选择明亮模式或护眼深色模式',
-    settingsThemeLight: '☀️ 明亮模式',
-    settingsThemeDark: '🌙 深色模式',
+    settingsThemeLight: '明亮模式',
+    settingsThemeDark: '深色模式',
     settingsHeadingPaths: '路径管理',
     settingsLabelSkillsdir: '全局技能库路径',
     settingsDescSkillsdir: '存放全局技能规约 Markdown 文件的目录',
@@ -369,8 +369,8 @@ const locales = {
     settingsDescLang: 'Switch display language across the interface',
     settingsLabelTheme: 'Theme Mode',
     settingsDescTheme: 'Choose light or eye-protection dark mode',
-    settingsThemeLight: '☀️ Light Mode',
-    settingsThemeDark: '🌙 Dark Mode',
+    settingsThemeLight: 'Light Mode',
+    settingsThemeDark: 'Dark Mode',
     settingsHeadingPaths: 'Paths Management',
     settingsLabelSkillsdir: 'Global Skill Library Path',
     settingsDescSkillsdir: 'Folder storing global Markdown files',
@@ -2672,9 +2672,35 @@ const settingsTheme = document.getElementById('settings-theme');
 const settingsSkillsDir = document.getElementById('settings-skills-dir');
 const settingsScanDir = document.getElementById('settings-scan-dir');
 
+function syncSettingsChoiceControls() {
+  document.querySelectorAll('[data-settings-choice]').forEach(group => {
+    const target = group.dataset.settingsChoice === 'language'
+      ? settingsLanguage
+      : settingsTheme;
+    group.querySelectorAll('.settings-choice').forEach(button => {
+      const selected = button.dataset.value === target.value;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+  });
+}
+
+document.querySelectorAll('[data-settings-choice]').forEach(group => {
+  group.addEventListener('click', event => {
+    const button = event.target.closest('.settings-choice');
+    if (!button) return;
+    const target = group.dataset.settingsChoice === 'language'
+      ? settingsLanguage
+      : settingsTheme;
+    target.value = button.dataset.value;
+    syncSettingsChoiceControls();
+  });
+});
+
 function openSettingsModal() {
   settingsLanguage.value = currentLanguage;
   settingsTheme.value = currentTheme;
+  syncSettingsChoiceControls();
   settingsSkillsDir.value = skillsDirPath.textContent;
   settingsScanDir.value = defaultScanDir;
   document.getElementById('settings-aimodel').value = deepseekModel;
@@ -2685,7 +2711,10 @@ function openSettingsModal() {
   document.getElementById('settings-ai-import-optimization').checked = aiImportOptimization;
   updateAIConfigurationIndicators();
 
-  activateModal(settingsModal, settingsLanguage);
+  const selectedLanguageChoice = document.querySelector(
+    '[data-settings-choice="language"] .settings-choice.selected'
+  );
+  activateModal(settingsModal, selectedLanguageChoice);
   lucide.createIcons();
 }
 
@@ -2755,6 +2784,7 @@ async function handleSaveSettings() {
     applyTheme(currentTheme);
     applyLanguage(currentLanguage);
     updateAIConfigurationIndicators();
+    await Promise.all([fetchSkills(), fetchProjects()]);
 
     closeSettingsModal();
     showToast(locales[currentLanguage].toastSettingsSaved, 'success');
