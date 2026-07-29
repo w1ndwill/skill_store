@@ -1,74 +1,100 @@
 # SkillHub
 
-[中文](README.md) · [Download SkillHub](https://github.com/w1ndwill/skill_store/releases) · [MIT License](LICENSE)
+[中文](README.md) · [User manual](docs/SkillHub使用说明书.md) · [Download the latest release](https://github.com/w1ndwill/skill_store/releases/latest) · [MIT License](LICENSE)
 
-SkillHub is a local Windows workspace for organizing reusable AI development rules and maintaining a clear, reviewable, and reversible Skill configuration for each project.
+SkillHub is a local Windows workspace for organizing reusable AI development guidance, preserving multi-Skill collections, and maintaining reviewable, reversible Skill configurations for individual projects. Current version: **3.2.0**.
 
-![SkillHub skill library](docs/screenshots/skill-library.png)
+> **How this project evolved**
+>
+> This work did not replace SkillHub with a separate Agent product. It retained the existing library, import, categorization, project sync, and rollback features, then upgraded the original AI assistant into **SkillOps Agent**. The model can now select tools, observe their results, continue a task, recall structured memory, and stop at an approval gate before any write.
 
-Current version: **3.2.0**
+![SkillHub English Skill library](docs/screenshots/en/skill-library.png)
 
-## Features
+*Captured from the v3.2.0 portable build. Skill names, project paths, and enablement states come from the local demonstration environment.*
 
-- **Unified Skill library** — Manage Markdown rules, standard `SKILL.md` folders, and collections containing multiple child Skills; add, change, or delete categories from the editor.
-- **Per-project configuration** — Select the Skills each project needs without affecting other projects.
-- **Sync preview** — Review additions, updates, removals, and conflicts before writing to `.agent/skills/`.
-- **Collection controls** — The collection switch controls whether the collection participates in a project; child switches select individual Skills.
-- **Document viewer and editor** — Review metadata and rendered Markdown, then open the source explicitly when editing is needed.
-- **Clear view-only mode** — Browse Skills without selecting a project; choose a project before changing enablement.
-- **SkillOps Agent** — An OpenAI-compatible model autonomously searches, reads, audits, and researches Skills through Function Calling, drafts changes, and writes only after approval.
-- **Structured memory and run records** — Relevant project facts, preferences, and decisions are recalled selectively; tool and approval events are stored locally as redacted summaries.
-- **Local data model** — Skill libraries, project settings, chat sessions, Agent memory, and sync backups remain on the local machine.
-- **Single-instance startup** — A Windows named mutex blocks duplicate launches; a second launch focuses the existing window and exits immediately.
-- **Reversible sync** — The most recent sync can be undone when affected project files have not been edited again.
+## SkillOps Agent
 
-## Interface
+SkillOps Agent focuses on the lifecycle of AI coding Skills. It does not receive an unrestricted shell; instead, it works through bounded tools for discovery, inspection, research, preview, installation, and project synchronization.
 
-### Project Skill configuration
+```mermaid
+flowchart LR
+    A["User goal"] --> B["Agent selects a tool"]
+    B --> C["Observe the tool result"]
+    C --> D{"Write required?"}
+    D -- "No" --> E["Continue or answer"]
+    D -- "Yes" --> F["Create a hash-locked preview"]
+    F --> G["Wait for user approval"]
+    G --> H["Revalidate and apply"]
+    H --> I["Record the result and relevant memory"]
+```
 
-![Project Skill configuration](docs/screenshots/project-configuration.png)
+![SkillOps Agent English workspace](docs/screenshots/en/skillops-agent.png)
 
-The project view keeps categories, search, sync status, and enable controls together. The bottom action bar summarizes pending changes and opens the preview before synchronization.
+*A real read-only run verifies `self-improving-agent` through `search_skills`, `inspect_skill`, and `recall_memory`. The activity panel shows redacted summaries and final state, never hidden chain of thought. Earlier Chinese sessions remain visible because the screenshot uses the same persistent bilingual test workspace.*
 
-### SkillOps Agent
+Key Agent capabilities:
 
-![SkillOps Agent workspace](docs/screenshots/ai-assistant.png)
+- **Real tool loop** — The model selects Function Calling tools, receives `tool` observations, and uses them in the next decision.
+- **Official catalog installation** — Read the fixed SkillHub guide, resolve an exact slug, inspect the ZIP in isolation, and lock both package and tree hashes.
+- **GitHub Skill imports** — Preview one original `SKILL.md`, or detect `skills/*/SKILL.md` and preserve the repository as a collection.
+- **Approval-gated writes** — Every `apply_` tool pauses as `waiting_approval`; preview, target state, and hashes are revalidated after approval.
+- **Structured memory** — Recall relevant project facts, preferences, and decisions; memory can be viewed, disabled, or cleared.
+- **Recoverable runs** — Tasks, approvals, and redacted run records remain local and can survive an application restart.
+- **Loop protection** — A run receives up to 32 model decisions by default and stops early after repeated identical tool choices.
 
-Give the Agent a Skill lifecycle goal and it autonomously selects read-only inspection, web research, and draft-preview tools. It can read `skillhub.cn/install/skillhub.md`, search the official SkillHub catalog, and safely extract the exact slug package into an isolated preview. Installation is offered only after package hashes, tree hashes, and same-name conflicts have been reviewed. It can also preview and install an original `SKILL.md` from a public GitHub repository with its content locked by SHA-256. Repository-level goals scan `skills/*/SKILL.md` and preserve the result as a Skill collection; only an explicitly selected install name is handled as one Skill. A run receives up to 32 model decisions by default, while repeated identical tool decisions stop early as a no-progress loop. If the model asks for approval in prose after a successful preview, the runtime requires the matching `apply_` call instead of accepting a false completion. Chat text is selectable, with actions for copying one message, a code block, a generated preview, or the whole conversation; the activity panel can be collapsed. The timeline shows filtered argument and result summaries and omits older entries. Memory can be viewed, disabled, or cleared. If the selected model or API does not support Function Calling, the Agent reports that limitation instead of pretending to use tools.
+## Skill management and project sync
 
-### Skill collections
+### Per-project configuration
 
-![Skill collection manager](docs/screenshots/collection-manager.png)
+![English project Skill configuration](docs/screenshots/en/project-configuration.png)
 
-Child Skills can be reviewed and selected independently. A disabled collection does not participate in project configuration, while its child selections remain stored locally.
+Each project selects its own Skills. The view combines source descriptions, categories, sync status, and enablement controls. A bottom action bar summarizes pending changes and opens a preview before writing.
 
-### Skill documents
+Generated project content lives at:
 
-![Skill document details](docs/screenshots/skill-detail.png)
+```text
+<project>\.agent\skills\
+<project>\AGENTS.md
+```
 
-The detail panel presents source information, category, tags, metadata, and rendered Markdown before a Skill is enabled.
+### Multi-Skill collections
 
-Enable "Generate bilingual descriptions on import" in Settings to display imported Skill titles and descriptions in the system language. Only those two metadata fields are sent to the configured OpenAI-compatible endpoint; translations stay in a local display cache and never rewrite third-party `SKILL.md`. Official SkillHub catalog installs reuse catalog-provided localized descriptions when available and keep them in the same display-only cache.
+![English Skill collection manager](docs/screenshots/en/collection-manager.png)
 
-## Workflow
+Repository imports are scanned for collection boundaries. A collection can be disabled as a unit while each child Skill remains reviewable and independently selectable.
 
-1. Import a `.md` file, `.zip` archive, standard Skill folder, or Skill collection.
-2. Review the Skill name, description, category, and document body.
-3. Add a target project and select the Skills it should use.
-4. Open the sync preview and confirm the file changes.
-5. Project AI tools consume the generated `AGENTS.md` and `.agent/skills/` content.
+### Skill document details
 
-## Download and run
+![English Skill document details](docs/screenshots/en/skill-detail.png)
 
-Download `SkillHub.exe` from [GitHub Releases](https://github.com/w1ndwill/skill_store/releases). It is a portable application and requires no installation.
+The detail drawer presents source information, category, tags, Frontmatter, and rendered Markdown. Editing explicitly opens the source; project-only Skills remain read-only.
 
-On first launch, SkillHub creates the local library at:
+## Main features
+
+| Capability | Current behavior |
+| --- | --- |
+| Global Skill library | Manage Markdown guidance, standard `SKILL.md` folders, and Skill collections |
+| Import inspection | Detect duplicates, same-name conflicts, risky entries, traversal, and symbolic links |
+| Bilingual descriptions | Use display-only localization without rewriting third-party `SKILL.md` |
+| Project synchronization | Preview additions, updates, removals, and conflicts before writing |
+| Sync rollback | Undo the most recent sync when affected project files have not changed again |
+| Single-instance startup | A second launch focuses the existing window instead of opening another |
+| Local data model | Skills, settings, sessions, Agent memory, and backups stay on the machine |
+
+## Quick start
+
+1. Download `SkillHub.exe` from [GitHub Releases](https://github.com/w1ndwill/skill_store/releases/latest).
+2. Launch the app and choose a global Skill library.
+3. Import a `.md`, `.zip`, standard Skill folder, or Skill collection.
+4. Add a target project and select the Skills it needs.
+5. Review the sync preview, then confirm the write.
+6. Open SkillOps Agent when you want to inspect, install, or maintain Skills through a tool-driven workflow.
+
+The application is portable and requires no installer. On first launch it creates:
 
 ```text
 %LOCALAPPDATA%\SkillHub\skills
 ```
-
-Import archives, sync state, and backups are maintained in the local data directory. The source repository does not contain personal Skills, API keys, chat sessions, or project configuration.
 
 ## Run from source
 
@@ -93,27 +119,24 @@ pyinstaller --clean --noconfirm SkillHub.spec
 ```text
 ├── agent_runtime.py         # Agent loop, tool protocol, approvals, memory, and run records
 ├── main.py                  # Backend, file operations, sync, and Agent tool adapters
-├── static/
-│   ├── index.html           # Application structure
-│   ├── index.css            # Interface styles
-│   ├── app.js               # Frontend state and interactions
-│   ├── lucide.min.js        # Bundled icon library
-│   └── marked.min.js        # Bundled Markdown renderer
-├── docs/screenshots/        # README interface screenshots
+├── static/                  # PyWebView frontend, interactions, and bundled resources
+├── docs/
+│   ├── SkillHub使用说明书.md
+│   └── screenshots/
+│       ├── zh/              # Chinese interface screenshots
+│       └── en/              # English interface screenshots
 ├── SkillHub.spec            # PyInstaller build entry
-├── app.ico                  # Application icon
-└── requirements.txt         # Runtime dependencies
+└── requirements.txt
 ```
 
-## Security boundaries
+## Security and privacy
 
-- API keys are stored only in local configuration and are shown in masked form.
+- API keys remain in local configuration and are shown only in masked form.
 - Agent memory and run records exclude API keys, complete sensitive files, and hidden chain of thought.
-- Every `apply_` write tool requires explicit approval; same-name targets require an explicit replace, keep-both, or cancel decision.
-- Imports do not execute repository hooks, MCP servers, or installer scripts.
-- ZIP traversal, symbolic-link sources, and target-path collisions are rejected.
+- Same-name, different-content targets require an explicit replace, keep-both, or cancel decision.
+- Imports never execute repository hooks, MCP servers, installer scripts, or downloaded code.
 - Unmanaged project files are not silently overwritten.
-- Release builds exclude personal Skills, local configuration, tests, chat sessions, Agent memory, and run logs.
+- Release builds exclude personal Skills, local configuration, tests, sessions, memory, and run logs.
 
 ## Tech stack
 
