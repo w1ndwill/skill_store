@@ -12,6 +12,10 @@ dist/
 # App runtime
 config.json
 chat_sessions.json
+agent_memory.json
+agent_tasks.json
+agent_runs.jsonl
+agent_backups/
 
 # Claude
 .claude/

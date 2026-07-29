@@ -1,6 +1,6 @@
 # SkillHub 使用说明书
 
-> 适用版本：3.1.2
+> 适用版本：3.2.0
 >
 > 运行平台：Windows
 >
@@ -278,6 +278,19 @@ collection\
 - 原始 Skill 仍保存在上游快照中。
 - AI 不会执行导入包中的脚本、Hook 或 MCP 服务。
 
+### 6.5 双语界面说明
+
+在设置中开启“导入时生成双语说明”后，SkillHub 会识别导入 Skill 的标题与说明语言，并生成另一种界面语言的显示文本：
+
+- 英文 Skill 在中文界面显示中文标题和说明；
+- 中文 Skill 在英文界面显示英文标题和说明；
+- 只向已配置的兼容 OpenAI 接口发送标题与说明，不发送 Skill 正文或资源文件；
+- 译文保存在 `<全局库>\.skill-hub\display-localizations.json`，不会写入或改写 `SKILL.md`；
+- 原始标题或说明发生变化后，旧译文自动失效，避免显示与当前 Skill 不一致；
+- API 未配置或翻译失败时，导入继续完成，界面回退到原始说明。
+
+此开关与“导入时使用 AI 优化”相互独立。前者只生成界面显示字段，后者可能改写暂存的入口文档并要求审阅差异。
+
 ## 7. 全局库管理
 
 ### 7.1 新建与编辑
@@ -413,16 +426,35 @@ collection\
 
 撤销只针对最近一次事务，不是完整的版本历史。重要项目仍应使用 Git 管理项目文件。
 
-## 12. AI 技能顾问
+## 12. SkillOps Agent
 
-![AI 技能顾问](screenshots/ai-assistant.png)
+![SkillOps Agent 工作区](screenshots/ai-assistant.png)
 
-AI 技能顾问可以：
+SkillOps Agent 面向 AI 编程 Skill 的生命周期管理。它不是普通聊天助手：每次模型请求都会注册工具 JSON Schema，模型返回 `tool_calls` 后，后端验证工具名称和参数、执行工具、把观察结果作为 `tool` 消息反馈给模型，再继续决策。单次任务默认最多执行 32 轮；连续 4 次返回相同工具决策时会判断为无进展循环并提前停止，兼顾复杂任务完成度和失控保护。
 
-- 根据需求生成 Skill 草稿；
-- 检查现有 Skill 的冲突、重复和缺口；
-- 整理已有规约；
-- 结合联网搜索结果补充上下文。
+Agent 可自主调用：
+
+- `search_skills`：按名称、描述、分类和标签检索全局 Skill；
+- `inspect_skill`：在全局 Skill 库边界内读取入口元数据和必要内容；
+- `audit_skill_library`：以确定性规则检查缺少元数据、重复、触发范围重叠和格式风险；
+- `web_research`：联网检索规范并返回标题、摘要和链接；
+- `fetch_skillhub_install_guide`：只读取固定的 `https://skillhub.cn/install/skillhub.md` 官方安装文档，不接受任意 URL；
+- `search_skillhub_catalog`：搜索 SkillHub 官方公开目录，返回精确 slug、来源、版本和风险相关元数据；
+- `preview_skillhub_catalog_install`：下载精确 slug 的官方 ZIP，在隔离区做路径、大小、入口和风险检查，并锁定包哈希与文件树哈希；
+- `preview_remote_skill_install`：从公开 GitHub 仓库获取指定的原始 `SKILL.md`，校验 Frontmatter 并以 SHA-256 锁定安装内容，仅生成预览；
+- `preview_remote_skill_collection`：下载公开 GitHub 仓库快照，扫描 `skills/*/SKILL.md`，以一个集合预览全部子 Skill；
+- `draft_skill_change`：生成只读变更草案和差异；
+- `preview_project_sync`：复用现有安全同步预览；
+- `apply_skillhub_catalog_install`、`apply_remote_skill_collection`、`apply_remote_skill_install`、`apply_skill_change`、`apply_project_sync`：等待用户明确批准后才执行，并在写入前重新校验预览内容；
+- `recall_memory`、`remember_memory`：按当前任务读取或保存结构化记忆。
+
+右侧执行面板显示当前阶段、工具时间线、等待批准的操作、最终状态以及本次使用的记忆。普通工具记录只展示状态、经过筛选的关键参数、结果数量或错误摘要，不展开网页搜索正文和完整 JSON；界面最多保留最近 14 条，较早记录显示为省略数量。写操作审批区域仍展示核对所需的参数摘要。它不展示隐藏思维链。暂停任务会持久化，软件重启后仍可批准、拒绝或恢复。
+
+当用户目标明确要求安装、导入、保存或同步，且预览已经成功时，Agent 必须调用匹配的 `apply_` 工具进入审批门。模型如果只在自然语言中询问“是否批准”，运行时会追加策略纠正并继续决策；连续纠正后仍不调用写工具则以失败结束，不会把未安装的任务标记为完成。预览若发现同名目标，则不自动进入写入：用户必须选择替换、保留两个版本或取消。
+
+对话区支持直接框选文字和 `Ctrl+C`，每条消息与代码块也提供独立复制按钮；标题栏可以复制当前完整会话，生成 Skill 的预览区可以复制原始 Markdown。异步剪贴板接口不可用时会自动使用 WebView 兼容的本地复制方式。执行记录面板可从标题栏收起，输入框随内容自动增高，并支持 `Enter` 发送、`Shift+Enter` 换行及中文输入法组合状态保护。
+
+结构化记忆分为项目事实、用户偏好和历史决策。记忆按相关性注入，不会无条件载入全部历史；可以从界面查看、关闭或清理。聊天会话仍由 `chat_sessions.json` 独立保存。
 
 需要在设置中提供：
 
@@ -431,6 +463,22 @@ AI 技能顾问可以：
 - 兼容 OpenAI Chat Completions 的 API 地址。
 
 API Key 保存到本地配置，界面只显示末尾提示。AI 功能是可选项；未配置时，本地导入、分类、集合和项目同步仍可正常使用。
+
+所选模型和 API 必须支持 Function Calling。接口明确拒绝 `tools` 或 `tool_choice` 时，工作区会提示“不支持工具调用”，不会伪造模型自主选择工具。
+
+### 12.1 仓库集合边界样例
+
+`Leonxlnx/taste-skill` 是集合边界测试样例：仓库的 `skills/` 下包含多个独立子目录，每个目录通过自身 `SKILL.md` Frontmatter 声明安装名。目标只给出仓库地址时，Agent 必须生成集合预览，不能只安装默认 `design-taste-frontend`；只有目标明确指定某个安装名时，才使用单 Skill 预览。集合中已存在且内容相同的子 Skill 记为重复项，其余子项统一进入一次写入审批。
+
+### 12.2 SkillHub 官方目录安装
+
+当目标引用 `skillhub.cn/install/skillhub.md` 时，Agent 先读取固定官方文档，再用官方公开目录搜索精确 slug。下载包只在隔离区解压，不执行包内脚本、Hook 或安装命令。预览展示来源、版本、包 SHA-256、文件树 SHA-256、文件数量、风险摘要和目标冲突状态。批准后复制的必须是同一棵哈希锁定文件树。
+
+官方目录中的本地化说明会写入 `<全局库>\.skill-hub\display-localizations.json`，界面按当前语言使用；原始 `SKILL.md` 保持不变。
+
+### 12.3 单实例运行
+
+Windows 版在创建窗口前获取当前用户会话内的命名互斥体。已有 SkillHub 运行时，再次启动会唤醒已有窗口并立即退出；正常退出或异常终止后，Windows 会自动释放互斥体，不会留下阻止后续启动的锁文件。
 
 ## 13. 本地数据位置
 
@@ -441,9 +489,13 @@ API Key 保存到本地配置，界面只显示末尾提示。AI 功能是可选
 ```text
 config.json
 chat_sessions.json
+agent_memory.json
+agent_tasks.json
+agent_runs.jsonl
+agent_backups\
 ```
 
-其中可能包含本地项目列表、AI 服务配置和会话记录。不要把真实配置提交到公开仓库。
+其中可能包含本地项目列表、AI 服务配置、会话、Agent 记忆、暂停任务、脱敏运行记录和写入备份。Agent 记录不保存 API Key、完整敏感文件或隐藏思维链。这些文件和目录均不进入 Git 或发行包；不要手工把真实配置提交到公开仓库。
 
 ### 13.2 全局库状态
 

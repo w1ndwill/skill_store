@@ -25,6 +25,7 @@ let apiBase = 'https://api.deepseek.com/v1';
 let hasAiKey = false;
 let apiKeyHint = '';
 let aiImportOptimization = false;
+let aiDisplayTranslation = false;
 let aiGeneratedSkill = null; // cached AI result
 let activeCategoryFilter = null; // active category filter (null = show all)
 let searchRenderTimer = null;
@@ -208,7 +209,7 @@ const locales = {
     statusPendingUnmount: '待移除',
     statusUnloaded: '未装载',
     statusReadonly: '未选择项目',
-    btnAI: 'AI 助手',
+    btnAI: 'SkillOps Agent',
     aiWebSearch: '联网检索',
     aiGenerate: '生成技能',
     btnViewSkill: '查看文档',
@@ -320,7 +321,7 @@ const locales = {
     statusPendingUnmount: 'Pending Removal',
     statusUnloaded: 'Unloaded',
     statusReadonly: 'No Project Selected',
-    btnAI: 'AI Assistant',
+    btnAI: 'SkillOps Agent',
     aiWebSearch: 'Web search',
     aiGenerate: 'Generate Skill',
     btnViewSkill: 'View Docs',
@@ -513,6 +514,7 @@ async function fetchConfig() {
     hasAiKey = Boolean(config.has_ai_key);
     apiKeyHint = config.api_key_hint || '';
     aiImportOptimization = Boolean(config.ai_import_optimization);
+    aiDisplayTranslation = Boolean(config.ai_display_translation);
 
     applyTheme(currentTheme);
     applyLanguage(currentLanguage);
@@ -545,8 +547,7 @@ function applyLanguage(lang) {
   document.getElementById('btn-import-skill').innerHTML = `<i data-lucide="download"></i> ${lang === 'zh' ? '导入' : 'Import'}`;
   document.querySelector('#btn-ai-search span:not(.nav-status-dot)').textContent = t.btnAI;
   document.querySelector('#nav-library span:not(.nav-count)').textContent = lang === 'zh' ? '技能库' : 'Skill Library';
-  document.getElementById('ai-web-search-label').textContent = t.aiWebSearch;
-  document.getElementById('ai-generate-label').textContent = t.aiGenerate;
+  document.getElementById('ai-modal-title').textContent = 'SkillOps Agent';
   document.querySelector('.sidebar-section .section-title h2').textContent = t.headingProjects;
   document.getElementById('sidebar-settings-text').textContent = t.btnSettings;
 
@@ -611,6 +612,12 @@ function applyLanguage(lang) {
   document.getElementById('settings-desc-ai-import').textContent = lang === 'zh'
     ? '开启后先完成本地体检，再调用 AI 优化入口文档；导入前会显示差异并要求确认。'
     : 'Runs local validation, then asks AI to optimize the entry document; the diff must be reviewed and accepted before import.';
+  document.getElementById('settings-label-ai-display-translation').textContent = lang === 'zh'
+    ? '导入时生成双语说明'
+    : 'Generate bilingual descriptions on import';
+  document.getElementById('settings-desc-ai-display-translation').textContent = lang === 'zh'
+    ? '仅将 Skill 标题和说明发送到已配置的 AI；翻译只用于界面显示，不修改 SKILL.md。'
+    : 'Sends only the Skill title and description to the configured AI. Translations are display-only and never modify SKILL.md.';
   document.getElementById('settings-label-aimodel').textContent = t.settingsLabelAimodel;
   document.getElementById('settings-desc-aimodel').textContent = t.settingsDescAimodel;
   document.getElementById('btn-test-connection').innerHTML = `<i data-lucide="zap" style="width:13px;height:13px;"></i> ${t.btnTestConnection}`;
@@ -621,6 +628,9 @@ function applyLanguage(lang) {
   renderSkillsGrid();
   updateStatistics();
   updateAIConfigurationIndicators();
+  if (typeof updateAgentDialogControls === 'function') {
+    updateAgentDialogControls();
+  }
   lucide.createIcons();
 }
 
@@ -1162,6 +1172,35 @@ window.handleSelectCategory = function(canonicalCat) {
   renderSkillsGrid();
 };
 
+// COLLECTION_PROJECT_STATE_HELPER_START
+function resolveCollectionProjectState(collectionMembers, statusMap, enabledSkills) {
+  const members = Array.isArray(collectionMembers) ? collectionMembers : [];
+  const activeMembers = members.filter(
+    member => member.collection?.effective_enabled
+  );
+  // A fully disabled collection still needs all physical member states so the
+  // UI can distinguish "not installed" from files that are genuinely pending removal.
+  const observedMembers = activeMembers.length ? activeMembers : members;
+  const memberStatuses = observedMembers.map(
+    member => statusMap[member.filename] || 'unloaded'
+  );
+  let physicalStatus = 'unloaded';
+  if (memberStatuses.length && memberStatuses.every(status => status === 'synced')) {
+    physicalStatus = 'synced';
+  } else if (
+    memberStatuses.some(status => status === 'synced' || status === 'out_of_sync')
+  ) {
+    physicalStatus = 'out_of_sync';
+  }
+  return {
+    physicalStatus,
+    isLocallyEnabled: activeMembers.length > 0 && activeMembers.every(
+      member => enabledSkills.has(member.filename)
+    )
+  };
+}
+// COLLECTION_PROJECT_STATE_HELPER_END
+
 function renderSkillsGrid() {
   const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
   let filtered = buildDisplaySkills();
@@ -1241,22 +1280,13 @@ function renderSkillsGrid() {
       let physicalStatus = statusMap[skill.filename] || 'unloaded';
       let isLocallyEnabled = enabledSkills.has(skill.filename);
       if (skill.is_collection) {
-        const activeMembers = skill.collection_members.filter(
-          member => member.collection?.effective_enabled
+        const collectionState = resolveCollectionProjectState(
+          skill.collection_members,
+          statusMap,
+          enabledSkills
         );
-        const memberStatuses = activeMembers.map(
-          member => statusMap[member.filename] || 'unloaded'
-        );
-        isLocallyEnabled = activeMembers.length > 0 && activeMembers.every(
-          member => enabledSkills.has(member.filename)
-        );
-        if (memberStatuses.length && memberStatuses.every(status => status === 'synced')) {
-          physicalStatus = 'synced';
-        } else if (memberStatuses.length && memberStatuses.every(status => status === 'unloaded')) {
-          physicalStatus = 'unloaded';
-        } else {
-          physicalStatus = 'out_of_sync';
-        }
+        isLocallyEnabled = collectionState.isLocallyEnabled;
+        physicalStatus = collectionState.physicalStatus;
       }
 
       if (isLocallyEnabled) {
@@ -1280,9 +1310,9 @@ function renderSkillsGrid() {
       badgeHTML = `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '可用' : 'Available'}</span>`;
     }
 
-    // Preserve source semantics; locale only changes generic interface text.
-    const resolvedTitle = skill.title;
-    let resolvedDesc = skill.description;
+    // Display translations are metadata-only; the source SKILL.md stays intact.
+    const resolvedTitle = skill.display_title || skill.title;
+    let resolvedDesc = skill.display_description || skill.description;
     if (skill.description === '此技能暂无详细描述信息。') {
       resolvedDesc = locales[currentLanguage].defaultDesc;
     }
@@ -1850,6 +1880,19 @@ function formatImportPreview(preview) {
     `${isZh ? '类型' : 'Type'}: ${kindLabels[preview.kind] || preview.kind}`,
     `${isZh ? '处理方式' : 'Processing'}: ${processingMode}`
   ];
+  if (preview.display_translation_used) {
+    lines.push(
+      `${isZh ? '界面说明' : 'UI description'}: ${
+        isZh ? '已生成中英双语显示元数据（不修改源文件）' : 'Bilingual display metadata generated (source unchanged)'
+      }`
+    );
+  } else if (preview.display_translation_requested) {
+    lines.push(
+      `${isZh ? '界面说明' : 'UI description'}: ${
+        isZh ? '翻译未生成，将显示原始说明' : 'Translation unavailable; the original metadata will be shown'
+      }`
+    );
+  }
   if (preview.kind === 'collection') {
     lines.push(
       `${isZh ? '集合内容' : 'Collection'}: ${preview.collection_count} ${
@@ -1877,6 +1920,9 @@ function formatImportPreview(preview) {
       };
       const status = statuses[item.action] || statuses.install;
       lines.push(`• ${item.source_name}: ${status}`);
+      if (item.display_language === currentLanguage && item.display_title) {
+        lines.push(`  ${isZh ? '显示为' : 'Displayed as'}: ${item.display_title}`);
+      }
     });
   } else {
     lines.splice(
@@ -1884,6 +1930,12 @@ function formatImportPreview(preview) {
       0,
       `${isZh ? '导入为' : 'Import as'}: ${preview.active_name}`
     );
+    if (preview.display_language === currentLanguage && preview.display_title) {
+      lines.push(
+        `${isZh ? '显示为' : 'Displayed as'}: ${preview.display_title}`,
+        `${isZh ? '说明' : 'Description'}: ${preview.display_description}`
+      );
+    }
   }
   if (preview.replace_existing) {
     lines.push(
@@ -1959,8 +2011,8 @@ async function handleImportSkill() {
   const selection = await showCustomDialog({
     title: isZh ? '导入技能' : 'Import Skill',
     message: isZh
-      ? `基础导入始终使用本地规则。当前模式：${aiImportOptimization && hasAiKey ? '本地体检 + AI 优化' : '本地体检'}。请选择 Markdown/ZIP 文件、单个技能文件夹，或包含 skills/*/SKILL.md 的技能集合。`
-      : `Local validation always runs. Current mode: ${aiImportOptimization && hasAiKey ? 'Local + AI optimization' : 'Local validation'}. Select a Markdown/ZIP file, one skill folder, or a collection containing skills/*/SKILL.md.`,
+      ? `基础导入始终使用本地规则。当前模式：${aiImportOptimization && hasAiKey ? '本地体检 + AI 优化' : '本地体检'}${aiDisplayTranslation && hasAiKey ? ' + 双语界面说明' : ''}。请选择 Markdown/ZIP 文件、单个技能文件夹，或包含 skills/*/SKILL.md 的技能集合。`
+      : `Local validation always runs. Current mode: ${aiImportOptimization && hasAiKey ? 'Local + AI optimization' : 'Local validation'}${aiDisplayTranslation && hasAiKey ? ' + bilingual UI descriptions' : ''}. Select a Markdown/ZIP file, one skill folder, or a collection containing skills/*/SKILL.md.`,
     emoji: '📥',
     confirmText: isZh ? '选择文件' : 'Choose File',
     secondaryText: isZh ? '选择文件夹' : 'Choose Folder',
@@ -2709,6 +2761,7 @@ function openSettingsModal() {
   document.getElementById('settings-apikey').value = '';
   document.getElementById('settings-apikey').type = 'password';
   document.getElementById('settings-ai-import-optimization').checked = aiImportOptimization;
+  document.getElementById('settings-ai-display-translation').checked = aiDisplayTranslation;
   updateAIConfigurationIndicators();
 
   const selectedLanguageChoice = document.querySelector(
@@ -2751,7 +2804,8 @@ async function handleSaveSettings() {
       language: settingsLanguage.value,
       theme: settingsTheme.value,
       default_scan_dir: settingsScanDir.value,
-      ai_import_optimization: document.getElementById('settings-ai-import-optimization').checked
+      ai_import_optimization: document.getElementById('settings-ai-import-optimization').checked,
+      ai_display_translation: document.getElementById('settings-ai-display-translation').checked
     };
     const result = await window.pywebview.api.save_settings(settings);
 
@@ -2778,6 +2832,7 @@ async function handleSaveSettings() {
     currentTheme = result.theme;
     defaultScanDir = result.default_scan_dir;
     aiImportOptimization = Boolean(result.ai_import_optimization);
+    aiDisplayTranslation = Boolean(result.ai_display_translation);
     skillsDirPath.textContent = result.skills_dir;
     skillsDirPath.title = result.skills_dir;
 
@@ -2803,20 +2858,105 @@ const aiChatInput = document.getElementById('ai-chat-input');
 const aiSendBtn = document.getElementById('ai-send-btn');
 const aiSkillPreview = document.getElementById('ai-skill-preview');
 const aiSkillContent = document.getElementById('ai-skill-content');
-const aiWebSearchToggle = document.getElementById('ai-web-search-toggle');
 const aiSessionList = document.getElementById('ai-session-list');
+const agentStatusBadge = document.getElementById('agent-status-badge');
+const agentPhase = document.getElementById('agent-phase');
+const agentRunId = document.getElementById('agent-run-id');
+const agentResumeButton = document.getElementById('agent-resume-button');
+const agentTimeline = document.getElementById('agent-timeline');
+const agentApprovalCard = document.getElementById('agent-approval-card');
+const agentApprovalTool = document.getElementById('agent-approval-tool');
+const agentApprovalArguments = document.getElementById('agent-approval-arguments');
+const agentMemoryUsed = document.getElementById('agent-memory-used');
+const agentMemoryEnabled = document.getElementById('agent-memory-enabled');
+const agentMemoryOverview = document.getElementById('agent-memory-overview');
+const agentPanelToggle = document.getElementById('agent-panel-toggle');
+const aiCopyConversationButton = document.getElementById('ai-copy-conversation');
+const aiChatInputHint = document.getElementById('ai-chat-input-hint');
 
 let aiChatHistory = [];
 let aiIsLoading = false;
 let currentSessionId = null;
 let allSessions = [];
+let currentAgentRunId = null;
+let agentPanelCollapsed = false;
+
+function updateAgentDialogControls() {
+  const isZh = currentLanguage === 'zh';
+  const modalContainer = aiModal?.querySelector('.ai-modal-container');
+  modalContainer?.classList.toggle('agent-panel-collapsed', agentPanelCollapsed);
+  if (agentPanelToggle) {
+    const label = agentPanelCollapsed
+      ? (isZh ? '展开记录' : 'Show activity')
+      : (isZh ? '收起记录' : 'Hide activity');
+    const title = agentPanelCollapsed
+      ? (isZh ? '展开执行记录' : 'Show Agent activity')
+      : (isZh ? '收起执行记录' : 'Hide Agent activity');
+    agentPanelToggle.innerHTML = `<i data-lucide="${
+      agentPanelCollapsed ? 'panel-right-open' : 'panel-right-close'
+    }"></i><span>${label}</span>`;
+    agentPanelToggle.title = title;
+    agentPanelToggle.setAttribute('aria-label', title);
+    agentPanelToggle.setAttribute(
+      'aria-expanded',
+      agentPanelCollapsed ? 'false' : 'true'
+    );
+  }
+  if (aiCopyConversationButton) {
+    const label = isZh ? '复制对话' : 'Copy chat';
+    aiCopyConversationButton.innerHTML = `<i data-lucide="copy"></i><span>${label}</span>`;
+    aiCopyConversationButton.title = isZh ? '复制当前对话' : 'Copy current conversation';
+    aiCopyConversationButton.setAttribute('aria-label', aiCopyConversationButton.title);
+    aiCopyConversationButton.disabled = aiChatHistory.length === 0;
+  }
+  if (aiChatInputHint) {
+    aiChatInputHint.textContent = isZh
+      ? 'Enter 发送 · Shift+Enter 换行'
+      : 'Enter to send · Shift+Enter for a new line';
+  }
+  if (aiSendBtn) {
+    aiSendBtn.title = isZh ? '发送' : 'Send';
+    aiSendBtn.setAttribute('aria-label', aiSendBtn.title);
+  }
+  lucide.createIcons();
+}
+
+function toggleAgentActivityPanel() {
+  agentPanelCollapsed = !agentPanelCollapsed;
+  try {
+    localStorage.setItem(
+      'skillhub.agentPanelCollapsed',
+      agentPanelCollapsed ? '1' : '0'
+    );
+  } catch (_error) {
+    // Panel state persistence is optional.
+  }
+  updateAgentDialogControls();
+}
+
+function resizeAgentChatInput() {
+  if (!aiChatInput) return;
+  aiChatInput.style.height = 'auto';
+  aiChatInput.style.height = `${Math.min(aiChatInput.scrollHeight, 140)}px`;
+}
+
+aiChatInput?.addEventListener('input', resizeAgentChatInput);
 
 async function openAIModal() {
   aiIsLoading = false;
   aiGeneratedSkill = null;
   aiSkillPreview.style.display = 'none';
+  try {
+    agentPanelCollapsed = (
+      localStorage.getItem('skillhub.agentPanelCollapsed') === '1'
+    );
+  } catch (_error) {
+    agentPanelCollapsed = false;
+  }
+  updateAgentDialogControls();
   activateModal(aiModal, aiChatInput);
   await loadSessionList(true);
+  await refreshAgentMemory();
   lucide.createIcons();
   setTimeout(() => aiChatInput.focus(), 200);
 }
@@ -2880,6 +3020,7 @@ async function switchToSession(sid, saveBeforeSwitch = true) {
 
   renderSessionList();
   renderChatHistory();
+  await loadAgentRunForSession();
 }
 
 async function createNewSession(saveBeforeCreate = true) {
@@ -2890,6 +3031,7 @@ async function createNewSession(saveBeforeCreate = true) {
   aiChatHistory = [];
   aiSkillPreview.style.display = 'none';
   aiGeneratedSkill = null;
+  currentAgentRunId = null;
   allSessions.unshift({
     id: currentSessionId,
     title: currentLanguage === 'zh' ? '新会话' : 'New Chat',
@@ -2897,6 +3039,7 @@ async function createNewSession(saveBeforeCreate = true) {
   });
   renderSessionList();
   renderChatHistory();
+  resetAgentRunPanel();
 }
 
 async function deleteSession(sid) {
@@ -2953,9 +3096,9 @@ function renderChatHistory() {
   if (aiChatHistory.length === 0) {
     aiChatMessages.innerHTML = `
       <div class="ai-chat-empty">
-        <div class="ai-empty-mark"><i data-lucide="sparkles"></i></div>
-        <h4>${currentLanguage === 'zh' ? '从一个具体任务开始' : 'Start with a concrete task'}</h4>
-        <p>${currentLanguage === 'zh' ? '描述项目和目标，AI 会先帮你梳理规则，再生成可保存的 Skill。' : 'Describe your project and goal. AI will clarify the rules before generating a reusable Skill.'}</p>
+        <div class="ai-empty-mark"><i data-lucide="bot"></i></div>
+        <h4>${currentLanguage === 'zh' ? '给 SkillOps Agent 一个目标' : 'Give SkillOps Agent a goal'}</h4>
+        <p>${currentLanguage === 'zh' ? 'Agent 会自主选择检查、检索和草案工具；写入前始终等待你的批准。' : 'The agent chooses inspection, research, and drafting tools; writes always wait for approval.'}</p>
         <div class="ai-prompt-suggestions">
           <button type="button" onclick="useAISuggestion('根据当前项目技术栈，帮我生成一份代码审查 Skill')"><i data-lucide="scan-search"></i><span><strong>生成代码审查规范</strong><small>从技术栈和风险点开始</small></span></button>
           <button type="button" onclick="useAISuggestion('检查现有 Skill 是否有冲突、重复或不清晰的规则')"><i data-lucide="list-checks"></i><span><strong>检查现有 Skill</strong><small>发现冲突、重复和缺口</small></span></button>
@@ -2971,6 +3114,7 @@ function renderChatHistory() {
   aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
   const generateButton = document.getElementById('ai-btn-generate');
   if (generateButton) generateButton.disabled = aiChatHistory.length === 0 || aiIsLoading;
+  updateAgentDialogControls();
 }
 
 // --- Chat interaction ---
@@ -2978,14 +3122,342 @@ function renderChatHistory() {
 function useAISuggestion(prompt) {
   if (!aiChatInput) return;
   aiChatInput.value = prompt;
+  resizeAgentChatInput();
   aiChatInput.focus();
   aiChatInput.setSelectionRange(prompt.length, prompt.length);
 }
 
 function handleChatKeydown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
     e.preventDefault();
     sendAIMessage();
+  }
+}
+
+function resetAgentRunPanel() {
+  currentAgentRunId = null;
+  agentStatusBadge.textContent = currentLanguage === 'zh' ? '空闲' : 'Idle';
+  agentStatusBadge.className = 'agent-status-badge idle';
+  agentPhase.textContent = currentLanguage === 'zh' ? '等待目标' : 'Waiting for a goal';
+  agentRunId.textContent = currentLanguage === 'zh' ? '尚未开始运行' : 'No run started';
+  agentResumeButton.hidden = true;
+  agentApprovalCard.hidden = true;
+  agentTimeline.innerHTML = `<div class="agent-empty-note">${
+    currentLanguage === 'zh'
+      ? '运行后显示计划、工具调用、观察结果、批准和错误。'
+      : 'Plans, tool calls, observations, approvals, and errors appear here.'
+  }</div>`;
+  agentMemoryUsed.innerHTML = `<div class="agent-empty-note">${
+    currentLanguage === 'zh' ? '本次尚未使用记忆。' : 'No memory used in this run.'
+  }</div>`;
+}
+
+function renderAgentWorkingState() {
+  agentStatusBadge.textContent = currentLanguage === 'zh' ? '运行中' : 'Running';
+  agentStatusBadge.className = 'agent-status-badge running';
+  agentPhase.textContent = currentLanguage === 'zh' ? '分析目标并选择工具' : 'Analyzing goal and selecting tools';
+  agentRunId.textContent = currentLanguage === 'zh' ? '正在创建运行记录…' : 'Creating run record…';
+  agentResumeButton.hidden = true;
+  agentApprovalCard.hidden = true;
+  agentTimeline.innerHTML = `
+    <div class="agent-timeline-item plan">
+      <span class="agent-timeline-dot"></span>
+      <div><strong>${currentLanguage === 'zh' ? '规划' : 'Plan'}</strong>
+      <p>${currentLanguage === 'zh' ? '检索相关记忆并选择最小必要工具。' : 'Recall relevant memory and choose the minimum necessary tools.'}</p></div>
+    </div>`;
+}
+
+function agentStatusLabel(status) {
+  const labels = {
+    running: currentLanguage === 'zh' ? '运行中' : 'Running',
+    waiting_approval: currentLanguage === 'zh' ? '待批准' : 'Approval',
+    completed: currentLanguage === 'zh' ? '已完成' : 'Completed',
+    failed: currentLanguage === 'zh' ? '失败' : 'Failed',
+    rejected: currentLanguage === 'zh' ? '已拒绝' : 'Rejected',
+    max_steps: currentLanguage === 'zh' ? '已停止' : 'Stopped'
+  };
+  return labels[status] || status || (currentLanguage === 'zh' ? '空闲' : 'Idle');
+}
+
+function compactAgentText(value, maxLength = 140) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  return text.length > maxLength
+    ? `${text.slice(0, maxLength)}…`
+    : text;
+}
+
+function formatAgentArgumentSummary(argumentsSummary) {
+  const entries = Object.entries(argumentsSummary || {});
+  if (!entries.length) return '';
+  const visible = entries.slice(0, 3).map(([key, value]) => {
+    if (value && typeof value === 'object') {
+      if (Number.isInteger(value.count)) {
+        return `${key}: ${value.count}`;
+      }
+      if (Number.isInteger(value.chars)) {
+        return `${key}: ${value.chars} chars`;
+      }
+      return key;
+    }
+    return `${key}: ${compactAgentText(value, 56)}`;
+  });
+  if (entries.length > visible.length) {
+    visible.push(`+${entries.length - visible.length}`);
+  }
+  return visible.join(' · ');
+}
+
+function formatAgentEvent(event) {
+  const typeLabels = {
+    plan: currentLanguage === 'zh' ? '规划' : 'Plan',
+    tool_call: currentLanguage === 'zh' ? '工具调用' : 'Tool call',
+    approval: currentLanguage === 'zh' ? '用户批准' : 'Approval',
+    error: currentLanguage === 'zh' ? '错误' : 'Error',
+    final: currentLanguage === 'zh' ? '最终回答' : 'Final'
+  };
+  let title = typeLabels[event.type] || event.type;
+  if (event.tool) title += ` · ${event.tool}`;
+  let detail = compactAgentText(event.summary || '', 180);
+  if (event.type === 'tool_call') {
+    const statusLabels = {
+      ok: currentLanguage === 'zh' ? '成功' : 'Succeeded',
+      error: currentLanguage === 'zh' ? '失败' : 'Failed',
+      running: currentLanguage === 'zh' ? '执行中' : 'Running',
+      waiting_approval: currentLanguage === 'zh' ? '等待批准' : 'Awaiting approval'
+    };
+    const segments = [statusLabels[event.status] || event.status || ''];
+    const argumentText = formatAgentArgumentSummary(event.arguments);
+    if (argumentText) segments.push(argumentText);
+    if (event.result_summary) {
+      segments.push(compactAgentText(event.result_summary, 150));
+    }
+    if (Number.isInteger(event.duration_ms)) {
+      segments.push(`${event.duration_ms} ms`);
+    }
+    detail = segments.filter(Boolean).join(' · ');
+  } else if (event.type === 'approval') {
+    detail = compactAgentText(
+      `${event.decision || ''}${event.reason ? ` · ${event.reason}` : ''}`,
+      180
+    );
+  }
+  return `
+    <div class="agent-timeline-item ${escapeHtml(event.type || '')}">
+      <span class="agent-timeline-dot"></span>
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(String(detail || ''))}</p>
+      </div>
+    </div>`;
+}
+
+function renderAgentRun(result) {
+  if (!result || result.error) return;
+  currentAgentRunId = result.run_id || currentAgentRunId;
+  const status = result.status || 'idle';
+  agentStatusBadge.textContent = agentStatusLabel(status);
+  agentStatusBadge.className = `agent-status-badge ${status}`;
+  agentPhase.textContent = result.phase || agentStatusLabel(status);
+  agentRunId.textContent = currentAgentRunId
+    ? `${currentAgentRunId.slice(0, 12)} · ${result.step_count || 0}/${result.max_steps || 32} steps`
+    : (currentLanguage === 'zh' ? '尚未开始运行' : 'No run started');
+  agentResumeButton.hidden = status !== 'running';
+  const timeline = result.timeline || [];
+  const maxVisibleTimelineEvents = 14;
+  const visibleTimeline = timeline.slice(-maxVisibleTimelineEvents);
+  const omittedTimelineCount = timeline.length - visibleTimeline.length;
+  agentTimeline.innerHTML = timeline.length
+    ? `${
+        omittedTimelineCount > 0
+          ? `<div class="agent-timeline-omitted">${
+              currentLanguage === 'zh'
+                ? `已省略较早的 ${omittedTimelineCount} 条记录`
+                : `${omittedTimelineCount} earlier events omitted`
+            }</div>`
+          : ''
+      }${visibleTimeline.map(formatAgentEvent).join('')}`
+    : `<div class="agent-empty-note">${currentLanguage === 'zh' ? '暂无工具记录。' : 'No tool events.'}</div>`;
+
+  const pending = result.pending_approval;
+  agentApprovalCard.hidden = !pending;
+  if (pending) {
+    agentApprovalTool.textContent = `${pending.tool} ${
+      currentLanguage === 'zh' ? '将执行真实写操作，请核对参数摘要。' : 'will perform a real write. Review the summary.'
+    }`;
+    agentApprovalArguments.textContent = JSON.stringify(pending.arguments || {}, null, 2);
+  }
+
+  const memories = result.memory_used || [];
+  agentMemoryUsed.innerHTML = memories.length
+    ? memories.map(memory => `
+        <div class="agent-memory-item">
+          <span>${escapeHtml(memory.kind || 'memory')}</span>
+          <p>${escapeHtml(memory.summary || '')}</p>
+        </div>`).join('')
+    : `<div class="agent-empty-note">${currentLanguage === 'zh' ? '本次未检索到相关记忆。' : 'No relevant memory recalled.'}</div>`;
+  lucide.createIcons();
+}
+
+async function loadAgentRunForSession() {
+  if (!currentSessionId) {
+    resetAgentRunPanel();
+    return;
+  }
+  try {
+    const tasks = await window.pywebview.api.agent_list_tasks();
+    const task = (tasks || []).find(item => item.session_id === currentSessionId);
+    if (!task) {
+      resetAgentRunPanel();
+      return;
+    }
+    const result = await window.pywebview.api.agent_get_task(task.run_id);
+    if (result && !result.error) renderAgentRun(result);
+  } catch (_error) {
+    resetAgentRunPanel();
+  }
+}
+
+async function approveAgentAction() {
+  if (!currentAgentRunId || aiIsLoading) return;
+  aiIsLoading = true;
+  aiSendBtn.disabled = true;
+  agentPhase.textContent = currentLanguage === 'zh' ? '执行已批准操作…' : 'Applying approved action…';
+  try {
+    const result = await window.pywebview.api.agent_approve(currentAgentRunId);
+    if (result.error) throw new Error(result.error);
+    renderAgentRun(result);
+    if (result.final_answer) {
+      appendChatBubble('ai', result.final_answer);
+      aiChatHistory.push({ role: 'assistant', content: result.final_answer });
+      await saveCurrentSession();
+      await loadSessionList(false);
+    }
+    await Promise.all([fetchSkills(), fetchProjects()]);
+  } catch (error) {
+    appendChatBubble('ai', '❌ ' + (error.message || error));
+  } finally {
+    aiIsLoading = false;
+    aiSendBtn.disabled = false;
+  }
+}
+
+async function resumeAgentRun() {
+  if (!currentAgentRunId || aiIsLoading) return;
+  aiIsLoading = true;
+  aiSendBtn.disabled = true;
+  agentResumeButton.hidden = true;
+  agentPhase.textContent = currentLanguage === 'zh' ? '正在恢复持久化任务…' : 'Resuming persisted task…';
+  try {
+    const result = await window.pywebview.api.agent_resume(currentAgentRunId);
+    if (result.error) throw new Error(result.error);
+    renderAgentRun(result);
+    if (result.final_answer) {
+      appendChatBubble('ai', result.final_answer);
+      aiChatHistory.push({ role: 'assistant', content: result.final_answer });
+      await saveCurrentSession();
+      await loadSessionList(false);
+    }
+  } catch (error) {
+    appendChatBubble('ai', '❌ ' + (error.message || error));
+  } finally {
+    aiIsLoading = false;
+    aiSendBtn.disabled = false;
+  }
+}
+
+async function rejectAgentAction() {
+  if (!currentAgentRunId || aiIsLoading) return;
+  const reason = await showCustomDialog({
+    title: currentLanguage === 'zh' ? '拒绝写操作' : 'Reject write action',
+    message: currentLanguage === 'zh'
+      ? '可以填写拒绝原因；该操作不会修改文件。'
+      : 'Optionally provide a reason. No file will be changed.',
+    emoji: '🛡️',
+    isPrompt: true,
+    placeholder: currentLanguage === 'zh' ? '例如：先调整草案范围' : 'For example: revise the draft scope',
+    confirmText: currentLanguage === 'zh' ? '拒绝操作' : 'Reject'
+  });
+  if (reason === null) return;
+  aiIsLoading = true;
+  aiSendBtn.disabled = true;
+  try {
+    const result = await window.pywebview.api.agent_reject(currentAgentRunId, reason || '');
+    if (result.error) throw new Error(result.error);
+    renderAgentRun(result);
+    appendChatBubble('ai', result.final_answer);
+    aiChatHistory.push({ role: 'assistant', content: result.final_answer });
+    await saveCurrentSession();
+    await loadSessionList(false);
+  } catch (error) {
+    appendChatBubble('ai', '❌ ' + (error.message || error));
+  } finally {
+    aiIsLoading = false;
+    aiSendBtn.disabled = false;
+  }
+}
+
+async function refreshAgentMemory() {
+  try {
+    const memory = await window.pywebview.api.agent_memory_view();
+    agentMemoryEnabled.checked = Boolean(memory.enabled);
+    const projects = memory.projects || [];
+    const preferences = memory.preferences || [];
+    const decisions = memory.decisions || [];
+    agentMemoryOverview.innerHTML = `
+      <div class="agent-memory-counts">
+        <span>${currentLanguage === 'zh' ? '项目' : 'Projects'} ${projects.length}</span>
+        <span>${currentLanguage === 'zh' ? '偏好' : 'Preferences'} ${preferences.length}</span>
+        <span>${currentLanguage === 'zh' ? '决策' : 'Decisions'} ${decisions.length}</span>
+      </div>
+      ${[...projects, ...preferences, ...decisions].slice(-8).reverse().map(item => `
+        <div class="agent-memory-item">
+          <span>${escapeHtml(item.kind || 'memory')}</span>
+          <p>${escapeHtml(item.summary || '')}</p>
+        </div>`).join('')}`;
+    lucide.createIcons();
+  } catch (error) {
+    agentMemoryOverview.textContent = String(error.message || error);
+  }
+}
+
+async function showAgentMemoryManager() {
+  await refreshAgentMemory();
+  document.getElementById('agent-memory-manager').open = true;
+}
+
+async function toggleAgentMemory(enabled) {
+  try {
+    const result = await window.pywebview.api.agent_memory_set_enabled(Boolean(enabled));
+    agentMemoryEnabled.checked = Boolean(result.enabled);
+    showToast(
+      result.enabled
+        ? (currentLanguage === 'zh' ? '结构化记忆已启用' : 'Memory enabled')
+        : (currentLanguage === 'zh' ? '结构化记忆已关闭' : 'Memory disabled'),
+      'success'
+    );
+  } catch (error) {
+    agentMemoryEnabled.checked = !enabled;
+    showToast(String(error.message || error), 'error');
+  }
+}
+
+async function clearAgentMemory() {
+  const confirmed = await showCustomDialog({
+    title: currentLanguage === 'zh' ? '清理结构化记忆' : 'Clear structured memory',
+    message: currentLanguage === 'zh'
+      ? '将删除项目记忆、用户偏好和决策记忆；聊天会话不会被删除。'
+      : 'Project, preference, and decision memory will be removed. Chat sessions stay intact.',
+    emoji: '🧹',
+    confirmText: currentLanguage === 'zh' ? '清理记忆' : 'Clear memory'
+  });
+  if (!confirmed) return;
+  try {
+    const result = await window.pywebview.api.agent_memory_clear();
+    if (result.error) throw new Error(result.error);
+    await refreshAgentMemory();
+    showToast(currentLanguage === 'zh' ? '结构化记忆已清理' : 'Memory cleared', 'success');
+  } catch (error) {
+    showToast(String(error.message || error), 'error');
   }
 }
 
@@ -2998,46 +3470,48 @@ async function sendAIMessage() {
 
   appendChatBubble('user', text);
   aiChatInput.value = '';
+  resizeAgentChatInput();
   aiChatHistory.push({ role: 'user', content: text });
-
-  if (aiWebSearchToggle.checked) {
-    try {
-      const sr = await window.pywebview.api.ai_web_search(text);
-      if (sr.results && sr.results.length > 0) {
-        const ctx = '以下是最新网络搜索结果（供参考）：\n' +
-          sr.results.map(r => `- [${r.title}](${r.href}): ${r.body.slice(0, 200)}`).join('\n');
-        aiChatHistory.push({ role: 'user', content: ctx });
-      }
-    } catch (e) {}
-  }
 
   const typingId = showTypingIndicator();
   aiIsLoading = true;
   aiSendBtn.setAttribute('disabled', 'true');
-  const generateButton = document.getElementById('ai-btn-generate');
-  if (generateButton) generateButton.disabled = true;
+  renderAgentWorkingState();
 
   try {
-    const result = await window.pywebview.api.ai_chat(
-      aiChatHistory.map(m => ({ role: m.role, content: m.content })),
-      'chat'
+    const result = await window.pywebview.api.agent_start(
+      text,
+      currentSessionId || '',
+      currentProjectPath || ''
     );
     removeTypingIndicator(typingId);
     if (result.error) {
       appendChatBubble('ai', '❌ ' + result.error);
+      agentStatusBadge.textContent = currentLanguage === 'zh' ? '失败' : 'Failed';
+      agentStatusBadge.className = 'agent-status-badge failed';
+      agentPhase.textContent = result.error;
+      agentRunId.textContent = currentLanguage === 'zh' ? '未创建运行' : 'Run not created';
     } else {
-      appendChatBubble('ai', result.reply);
-      aiChatHistory.push({ role: 'assistant', content: result.reply });
+      currentAgentRunId = result.run_id;
+      renderAgentRun(result);
+      if (result.final_answer) {
+        appendChatBubble('ai', result.final_answer);
+        aiChatHistory.push({ role: 'assistant', content: result.final_answer });
+      } else if (result.status === 'waiting_approval') {
+        appendChatBubble('ai', '需要你的批准才能继续执行右侧显示的写操作。');
+      }
     }
     await saveCurrentSession();
     await loadSessionList(false);
   } catch (e) {
     removeTypingIndicator(typingId);
     appendChatBubble('ai', '❌ ' + (e.message || e));
+    agentStatusBadge.textContent = currentLanguage === 'zh' ? '失败' : 'Failed';
+    agentStatusBadge.className = 'agent-status-badge failed';
+    agentPhase.textContent = String(e.message || e);
   } finally {
     aiIsLoading = false;
     aiSendBtn.removeAttribute('disabled');
-    if (generateButton) generateButton.disabled = aiChatHistory.length === 0;
     aiChatInput.focus();
   }
 }
@@ -3064,6 +3538,7 @@ async function handleAIGenerateSkill() {
     } else if (result.skill) {
       aiGeneratedSkill = result.skill;
       aiSkillContent.innerHTML = renderMarkdown(aiGeneratedSkill.content || '');
+      enhanceChatCodeBlocks(aiSkillContent);
       aiSkillPreview.style.display = 'block';
       aiChatHistory.push({ role: 'assistant', content: '✅ 技能已生成，请在下方预览并保存' });
       appendChatBubble('ai', '✅ 技能已生成！你可以在下方预览，满意后点击 **保存**。');
@@ -3077,6 +3552,11 @@ async function handleAIGenerateSkill() {
     aiIsLoading = false;
     if (generateButton) generateButton.disabled = aiChatHistory.length === 0;
   }
+}
+
+async function copyGeneratedSkillPreview(button) {
+  if (!aiGeneratedSkill?.content) return;
+  await copyAgentText(aiGeneratedSkill.content, button);
 }
 
 async function handleAISave() {
@@ -3177,12 +3657,150 @@ function toggleApiKeyVisibility() {
 
 // --- Chat UI Helpers ---
 
+async function writeClipboardText(text) {
+  const value = String(text ?? '');
+  if (!value) throw new Error('Nothing to copy');
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch (_error) {
+      // file:// WebView contexts can reject the async Clipboard API.
+    }
+  }
+
+  const activeElement = document.activeElement;
+  const selection = window.getSelection();
+  const savedRanges = [];
+  if (selection) {
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      savedRanges.push(selection.getRangeAt(index).cloneRange());
+    }
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } finally {
+    textarea.remove();
+    if (activeElement?.focus) activeElement.focus({ preventScroll: true });
+    if (selection && savedRanges.length) {
+      selection.removeAllRanges();
+      savedRanges.forEach(range => selection.addRange(range));
+    }
+  }
+  if (!copied) throw new Error('Clipboard unavailable');
+}
+
+async function copyAgentText(text, button = null) {
+  try {
+    await writeClipboardText(text);
+    if (button) {
+      const previous = button.innerHTML;
+      button.innerHTML = `<i data-lucide="check"></i><span>${
+        currentLanguage === 'zh' ? '已复制' : 'Copied'
+      }</span>`;
+      button.classList.add('copied');
+      lucide.createIcons();
+      setTimeout(() => {
+        if (!document.contains(button)) return;
+        button.innerHTML = previous;
+        button.classList.remove('copied');
+        lucide.createIcons();
+      }, 1400);
+    } else {
+      showToast(currentLanguage === 'zh' ? '已复制到剪贴板' : 'Copied to clipboard', 'success');
+    }
+    return true;
+  } catch (_error) {
+    showToast(
+      currentLanguage === 'zh'
+        ? '复制失败，请选中文本后按 Ctrl+C'
+        : 'Copy failed. Select the text and press Ctrl+C.',
+      'error'
+    );
+    return false;
+  }
+}
+
+function enhanceChatCodeBlocks(contentRoot) {
+  contentRoot.querySelectorAll('pre > code').forEach(code => {
+    const pre = code.parentElement;
+    if (!pre || pre.parentElement?.classList.contains('ai-chat-code-block')) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ai-chat-code-block';
+    pre.before(wrapper);
+    wrapper.appendChild(pre);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'ai-code-copy-button';
+    button.title = currentLanguage === 'zh' ? '复制代码' : 'Copy code';
+    button.setAttribute('aria-label', button.title);
+    button.innerHTML = `<i data-lucide="copy"></i><span>${
+      currentLanguage === 'zh' ? '复制' : 'Copy'
+    }</span>`;
+    button.addEventListener('click', () => copyAgentText(code.textContent || '', button));
+    wrapper.appendChild(button);
+  });
+}
+
+async function copyCurrentAgentConversation() {
+  const visibleMessages = Array.from(
+    aiChatMessages.querySelectorAll('.ai-chat-bubble')
+  ).map(bubble => ({
+    role: bubble.agentMessageRole,
+    content: bubble.agentMessageText,
+  })).filter(message => message.role && message.content);
+  const messages = visibleMessages.length ? visibleMessages : aiChatHistory;
+  if (!messages.length) {
+    showToast(currentLanguage === 'zh' ? '当前对话为空' : 'This conversation is empty', 'info');
+    return;
+  }
+  const transcript = messages.map(message => {
+    const role = message.role === 'user'
+      ? (currentLanguage === 'zh' ? '用户' : 'User')
+      : 'SkillOps Agent';
+    return `## ${role}\n\n${message.content || ''}`;
+  }).join('\n\n---\n\n');
+  await copyAgentText(transcript);
+}
+
 function appendChatBubble(role, text) {
   const div = document.createElement('div');
   div.className = `ai-chat-bubble ai-chat-${role}`;
-  div.innerHTML = `<div class="ai-chat-bubble-content">${renderMarkdown(text)}</div>`;
+  div.agentMessageRole = role;
+  div.agentMessageText = String(text ?? '');
+  const content = document.createElement('div');
+  content.className = 'ai-chat-bubble-content';
+  content.innerHTML = renderMarkdown(text);
+  div.appendChild(content);
+  enhanceChatCodeBlocks(content);
+
+  const actions = document.createElement('div');
+  actions.className = 'ai-chat-bubble-actions';
+  const copyButton = document.createElement('button');
+  copyButton.type = 'button';
+  copyButton.className = 'ai-chat-action-button';
+  copyButton.title = currentLanguage === 'zh' ? '复制此消息' : 'Copy message';
+  copyButton.setAttribute('aria-label', copyButton.title);
+  copyButton.innerHTML = `<i data-lucide="copy"></i><span>${
+    currentLanguage === 'zh' ? '复制' : 'Copy'
+  }</span>`;
+  copyButton.addEventListener('click', () => copyAgentText(text, copyButton));
+  actions.appendChild(copyButton);
+  div.appendChild(actions);
+
   aiChatMessages.appendChild(div);
   aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+  queueMicrotask(updateAgentDialogControls);
   lucide.createIcons();
 }
 
