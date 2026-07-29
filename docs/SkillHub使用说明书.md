@@ -8,6 +8,8 @@
 
 SkillHub 是一个本地运行的 AI Skill 管理工具。它把可复用 Skill 保存在统一的全局库中，再由使用者为不同项目选择所需内容。同步前可以预览新增、修改、删除和冲突；同步后，项目通过 `AGENTS.md` 与 `.agent/skills/` 向 AI 开发工具提供规则。
 
+3.2.0 没有另起炉灶开发一个独立 Agent 产品，而是在现有 SkillHub 上保留技能库、导入、集合、同步和回滚能力，将原 AI 助手改造成 SkillOps Agent。Agent 通过 Function Calling 自主选择有边界的工具，使用结构化本地记忆，并在安装、保存或同步前等待用户批准。
+
 本说明书介绍实际使用方法、Skill 类型、集合逻辑、项目同步机制、本地数据位置和常见问题。
 
 ## 1. 核心概念
@@ -90,7 +92,9 @@ pyinstaller --clean --noconfirm SkillHub.spec
 
 ## 3. 界面与查看模式
 
-![SkillHub 全局技能库](screenshots/skill-library.png)
+![SkillHub 中文全局技能库](screenshots/zh/skill-library.png)
+
+*图 1：v3.2.0 中文全局库模式。截图中的 Skill、项目路径和状态来自本地演示环境。*
 
 SkillHub 有两种主要查看方式：
 
@@ -135,7 +139,9 @@ SkillHub 只接受已经登记的项目路径。项目目录被移动或删除�
 4. 没有异常时执行同步。
 5. 同步完成后检查项目状态是否变为“已同步”。
 
-![项目 Skill 配置](screenshots/project-configuration.png)
+![项目 Skill 配置](screenshots/zh/project-configuration.png)
+
+*图 2：项目模式同时展示说明、分类、同步状态和启用开关，底部操作栏汇总待同步变化。*
 
 ## 5. 支持的 Skill 类型
 
@@ -330,7 +336,9 @@ collection\
 
 ## 8. 集合管理
 
-![Skill 集合管理](screenshots/collection-manager.png)
+![Skill 集合管理](screenshots/zh/collection-manager.png)
+
+*图 3：集合成员保持独立入口；未选择项目时只读查看，选择项目后再调整启用范围。*
 
 集合页用于控制成员是否可以参与项目配置。
 
@@ -428,7 +436,9 @@ collection\
 
 ## 12. SkillOps Agent
 
-![SkillOps Agent 工作区](screenshots/ai-assistant.png)
+![SkillOps Agent 工作区](screenshots/zh/skillops-agent.png)
+
+*图 4：真实只读运行在 2/32 步内完成；右侧是经过筛选的工具时间线、最终状态和相关记忆。*
 
 SkillOps Agent 面向 AI 编程 Skill 的生命周期管理。它不是普通聊天助手：每次模型请求都会注册工具 JSON Schema，模型返回 `tool_calls` 后，后端验证工具名称和参数、执行工具、把观察结果作为 `tool` 消息反馈给模型，再继续决策。单次任务默认最多执行 32 轮；连续 4 次返回相同工具决策时会判断为无进展循环并提前停止，兼顾复杂任务完成度和失控保护。
 
@@ -447,6 +457,12 @@ Agent 可自主调用：
 - `preview_project_sync`：复用现有安全同步预览；
 - `apply_skillhub_catalog_install`、`apply_remote_skill_collection`、`apply_remote_skill_install`、`apply_skill_change`、`apply_project_sync`：等待用户明确批准后才执行，并在写入前重新校验预览内容；
 - `recall_memory`、`remember_memory`：按当前任务读取或保存结构化记忆。
+
+Skill 文档详情仍然使用确定性的本地查看器，不需要调用模型：
+
+![Skill 文档详情](screenshots/zh/skill-detail.png)
+
+*图 5：详情抽屉把元数据与 Markdown 正文分开呈现；编辑源文件是显式操作。*
 
 右侧执行面板显示当前阶段、工具时间线、等待批准的操作、最终状态以及本次使用的记忆。普通工具记录只展示状态、经过筛选的关键参数、结果数量或错误摘要，不展开网页搜索正文和完整 JSON；界面最多保留最近 14 条，较早记录显示为省略数量。写操作审批区域仍展示核对所需的参数摘要。它不展示隐藏思维链。暂停任务会持久化，软件重启后仍可批准、拒绝或恢复。
 
