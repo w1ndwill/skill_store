@@ -160,6 +160,9 @@
     <div class="skill-detail-meta" id="skill-detail-meta"></div>
     <div class="skill-detail-content markdown-preview" id="skill-detail-content"></div>
     <footer class="skill-detail-footer">
+      <button class="btn btn-primary" id="skill-detail-codex-global">
+        <i data-lucide="globe-2" aria-hidden="true"></i>发布到全局目标
+      </button>
       <button class="btn btn-secondary" id="skill-detail-edit">
         <i data-lucide="pencil" aria-hidden="true"></i>编辑源码
       </button>
@@ -246,6 +249,38 @@
     </div>
   </div>
 
+  <!-- Per-Skill Global Target Modal -->
+  <div id="global-target-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="global-target-modal-title" aria-hidden="true">
+    <div class="modal-container global-target-modal-container">
+      <header class="modal-header">
+        <div class="modal-title-info">
+          <span class="modal-title-icon" aria-hidden="true"><i data-lucide="network"></i></span>
+          <div>
+            <h3 class="modal-title" id="global-target-modal-title">选择全局目标</h3>
+            <p class="modal-subtitle" id="global-target-modal-subtitle"></p>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-icon modal-close-btn" onclick="closeGlobalTargetModal()" title="关闭" aria-label="关闭">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <div class="modal-body global-target-modal-body">
+        <p class="global-target-modal-intro" id="global-target-modal-intro">为这个 Skill 单独选择要同步到的客户端。</p>
+        <div class="global-target-grid" id="skill-global-targets" role="group" aria-label="当前 Skill 的全局目标"></div>
+        <div class="settings-inline-note">
+          <i data-lucide="info"></i>
+          <span id="global-target-modal-note">不勾选任何目标将移除这个 Skill 的全部全局入口。Claude Desktop 选项只生成上传 ZIP。</span>
+        </div>
+      </div>
+      <footer class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeGlobalTargetModal()" id="global-target-modal-cancel">取消</button>
+        <button class="btn btn-primary" onclick="applySkillGlobalTargets()" id="global-target-modal-apply">
+          <i data-lucide="check"></i><span>应用选择</span>
+        </button>
+      </footer>
+    </div>
+  </div>
+
   <!-- Settings Modal -->
   <div id="settings-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" aria-hidden="true">
     <div class="modal-container modal-settings-container">
@@ -324,7 +359,56 @@
           </div>
         </div>
 
-        <!-- Section 3: AI Configuration -->
+        <!-- Section 3: Global Skill Targets -->
+        <div>
+          <div class="settings-section-header" id="settings-heading-global-targets">默认全局目标</div>
+          <div class="settings-section">
+            <div class="settings-field vertical">
+              <div class="settings-field-label">
+                <span id="settings-label-global-targets">新 Skill 首次全局启用时默认勾选哪些客户端</span>
+                <span class="settings-field-desc" id="settings-desc-global-targets">每个 Skill 打开全局目标窗口后仍可单独修改，不会影响其他 Skill。</span>
+              </div>
+              <div class="global-target-grid" id="settings-global-targets" role="group" aria-label="全局 Skill 目标">
+                <label class="global-target-option" data-target="codex">
+                  <input type="checkbox" value="codex">
+                  <span class="global-target-icon"><i data-lucide="square-terminal"></i></span>
+                  <span class="global-target-copy"><strong>Codex</strong><small>~/.agents/skills</small></span>
+                  <span class="global-target-check"><i data-lucide="check"></i></span>
+                </label>
+                <label class="global-target-option" data-target="claude_code">
+                  <input type="checkbox" value="claude_code">
+                  <span class="global-target-icon"><i data-lucide="braces"></i></span>
+                  <span class="global-target-copy"><strong>Claude Code</strong><small>~/.claude/skills</small></span>
+                  <span class="global-target-check"><i data-lucide="check"></i></span>
+                </label>
+                <label class="global-target-option" data-target="antigravity">
+                  <input type="checkbox" value="antigravity">
+                  <span class="global-target-icon"><i data-lucide="orbit"></i></span>
+                  <span class="global-target-copy"><strong>Antigravity</strong><small>~/.gemini/config/skills</small></span>
+                  <span class="global-target-check"><i data-lucide="check"></i></span>
+                </label>
+                <label class="global-target-option" data-target="vscode">
+                  <input type="checkbox" value="vscode">
+                  <span class="global-target-icon"><i data-lucide="code-2"></i></span>
+                  <span class="global-target-copy"><strong>VS Code / Copilot</strong><small>~/.copilot/skills</small></span>
+                  <span class="global-target-check"><i data-lucide="check"></i></span>
+                </label>
+                <label class="global-target-option manual" data-target="claude_desktop">
+                  <input type="checkbox" value="claude_desktop">
+                  <span class="global-target-icon"><i data-lucide="package"></i></span>
+                  <span class="global-target-copy"><strong>Claude Desktop</strong><small id="settings-claude-desktop-note">导出 ZIP，需在 Claude 中上传</small></span>
+                  <span class="global-target-check"><i data-lucide="check"></i></span>
+                </label>
+              </div>
+              <div class="settings-inline-note" id="settings-global-target-note">
+                <i data-lucide="info"></i>
+                <span>VS Code 也会读取 Codex 与 Claude Code 的个人目录；同时选择时可能显示同名 Skill。Claude Desktop 无本地监听目录，只能生成上传包。</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 4: AI Configuration -->
         <div>
           <div class="settings-section-header" id="settings-heading-ai">AI 配置</div>
           <div class="settings-section">

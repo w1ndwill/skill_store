@@ -2,11 +2,11 @@
 
 [English](README_EN.md) · [使用说明书](docs/SkillHub使用说明书.md) · [下载最新版](https://github.com/w1ndwill/skill_store/releases/latest) · [MIT License](LICENSE)
 
-SkillHub 是一个本地运行的 Windows Skill 工作台，用来集中管理 AI 开发规约、组织多 Skill 集合，并为不同项目维护可预览、可回退的 Skill 配置。当前版本：**3.2.0**。
+SkillHub 是一个本地运行的 Windows Skill 工作台，用来集中管理 AI 开发规约、组织多 Skill 集合，并为不同项目维护可预览、可回退的 Skill 配置。当前版本：**3.3.0**。
 
 ![SkillHub 中文技能库界面](docs/screenshots/zh/skill-library.png)
 
-*截图来自 v3.2.0 便携版；技能名称、项目路径和启用状态取自本地演示环境。*
+*截图来自 v3.3.0 便携版；技能名称、项目路径和启用状态取自本地演示环境。*
 
 ## Skill 管理与项目同步
 
@@ -14,7 +14,15 @@ SkillHub 是一个本地运行的 Windows Skill 工作台，用来集中管理 A
 
 ![中文项目 Skill 配置](docs/screenshots/zh/project-configuration.png)
 
-每个项目独立选择需要的 Skill。界面同时展示来源说明、分类、同步状态和启用开关；底部操作栏汇总待应用变化，并在写入前打开同步预览。
+每个项目独立选择需要的 Skill。界面同时展示来源说明、分类、同步状态和启用开关；底部操作栏汇总待应用变化，并在写入前打开同步预览。全局库中的每个可执行 Skill 还可以分别选择发布到 Codex、Claude Code、Antigravity、VS Code 或 Claude Desktop，不必绑定项目。
+
+![中文逐 Skill 全局目标选择](docs/screenshots/zh/global-target-selection.png)
+
+设置页只维护首次启用时使用的默认目标；每个 Skill 都可以在统一的目标选择窗口中覆盖这些默认值。
+
+![中文默认全局目标设置](docs/screenshots/zh/global-target-settings.png)
+
+如果同一个 Skill 已在用户全局范围启用，又被当前项目选中，SkillHub 会把它标为“作用域重叠”并要求明确确认。两份入口不会被自动合并或互相删除，避免在用户不知情时改变其他项目的全局环境。
 
 同步产物位于：
 
@@ -40,9 +48,11 @@ SkillHub 是一个本地运行的 Windows Skill 工作台，用来集中管理 A
 | 能力 | 当前行为 |
 | --- | --- |
 | 全局技能库 | 管理 Markdown 规则、标准 `SKILL.md` 文件夹和 Skill 集合 |
+| 多客户端全局启用 | 每个 Skill 独立选择 Codex、Claude Code、Antigravity、VS Code/Copilot 或 Claude Desktop；设置页只维护首次启用的默认勾选 |
+| Claude Desktop 导出 | 生成符合上传结构的 ZIP；由于 Claude Desktop 不监听本地 Skill 目录，仍需在 `Customize > Skills` 中手动上传 |
 | 导入体检 | 识别重复、同名冲突、风险条目、路径穿越和符号链接 |
 | 双语说明 | 根据界面语言使用展示缓存，不改写第三方 `SKILL.md` |
-| 项目同步 | 先预览新增、更新、移除和冲突，再执行写入 |
+| 项目同步 | 先预览新增、更新、移除、文件冲突和全局/项目作用域重叠，再执行写入 |
 | 同步撤销 | 项目文件未被继续修改时，可安全撤销最近一次同步 |
 | SkillOps Agent | 可选的工具化辅助模块，用于检索、检查、预览和维护 Skill |
 | 单实例运行 | 第二次启动唤醒已有窗口，不创建第二个应用窗口 |
@@ -61,9 +71,10 @@ SkillOps Agent 是 SkillHub 中的辅助模块，用于在现有技能库和项�
 1. 从 [GitHub Releases](https://github.com/w1ndwill/skill_store/releases/latest) 下载 `SkillHub.exe`。
 2. 启动程序并选择全局 Skill 库目录。
 3. 导入 `.md`、`.zip`、标准 Skill 文件夹或 Skill 集合。
-4. 添加目标项目并选择需要的 Skill。
-5. 查看同步预览，确认后写入项目。
-6. 可选：需要辅助检查、安装或维护 Skill 时，打开 SkillOps Agent。
+4. 可在设置中调整默认目标；点击某个 Skill 的“全局启用”后，为它单独选择客户端。
+5. 如需项目独立配置，添加目标项目并选择需要的 Skill。
+6. 查看同步预览，确认后写入项目。
+7. 可选：需要辅助检查、安装或维护 Skill 时，打开 SkillOps Agent。
 
 程序为便携版，无需安装。首次启动时默认创建：
 

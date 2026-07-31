@@ -11,6 +11,7 @@ import re
 import uuid
 import zipfile
 import stat
+import subprocess
 from pathlib import PurePosixPath
 import webview
 import requests
@@ -43,7 +44,7 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-APP_VERSION = "3.2.0"
+APP_VERSION = "3.3.0"
 SINGLE_INSTANCE_MUTEX_NAME = r"Local\SkillHub.Desktop.SingleInstance"
 ERROR_ALREADY_EXISTS = 183
 SKILLHUB_INSTALL_GUIDE_URL = "https://skillhub.cn/install/skillhub.md"
@@ -497,6 +498,33 @@ def is_path_reparse_point(path: str) -> bool:
 
 
 SKILL_LIBRARY_STATE_DIR = ".skill-hub"
+DEFAULT_GLOBAL_SKILL_TARGETS = ("codex",)
+GLOBAL_SKILL_TARGETS = {
+    "codex": {
+        "label": "Codex",
+        "kind": "link",
+        "path_parts": (".agents", "skills"),
+    },
+    "claude_code": {
+        "label": "Claude Code",
+        "kind": "link",
+        "path_parts": (".claude", "skills"),
+    },
+    "antigravity": {
+        "label": "Antigravity",
+        "kind": "link",
+        "path_parts": (".gemini", "config", "skills"),
+    },
+    "vscode": {
+        "label": "VS Code / Copilot",
+        "kind": "link",
+        "path_parts": (".copilot", "skills"),
+    },
+    "claude_desktop": {
+        "label": "Claude Desktop",
+        "kind": "export",
+    },
+}
 SKILL_IMPORT_MAX_FILE_BYTES = 10 * 1024 * 1024
 SKILL_IMPORT_MAX_TOTAL_BYTES = 50 * 1024 * 1024
 SKILL_IMPORT_MAX_ENTRIES = 500
@@ -1059,6 +1087,12 @@ class Api:
         self.ai_display_translation = bool(
             config.get("ai_display_translation", False)
         )
+        configured_targets = config.get(
+            "global_skill_targets", list(DEFAULT_GLOBAL_SKILL_TARGETS)
+        )
+        self.global_skill_targets = self._normalize_global_skill_targets(
+            configured_targets
+        )
         self._agent_memory = AgentMemoryStore(
             os.path.join(APP_DIR, "agent_memory.json")
         )
@@ -1081,6 +1115,7 @@ class Api:
             "default_scan_dir": os.path.expanduser("~"),
             "ai_import_optimization": False,
             "ai_display_translation": False,
+            "global_skill_targets": list(DEFAULT_GLOBAL_SKILL_TARGETS),
         }
 
         # Automatic Migration from projects.json if config.json does not exist
@@ -1113,6 +1148,10 @@ class Api:
                         config["ai_import_optimization"] = False
                     if "ai_display_translation" not in config:
                         config["ai_display_translation"] = False
+                    if "global_skill_targets" not in config:
+                        config["global_skill_targets"] = list(
+                            DEFAULT_GLOBAL_SKILL_TARGETS
+                        )
                     return config
             except Exception:
                 return default_config
@@ -1131,6 +1170,7 @@ class Api:
                 "api_base": self.api_base,
                 "ai_import_optimization": self.ai_import_optimization,
                 "ai_display_translation": self.ai_display_translation,
+                "global_skill_targets": self._configured_global_target_ids(),
             }
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
@@ -1160,6 +1200,8 @@ class Api:
             ),
             "ai_import_optimization": self.ai_import_optimization,
             "ai_display_translation": self.ai_display_translation,
+            "global_skill_targets": self._configured_global_target_ids(),
+            "global_skill_target_options": self._global_skill_target_options(),
         }
 
     def change_skills_dir(self):
@@ -1214,6 +1256,13 @@ class Api:
             self.ai_display_translation = bool(
                 settings["ai_display_translation"]
             )
+        if "global_skill_targets" in settings:
+            targets = self._normalize_global_skill_targets(
+                settings["global_skill_targets"]
+            )
+            if not targets:
+                return {"error": "Select at least one global Skill target"}
+            self.global_skill_targets = targets
 
         self._save_config()
         return {
@@ -1223,6 +1272,8 @@ class Api:
             "default_scan_dir": self.default_scan_dir,
             "ai_import_optimization": self.ai_import_optimization,
             "ai_display_translation": self.ai_display_translation,
+            "global_skill_targets": self._configured_global_target_ids(),
+            "global_skill_target_options": self._global_skill_target_options(),
         }
 
     # --- AI Configuration ---
@@ -3372,6 +3423,643 @@ description: <一句话描述这个技能的用途>
 
     # --- Skills ---
 
+    @staticmethod
+    def _normalize_global_skill_targets(targets) -> list:
+        if not isinstance(targets, (list, tuple)):
+            return list(DEFAULT_GLOBAL_SKILL_TARGETS)
+        return list(dict.fromkeys(
+            str(target)
+            for target in targets
+            if str(target) in GLOBAL_SKILL_TARGETS
+        ))
+
+    def _configured_global_target_ids(self) -> list:
+        configured = getattr(
+            self, "global_skill_targets", list(DEFAULT_GLOBAL_SKILL_TARGETS)
+        )
+        normalized = self._normalize_global_skill_targets(configured)
+        return normalized or list(DEFAULT_GLOBAL_SKILL_TARGETS)
+
+    def _global_skill_target_dir(self, target_id: str) -> str:
+        definition = GLOBAL_SKILL_TARGETS.get(target_id, {})
+        if definition.get("kind") != "link":
+            return ""
+        overrides = getattr(self, "_global_skill_target_dir_overrides", {})
+        if isinstance(overrides, dict) and overrides.get(target_id):
+            return os.path.abspath(overrides[target_id])
+        if target_id == "codex":
+            legacy_override = getattr(
+                self, "_codex_global_skills_dir_override", ""
+            )
+            if legacy_override:
+                return os.path.abspath(legacy_override)
+        return os.path.join(
+            os.path.expanduser("~"), *definition.get("path_parts", ())
+        )
+
+    def _claude_desktop_export_root(self) -> str:
+        return os.path.join(
+            self.skills_dir,
+            SKILL_LIBRARY_STATE_DIR,
+            "exports",
+            "claude-desktop",
+        )
+
+    def _global_skill_target_options(self) -> list:
+        options = []
+        for target_id, definition in GLOBAL_SKILL_TARGETS.items():
+            kind = definition["kind"]
+            options.append({
+                "id": target_id,
+                "label": definition["label"],
+                "kind": kind,
+                "path": (
+                    self._global_skill_target_dir(target_id)
+                    if kind == "link"
+                    else self._claude_desktop_export_root()
+                ),
+                "requires_manual_install": kind == "export",
+            })
+        return options
+
+    def _codex_global_skills_dir(self) -> str:
+        """Return Codex's per-user Skill directory.
+
+        Tests may set ``_codex_global_skills_dir_override`` so global-link
+        behavior can be verified without touching the real user directory.
+        """
+        return self._global_skill_target_dir("codex")
+
+    @staticmethod
+    def _same_real_path(first: str, second: str) -> bool:
+        if not first or not second:
+            return False
+        return os.path.normcase(os.path.realpath(first)) == os.path.normcase(
+            os.path.realpath(second)
+        )
+
+    def _codex_global_adapter_root(self) -> str:
+        return os.path.join(
+            self.skills_dir,
+            SKILL_LIBRARY_STATE_DIR,
+            "codex-global",
+        )
+
+    def _codex_global_entry_name(self, filename: str, source: str, parent="") -> str:
+        """Return a stable Codex package name for an adapted Skill."""
+        source_name = os.path.splitext(os.path.basename(source))[0]
+        seed = "-".join(part for part in (parent, source_name) if part)
+        ascii_slug = re.sub(r"[^a-z0-9]+", "-", seed.casefold()).strip("-")
+        if not ascii_slug:
+            ascii_slug = "skill"
+        digest = hashlib.sha256(filename.encode("utf-8")).hexdigest()[:8]
+        return f"skillhub-{ascii_slug[:40].strip('-')}-{digest}"
+
+    def _codex_global_skill_descriptor(self, filename: str, source="") -> dict:
+        """Resolve any executable Skill format to a Codex package descriptor."""
+        parent = ""
+        if filename.startswith("@bundle:"):
+            virtual = self._resolve_virtual_skill(filename)
+            source = virtual.get("path", "")
+            parent = virtual.get("parent", "")
+        elif not source:
+            source = safe_child_path(self.skills_dir, filename)
+        if not source or not os.path.exists(source):
+            return {}
+
+        if os.path.isdir(source):
+            skill_file = os.path.join(source, "SKILL.md")
+            if os.path.isfile(skill_file):
+                return {
+                    "filename": filename,
+                    "source": source,
+                    "source_root": source,
+                    "entry_file": skill_file,
+                    "entry_name": os.path.basename(source),
+                    "link_source": source,
+                    "adapted": False,
+                }
+            readme_file = os.path.join(source, "README.md")
+            if not os.path.isfile(readme_file):
+                return {}
+            entry_file = readme_file
+            source_root = source
+        elif os.path.isfile(source) and source.lower().endswith(".md"):
+            entry_file = source
+            source_root = source
+        else:
+            return {}
+
+        naming_source = source if os.path.isdir(source) else entry_file
+        entry_name = self._codex_global_entry_name(filename, naming_source, parent)
+        adapter = safe_real_child_path(self._codex_global_adapter_root(), entry_name)
+        if not adapter:
+            return {}
+        return {
+            "filename": filename,
+            "source": source,
+            "source_root": source_root,
+            "entry_file": entry_file,
+            "entry_name": entry_name,
+            "link_source": adapter,
+            "adapted": True,
+        }
+
+    def _codex_global_source_hash(self, descriptor: dict) -> str:
+        source_root = descriptor.get("source_root", "")
+        if not source_root or not os.path.exists(source_root):
+            return ""
+        return get_tree_sha256(source_root)
+
+    def _global_target_state(self, descriptor: dict, target_id: str) -> dict:
+        definition = GLOBAL_SKILL_TARGETS.get(target_id, {})
+        kind = definition.get("kind", "")
+        state = {
+            "id": target_id,
+            "label": definition.get("label", target_id),
+            "kind": kind,
+            "enabled": False,
+            "status": "disabled",
+            "managed": False,
+            "target": "",
+            "requires_manual_install": kind == "export",
+        }
+        if not definition:
+            state["status"] = "invalid"
+            return state
+
+        source_hash = self._codex_global_source_hash(descriptor)
+        if kind == "export":
+            export_root = self._claude_desktop_export_root()
+            package_path = safe_child_path(
+                export_root, f'{descriptor["entry_name"]}.zip'
+            )
+            manifest_path = safe_child_path(
+                export_root, f'{descriptor["entry_name"]}.json'
+            )
+            if not package_path or not manifest_path:
+                state["status"] = "invalid"
+                return state
+            state["target"] = package_path
+            if not os.path.isfile(package_path):
+                return state
+            manifest = load_json_file(manifest_path, {})
+            state.update({"enabled": True, "status": "enabled", "managed": True})
+            if manifest.get("source_hash") != source_hash:
+                state["status"] = "outdated"
+            return state
+
+        target_dir = self._global_skill_target_dir(target_id)
+        target = safe_child_path(target_dir, descriptor["entry_name"])
+        if not target:
+            state["status"] = "invalid"
+            return state
+        state["target"] = target
+        if not os.path.lexists(target):
+            return state
+        if not self._same_real_path(target, descriptor["link_source"]):
+            state["status"] = "conflict"
+            return state
+        state.update({
+            "enabled": True,
+            "status": "enabled",
+            "managed": is_path_reparse_point(target),
+        })
+        if descriptor.get("adapted"):
+            manifest = load_json_file(
+                os.path.join(descriptor["link_source"], "manifest.json"), {}
+            )
+            if manifest.get("source_hash") != source_hash:
+                state["status"] = "outdated"
+        return state
+
+    def _codex_global_skill_state(self, filename: str, source="") -> dict:
+        """Describe aggregate state across configured global Skill targets."""
+        descriptor = self._codex_global_skill_descriptor(filename, source)
+        compatible = bool(descriptor)
+        state = {
+            "codex_global_compatible": compatible,
+            "codex_global_enabled": False,
+            "codex_global_status": "unsupported" if not compatible else "disabled",
+            "codex_global_managed": False,
+            "codex_global_target": "",
+            "codex_global_entry_name": descriptor.get("entry_name", ""),
+            "codex_global_adapted": bool(descriptor.get("adapted")),
+            "global_target_states": [],
+            "global_target_ids": self._configured_global_target_ids(),
+        }
+        if not compatible:
+            return state
+
+        target_states = [
+            self._global_target_state(descriptor, target_id)
+            for target_id in GLOBAL_SKILL_TARGETS
+        ]
+        state["global_target_states"] = target_states
+        state["codex_global_target"] = (
+            target_states[0]["target"] if target_states else ""
+        )
+        enabled_targets = [target for target in target_states if target["enabled"]]
+        if any(target["status"] == "outdated" for target in enabled_targets):
+            aggregate = "outdated"
+        elif enabled_targets:
+            aggregate = "enabled"
+        else:
+            aggregate = "disabled"
+        state.update({
+            "codex_global_enabled": aggregate == "enabled",
+            "codex_global_status": aggregate,
+            "codex_global_managed": bool(enabled_targets) and all(
+                target["managed"] for target in enabled_targets
+            ),
+        })
+        return state
+
+    def _write_codex_global_adapter(self, descriptor: dict):
+        """Create a Codex-standard view without rewriting the library source."""
+        adapter = descriptor["link_source"]
+        os.makedirs(adapter, exist_ok=True)
+        with open(descriptor["entry_file"], "r", encoding="utf-8") as handle:
+            content = handle.read()
+        metadata = infer_skill_metadata(
+            content,
+            os.path.basename(descriptor["entry_file"]),
+            self.language,
+        )
+        normalized, _missing = preserve_frontmatter_with_missing_fields(
+            content,
+            [
+                ("name", descriptor["entry_name"]),
+                ("description", metadata["description"]),
+            ],
+        )
+        atomic_write_text(os.path.join(adapter, "SKILL.md"), normalized)
+
+        source = descriptor.get("source", "")
+        bundled_skills = os.path.join(source, ".agent", "skills")
+        if os.path.isdir(bundled_skills):
+            for item in os.listdir(bundled_skills):
+                child = os.path.join(bundled_skills, item)
+                if os.path.isfile(child) and item.lower().endswith(".md"):
+                    atomic_copy_file(child, os.path.join(adapter, item))
+
+        atomic_write_json(os.path.join(adapter, "manifest.json"), {
+            "version": 1,
+            "source": descriptor["filename"],
+            "source_hash": self._codex_global_source_hash(descriptor),
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        })
+
+    def _create_codex_global_link(self, source: str, target: str):
+        """Create a directory link without copying Skill contents onto the C drive."""
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        if os.name == "nt":
+            completed = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    (
+                        "& { param([string]$LinkPath, [string]$SourcePath) "
+                        "New-Item -ItemType Junction -Path $LinkPath -Target "
+                        "$SourcePath -ErrorAction Stop | Out-Null }"
+                    ),
+                    target,
+                    source,
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                check=False,
+            )
+            if completed.returncode != 0:
+                message = (completed.stderr or completed.stdout or "").strip()
+                raise OSError(message or "Failed to create global Skill link")
+            return
+        os.symlink(source, target, target_is_directory=True)
+
+    def _write_claude_desktop_export(self, descriptor: dict):
+        """Create a Claude-uploadable ZIP; account installation remains manual."""
+        export_root = self._claude_desktop_export_root()
+        os.makedirs(export_root, exist_ok=True)
+        package_path = safe_child_path(
+            export_root, f'{descriptor["entry_name"]}.zip'
+        )
+        manifest_path = safe_child_path(
+            export_root, f'{descriptor["entry_name"]}.json'
+        )
+        if not package_path or not manifest_path:
+            raise OSError("Invalid Claude Desktop export path")
+        temporary = f"{package_path}.{uuid.uuid4().hex}.tmp"
+        package_root = descriptor["entry_name"]
+        source_root = descriptor["link_source"]
+        try:
+            with zipfile.ZipFile(
+                temporary, "w", compression=zipfile.ZIP_DEFLATED
+            ) as archive:
+                for current_root, dirs, files in os.walk(
+                    source_root, followlinks=False
+                ):
+                    dirs[:] = [
+                        name for name in dirs
+                        if not is_path_reparse_point(
+                            os.path.join(current_root, name)
+                        )
+                    ]
+                    for name in files:
+                        source_file = os.path.join(current_root, name)
+                        if name == "manifest.json" or is_path_reparse_point(
+                            source_file
+                        ):
+                            continue
+                        relative = os.path.relpath(source_file, source_root)
+                        archive.write(
+                            source_file,
+                            str(PurePosixPath(package_root, *relative.split(os.sep))),
+                        )
+            os.replace(temporary, package_path)
+        finally:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+        atomic_write_json(manifest_path, {
+            "version": 1,
+            "source": descriptor["filename"],
+            "source_hash": self._codex_global_source_hash(descriptor),
+            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "manual_install": True,
+        })
+
+    def _set_global_skill_target(
+        self,
+        filename: str,
+        enabled: bool,
+        target_id: str,
+        source="",
+        descriptor=None,
+    ) -> dict:
+        descriptor = descriptor or self._codex_global_skill_descriptor(
+            filename, source
+        )
+        if not descriptor or target_id not in GLOBAL_SKILL_TARGETS:
+            return {"error": "Invalid global Skill target"}
+        target_state = self._global_target_state(descriptor, target_id)
+        if target_state["status"] == "conflict":
+            return {
+                "error": (
+                    f'A different Skill already uses this name in '
+                    f'{target_state["label"]}'
+                ),
+                "target": target_state,
+            }
+        try:
+            if enabled and descriptor.get("adapted"):
+                self._write_codex_global_adapter(descriptor)
+                target_state = self._global_target_state(descriptor, target_id)
+
+            if target_state["kind"] == "export":
+                package_path = target_state["target"]
+                manifest_path = os.path.splitext(package_path)[0] + ".json"
+                if enabled:
+                    self._write_claude_desktop_export(descriptor)
+                else:
+                    for generated in (package_path, manifest_path):
+                        if os.path.isfile(generated):
+                            os.remove(generated)
+            elif enabled:
+                if target_state["status"] not in ("enabled", "outdated"):
+                    if os.path.lexists(target_state["target"]):
+                        return {"ok": True, "target": target_state}
+                    self._create_codex_global_link(
+                        descriptor["link_source"], target_state["target"]
+                    )
+            else:
+                target = target_state["target"]
+                if os.path.lexists(target):
+                    if target_state["status"] not in ("enabled", "outdated"):
+                        return {
+                            "error": (
+                                f'Refusing to remove a different Skill from '
+                                f'{target_state["label"]}'
+                            ),
+                            "target": target_state,
+                        }
+                    if not target_state["managed"]:
+                        return {
+                            "error": (
+                                f'The {target_state["label"]} entry is a real '
+                                "directory, not a removable SkillHub link"
+                            ),
+                            "target": target_state,
+                        }
+                    if os.path.islink(target):
+                        os.unlink(target)
+                    else:
+                        os.rmdir(target)
+        except Exception as error:
+            return {"error": str(error), "target": target_state}
+        return {
+            "ok": True,
+            "target": self._global_target_state(descriptor, target_id),
+        }
+
+    def _codex_global_adapter_in_use(self, descriptor: dict) -> bool:
+        if not descriptor.get("adapted"):
+            return False
+        return any(
+            self._global_target_state(descriptor, target_id)["enabled"]
+            for target_id in GLOBAL_SKILL_TARGETS
+        )
+
+    def set_codex_global_skill(self, filename: str, enabled: bool) -> dict:
+        """Enable or remove a library Skill across configured global targets."""
+        source = "" if filename.startswith("@bundle:") else safe_child_path(
+            self.skills_dir, filename
+        )
+        if not filename.startswith("@bundle:") and (
+            not source or os.path.basename(source) != filename
+        ):
+            return {"error": "Invalid filename"}
+        descriptor = self._codex_global_skill_descriptor(filename, source)
+        initial_state = self._codex_global_skill_state(filename, source)
+        if not initial_state["codex_global_compatible"]:
+            return {"error": "This entry cannot be adapted to a Codex Skill"}
+        changed_targets = []
+        for target_id in self._configured_global_target_ids():
+            result = self._set_global_skill_target(
+                filename, bool(enabled), target_id, source, descriptor
+            )
+            if result.get("error"):
+                for changed_id in reversed(changed_targets):
+                    previous = next(
+                        (
+                            target for target in initial_state["global_target_states"]
+                            if target["id"] == changed_id
+                        ),
+                        {},
+                    )
+                    self._set_global_skill_target(
+                        filename,
+                        bool(previous.get("enabled")),
+                        changed_id,
+                        source,
+                        descriptor,
+                    )
+                return {"error": result["error"], **initial_state}
+            changed_targets.append(target_id)
+
+        if (
+            not enabled
+            and descriptor.get("adapted")
+            and not self._codex_global_adapter_in_use(descriptor)
+            and os.path.isdir(descriptor["link_source"])
+        ):
+            shutil.rmtree(descriptor["link_source"])
+
+        updated = self._codex_global_skill_state(filename, source)
+        return {"ok": True, **updated}
+
+    def set_codex_global_skills(self, filenames: list, enabled: bool) -> dict:
+        """Apply a collection-sized global change with best-effort rollback."""
+        requested = list(dict.fromkeys(
+            str(filename) for filename in (filenames or []) if filename
+        ))
+        if not requested or len(requested) > 100:
+            return {"error": "Invalid Skill list"}
+        original = {
+            filename: {
+                target["id"]: bool(target["enabled"])
+                for target in self._codex_global_skill_state(filename).get(
+                    "global_target_states", []
+                )
+            }
+            for filename in requested
+        }
+        changed = []
+        for filename in requested:
+            result = self.set_codex_global_skill(filename, bool(enabled))
+            if result.get("error"):
+                rollback_errors = []
+                for changed_name in reversed(changed):
+                    descriptor = self._codex_global_skill_descriptor(changed_name)
+                    for target_id, was_enabled in original[changed_name].items():
+                        rollback = self._set_global_skill_target(
+                            changed_name,
+                            was_enabled,
+                            target_id,
+                            descriptor=descriptor,
+                        )
+                        if rollback.get("error"):
+                            rollback_errors.append(rollback["error"])
+                message = result["error"]
+                if rollback_errors:
+                    message += "; rollback failed: " + "; ".join(rollback_errors)
+                return {"error": message, "failed": filename}
+            if original[filename] != bool(enabled):
+                changed.append(filename)
+        return {"ok": True, "enabled": bool(enabled), "skills": requested}
+
+    def set_skill_global_targets(self, filename: str, target_ids: list) -> dict:
+        """Reconcile one Skill to an explicit per-Skill target selection."""
+        desired = self._normalize_global_skill_targets(target_ids)
+        source = "" if filename.startswith("@bundle:") else safe_child_path(
+            self.skills_dir, filename
+        )
+        if not filename.startswith("@bundle:") and (
+            not source or os.path.basename(source) != filename
+        ):
+            return {"error": "Invalid filename"}
+        descriptor = self._codex_global_skill_descriptor(filename, source)
+        if not descriptor:
+            return {"error": "This entry cannot be adapted to an Agent Skill"}
+
+        original = {
+            target_id: self._global_target_state(descriptor, target_id)
+            for target_id in GLOBAL_SKILL_TARGETS
+        }
+        changed = []
+        for target_id in GLOBAL_SKILL_TARGETS:
+            before = original[target_id]
+            should_enable = target_id in desired
+            needs_update = should_enable and before["status"] == "outdated"
+            if before["enabled"] == should_enable and not needs_update:
+                continue
+            result = self._set_global_skill_target(
+                filename,
+                should_enable,
+                target_id,
+                source,
+                descriptor,
+            )
+            if result.get("error"):
+                rollback_errors = []
+                for changed_id in reversed(changed):
+                    rollback = self._set_global_skill_target(
+                        filename,
+                        original[changed_id]["enabled"],
+                        changed_id,
+                        source,
+                        descriptor,
+                    )
+                    if rollback.get("error"):
+                        rollback_errors.append(rollback["error"])
+                message = result["error"]
+                if rollback_errors:
+                    message += "; rollback failed: " + "; ".join(rollback_errors)
+                return {"error": message, "failed_target": target_id}
+            changed.append(target_id)
+
+        if (
+            descriptor.get("adapted")
+            and not self._codex_global_adapter_in_use(descriptor)
+            and os.path.isdir(descriptor["link_source"])
+        ):
+            shutil.rmtree(descriptor["link_source"])
+        return {
+            "ok": True,
+            "selected_targets": desired,
+            **self._codex_global_skill_state(filename, source),
+        }
+
+    def set_skills_global_targets(self, filenames: list, target_ids: list) -> dict:
+        """Reconcile every member of a collection to the same target selection."""
+        requested = list(dict.fromkeys(
+            str(filename) for filename in (filenames or []) if filename
+        ))
+        if not requested or len(requested) > 100:
+            return {"error": "Invalid Skill list"}
+        desired = self._normalize_global_skill_targets(target_ids)
+        original = {
+            filename: [
+                target["id"]
+                for target in self._codex_global_skill_state(filename).get(
+                    "global_target_states", []
+                )
+                if target["enabled"]
+            ]
+            for filename in requested
+        }
+        changed = []
+        for filename in requested:
+            result = self.set_skill_global_targets(filename, desired)
+            if result.get("error"):
+                rollback_errors = []
+                for changed_name in reversed(changed):
+                    rollback = self.set_skill_global_targets(
+                        changed_name, original[changed_name]
+                    )
+                    if rollback.get("error"):
+                        rollback_errors.append(rollback["error"])
+                message = result["error"]
+                if rollback_errors:
+                    message += "; rollback failed: " + "; ".join(rollback_errors)
+                return {"error": message, "failed": filename}
+            changed.append(filename)
+        return {"ok": True, "selected_targets": desired, "skills": requested}
+
     def get_skills(self):
         """Return list of all global skill metadata (files and directories)."""
         skills = []
@@ -3401,10 +4089,12 @@ description: <一句话描述这个技能的用途>
                         }
                     meta["filename"] = item
                     meta["is_dir"] = True
+                    meta.update(self._codex_global_skill_state(item, fp))
                     skills.append(meta)
                 elif os.path.isfile(fp) and item.lower().endswith(".md"):
                     meta = parse_markdown_metadata(fp)
                     meta["is_dir"] = False
+                    meta.update(self._codex_global_skill_state(item, fp))
                     skills.append(meta)
         collections = self._load_skill_collections().get("collections", [])
         for collection in collections:
@@ -3429,6 +4119,7 @@ description: <一句话描述这个技能的用途>
                     "virtual_source": relative_path,
                     "target_filename": os.path.basename(relative_path),
                 })
+                meta.update(self._codex_global_skill_state(virtual_id, source))
                 skills.append(meta)
 
         display_localizations = self._load_display_localizations()
@@ -3689,8 +4380,48 @@ description: <一句话描述这个技能的用途>
         trash_root = ""
         trash_item = ""
         collection_snapshot = None
+        global_targets_were_enabled = []
         try:
             if os.path.exists(fp):
+                descriptor = self._codex_global_skill_descriptor(filename, fp)
+                global_states = [
+                    self._global_target_state(descriptor, target_id)
+                    for target_id in GLOBAL_SKILL_TARGETS
+                ]
+                enabled_states = [
+                    state for state in global_states if state["enabled"]
+                ]
+                unmanaged = [
+                    state for state in enabled_states if not state["managed"]
+                ]
+                if unmanaged:
+                    return {
+                        "error": (
+                            "Remove the real global Skill directory before "
+                            f'deleting: {unmanaged[0]["label"]}'
+                        )
+                    }
+                for global_state in enabled_states:
+                    disabled = self._set_global_skill_target(
+                        filename,
+                        False,
+                        global_state["id"],
+                        fp,
+                        descriptor,
+                    )
+                    if disabled.get("error"):
+                        for target_id in global_targets_were_enabled:
+                            self._set_global_skill_target(
+                                filename, True, target_id, fp, descriptor
+                            )
+                        return disabled
+                    global_targets_were_enabled.append(global_state["id"])
+                if (
+                    descriptor.get("adapted")
+                    and not self._codex_global_adapter_in_use(descriptor)
+                    and os.path.isdir(descriptor["link_source"])
+                ):
+                    shutil.rmtree(descriptor["link_source"])
                 collection_snapshot = self._load_skill_collections()
                 trash_token = uuid.uuid4().hex
                 trash_root = safe_real_child_path(
@@ -3710,6 +4441,8 @@ description: <一句话描述这个技能的用途>
                     "filename": filename,
                     "deleted_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "collections": collection_snapshot,
+                    "global_targets_were_enabled": global_targets_were_enabled,
+                    "codex_global_was_enabled": "codex" in global_targets_were_enabled,
                 })
                 self._unregister_library_entry(filename)
                 state = self._load_skill_collections()
@@ -3748,6 +4481,11 @@ description: <一句话描述这个技能的用途>
                     shutil.move(trash_item, fp)
                     if isinstance(collection_snapshot, dict):
                         self._save_skill_collections(collection_snapshot)
+                    descriptor = self._codex_global_skill_descriptor(filename, fp)
+                    for target_id in global_targets_were_enabled:
+                        self._set_global_skill_target(
+                            filename, True, target_id, fp, descriptor
+                        )
                 except OSError:
                     pass
             if trash_root:
@@ -3778,8 +4516,23 @@ description: <一句话描述这个技能的用途>
             if isinstance(collections, dict):
                 self._save_skill_collections(collections)
             self._register_library_entry(filename, source="restored")
+            warning = ""
+            enabled_targets = metadata.get("global_targets_were_enabled", [])
+            if not isinstance(enabled_targets, list):
+                enabled_targets = []
+            if metadata.get("codex_global_was_enabled") and "codex" not in enabled_targets:
+                enabled_targets.append("codex")
+            descriptor = self._codex_global_skill_descriptor(filename, target)
+            restore_warnings = []
+            for target_id in enabled_targets:
+                global_result = self._set_global_skill_target(
+                    filename, True, target_id, target, descriptor
+                )
+                if global_result.get("error"):
+                    restore_warnings.append(global_result["error"])
+            warning = "; ".join(restore_warnings)
             shutil.rmtree(trash_root, ignore_errors=True)
-            return {"ok": True, "filename": filename}
+            return {"ok": True, "filename": filename, "warning": warning}
         except Exception as exc:
             if os.path.exists(target) and not os.path.exists(source):
                 try:
@@ -6031,6 +6784,36 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
         """Preserve source metadata; locale only changes the surrounding index UI."""
         return dict(metadata)
 
+    def _project_global_scope_conflicts(self, enabled_skills: list) -> list:
+        """Describe Skills that would be discoverable in both project and user scopes.
+
+        Agent runtimes do not consistently merge same-name Skills across scopes.
+        Keep both scopes independent, but make the ambiguity an explicit sync
+        conflict instead of silently creating duplicate candidates.
+        """
+        conflicts = []
+        for filename in enabled_skills or []:
+            state = self._codex_global_skill_state(filename)
+            active_targets = [
+                {
+                    "id": target["id"],
+                    "label": target["label"],
+                }
+                for target in state.get("global_target_states", [])
+                if target.get("enabled") and target.get("kind") == "link"
+            ]
+            if not active_targets:
+                continue
+            conflicts.append({
+                "filename": filename,
+                "global_targets": active_targets,
+                "reason": (
+                    "The same Skill is enabled in both project and user scopes; "
+                    "same-name Skills may be discovered more than once and are not merged"
+                ),
+            })
+        return conflicts
+
     def _collect_desired_sync_files(self, project_path: str, enabled_skills: list):
         enabled_set = set(enabled_skills or [])
         global_skills = self.get_skills()
@@ -6246,6 +7029,7 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
         previous_manifest = self._load_sync_manifest(registered_path)
         previous_files = previous_manifest.get("files", {})
         effective_enabled = self._effective_enabled_skills(enabled_skills)
+        scope_conflicts = self._project_global_scope_conflicts(effective_enabled)
         desired, active_metadata, source_collision_keys = self._collect_desired_sync_files(
             registered_path, effective_enabled
         )
@@ -6335,6 +7119,7 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
             "desired": desired,
             "active_metadata": active_metadata,
             "previous_manifest": previous_manifest,
+            "scope_conflicts": scope_conflicts,
             "changes": changes,
         }
 
@@ -6364,8 +7149,11 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
                     "requires_bundle_authorization"
                 ],
             })
+        scope_conflicts = list(plan.get("scope_conflicts", []))
+        summary["conflict"] += len(scope_conflicts)
         token_payload = {
             "enabled_skills": plan["enabled_skills"],
+            "scope_conflicts": scope_conflicts,
             "changes": [
                 {
                     "path": item["path"],
@@ -6395,6 +7183,8 @@ Write in the same language as the supplied Markdown. Return only the complete Ma
             "changes": changes,
             "enabled_skills": list(plan["enabled_skills"]),
             "synced_count": len(plan["active_metadata"]),
+            "scope_conflict_count": len(scope_conflicts),
+            "scope_conflicts": scope_conflicts,
             "has_conflicts": summary["conflict"] > 0,
             "has_restricted_bundle_files": bool(restricted_bundle_files),
             "restricted_bundle_files": restricted_bundle_files,

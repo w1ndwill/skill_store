@@ -26,6 +26,8 @@ let hasAiKey = false;
 let apiKeyHint = '';
 let aiImportOptimization = false;
 let aiDisplayTranslation = false;
+let globalSkillTargets = ['codex'];
+let globalSkillTargetOptions = [];
 let aiGeneratedSkill = null; // cached AI result
 let activeCategoryFilter = null; // active category filter (null = show all)
 let searchRenderTimer = null;
@@ -34,6 +36,7 @@ let activeDrawerFilename = null;
 let drawerReturnFocus = null;
 let loadedEditorCategory = '';
 let pendingEditorCategories = new Set();
+let pendingGlobalTargetSkill = null;
 
 // DOM cache
 const projectList = document.getElementById('project-list');
@@ -82,8 +85,11 @@ const skillDetailTitle = document.getElementById('skill-detail-title');
 const skillDetailKind = document.getElementById('skill-detail-kind');
 const skillDetailMeta = document.getElementById('skill-detail-meta');
 const skillDetailContent = document.getElementById('skill-detail-content');
+const skillDetailCodexGlobal = document.getElementById('skill-detail-codex-global');
 const skillDetailEdit = document.getElementById('skill-detail-edit');
 const skillDetailDelete = document.getElementById('skill-detail-delete');
+const globalTargetModal = document.getElementById('global-target-modal');
+const skillGlobalTargets = document.getElementById('skill-global-targets');
 
 function getModalFocusableElements(modal) {
   return Array.from(modal.querySelectorAll(
@@ -154,6 +160,7 @@ document.addEventListener('keydown', event => {
       'dialog-modal': closeDialogModal,
       'editor-modal': closeEditorModal,
       'collection-modal': closeCollectionModal,
+      'global-target-modal': closeGlobalTargetModal,
       'settings-modal': closeSettingsModal,
       'ai-modal': closeAIModal,
     };
@@ -515,6 +522,12 @@ async function fetchConfig() {
     apiKeyHint = config.api_key_hint || '';
     aiImportOptimization = Boolean(config.ai_import_optimization);
     aiDisplayTranslation = Boolean(config.ai_display_translation);
+    globalSkillTargets = Array.isArray(config.global_skill_targets)
+      ? config.global_skill_targets
+      : ['codex'];
+    globalSkillTargetOptions = Array.isArray(config.global_skill_target_options)
+      ? config.global_skill_target_options
+      : [];
 
     applyTheme(currentTheme);
     applyLanguage(currentLanguage);
@@ -597,6 +610,21 @@ function applyLanguage(lang) {
   document.getElementById('settings-desc-skillsdir').textContent = t.settingsDescSkillsdir;
   document.getElementById('settings-label-scandir').textContent = t.settingsLabelScandir;
   document.getElementById('settings-desc-scandir').textContent = t.settingsDescScandir;
+  document.getElementById('settings-heading-global-targets').textContent = lang === 'zh'
+    ? '默认全局目标'
+    : 'Default global targets';
+  document.getElementById('settings-label-global-targets').textContent = lang === 'zh'
+    ? '新 Skill 首次全局启用时默认勾选哪些客户端'
+    : 'Choose the default clients for a Skill\'s first global enablement';
+  document.getElementById('settings-desc-global-targets').textContent = lang === 'zh'
+    ? '每个 Skill 打开全局目标窗口后仍可单独修改，不会影响其他 Skill。'
+    : 'Each Skill can override these choices independently without affecting other Skills.';
+  document.getElementById('settings-claude-desktop-note').textContent = lang === 'zh'
+    ? '导出 ZIP，需在 Claude 中上传'
+    : 'Export ZIP; upload it in Claude';
+  document.querySelector('#settings-global-target-note span').textContent = lang === 'zh'
+    ? 'VS Code 也会读取 Codex 与 Claude Code 的个人目录；同时选择时可能显示同名 Skill。Claude Desktop 无本地监听目录，只能生成上传包。'
+    : 'VS Code also reads Codex and Claude Code personal folders, so selecting both can expose duplicate names. Claude Desktop requires an upload package.';
   document.getElementById('settings-btn-cancel').textContent = t.settingsCancel;
   document.getElementById('settings-btn-save').innerHTML = `<i data-lucide="save" style="width:16px;height:16px;"></i> ${t.settingsSave}`;
 
@@ -740,6 +768,12 @@ function updateWorkspaceMode() {
   document.body.classList.toggle('project-mode', isProjectMode);
   navLibrary?.classList.toggle('active', !isProjectMode);
   syncActionBar?.classList.toggle('visible', isProjectMode);
+  const statusHeader = document.getElementById('skill-list-header-status');
+  if (statusHeader) {
+    statusHeader.textContent = isProjectMode
+      ? t.tableStatus
+      : (currentLanguage === 'zh' ? '多端全局' : 'Global targets');
+  }
   if (workspaceKicker) {
     workspaceKicker.textContent = isProjectMode
       ? (currentLanguage === 'zh' ? '项目配置' : 'Project setup')
@@ -968,6 +1002,42 @@ function buildDisplaySkills() {
     const tags = Array.from(new Set(members.flatMap(member => member.tags || []))).slice(0, 5);
     const displayTitle = primary.collection?.display_title || primary.display_title || primary.title;
     const displayDescription = primary.collection?.display_description || primary.display_description || primary.description;
+    const globalMembers = members.filter(member => member.codex_global_compatible);
+    const globalEnabledCount = globalMembers.filter(member => member.codex_global_enabled).length;
+    const hasGlobalConflict = globalMembers.some(member => member.codex_global_status === 'conflict');
+    const hasGlobalUpdate = globalMembers.some(member => member.codex_global_status === 'outdated');
+    const hasPartialGlobal = globalMembers.some(member => member.codex_global_status === 'partial');
+    const collectionGlobalStatus = hasGlobalConflict
+      ? 'conflict'
+      : hasGlobalUpdate
+        ? 'outdated'
+        : globalEnabledCount === globalMembers.length && globalMembers.length > 0
+          ? 'enabled'
+          : globalEnabledCount > 0 || hasPartialGlobal
+            ? 'partial'
+            : 'disabled';
+    const collectionTargetStates = globalSkillTargetOptions.map(option => {
+      const memberStates = globalMembers.map(member => (
+        member.global_target_states || []
+      ).find(target => target.id === option.id)).filter(Boolean);
+      const enabledTargets = memberStates.filter(target => target.enabled);
+      const status = memberStates.some(target => target.status === 'conflict')
+        ? 'conflict'
+        : memberStates.some(target => target.status === 'outdated')
+          ? 'outdated'
+          : memberStates.length > 0 && enabledTargets.length === memberStates.length
+            ? 'enabled'
+            : enabledTargets.length > 0
+              ? 'partial'
+              : 'disabled';
+      return {
+        ...option,
+        enabled: status === 'enabled' || status === 'outdated',
+        status,
+        managed: enabledTargets.every(target => target.managed),
+        target: option.path,
+      };
+    });
     display.push({
       ...primary,
       filename: `@collection:${collectionId}`,
@@ -986,6 +1056,11 @@ function buildDisplaySkills() {
       collection_configured_count: configuredCount,
       collection_controller: primary.collection?.controller || '',
       collection_controller_enabled: primary.collection?.controller_enabled !== false,
+      codex_global_compatible: globalMembers.length > 0,
+      codex_global_enabled: globalMembers.length > 0 && globalEnabledCount === globalMembers.length,
+      codex_global_status: collectionGlobalStatus,
+      codex_global_members: globalMembers.map(member => member.filename),
+      global_target_states: collectionTargetStates,
       search_text: members.map(member => [
         member.title,
         member.display_title,
@@ -1021,6 +1096,12 @@ function handleCardsGridClick(event) {
   const filename = getCardFilename(event);
   if (!filename) return;
   const displaySkill = displaySkillsByFilename.get(filename);
+  const globalAction = event.target.closest('.js-codex-global-action');
+  if (globalAction && displaySkill) {
+    event.stopPropagation();
+    handleCodexGlobalButton(displaySkill, globalAction);
+    return;
+  }
   if (displaySkill?.is_collection) {
     if (event.target.closest('label, input, a')) return;
     event.stopPropagation();
@@ -1042,8 +1123,8 @@ function handleCardsGridClick(event) {
 }
 
 function handleCardsGridChange(event) {
-  if (!event.target.matches('.js-toggle-skill')) return;
   const filename = getCardFilename(event);
+  if (!event.target.matches('.js-toggle-skill')) return;
   const displaySkill = displaySkillsByFilename.get(filename);
   if (displaySkill?.is_collection) {
     handleToggleCollectionMount(displaySkill, event.target.checked);
@@ -1271,11 +1352,11 @@ function renderSkillsGrid() {
     const resolvedEmoji = smart.emoji;
     const resolvedTags = smart.tags;
 
-    let badgeHTML = '';
+    let statusHTML = '';
     let isChecked = false;
 
     if (skill.project_only) {
-      badgeHTML = `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '项目独有 · 只读' : 'Project-only · Read-only'}</span>`;
+      statusHTML = `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '项目独有 · 只读' : 'Project-only · Read-only'}</span>`;
     } else if (currentProjectPath && activeProj && !activeProj.error) {
       let physicalStatus = statusMap[skill.filename] || 'unloaded';
       let isLocallyEnabled = enabledSkills.has(skill.filename);
@@ -1292,22 +1373,61 @@ function renderSkillsGrid() {
       if (isLocallyEnabled) {
         isChecked = true;
         if (physicalStatus === 'synced') {
-          badgeHTML = `<span class="status-badge synced"><span class="status-dot"></span>${locales[currentLanguage].statusSynced}</span>`;
+          statusHTML = `<span class="status-badge synced"><span class="status-dot"></span>${locales[currentLanguage].statusSynced}</span>`;
         } else if (physicalStatus === 'out_of_sync') {
-          badgeHTML = `<span class="status-badge out-of-sync"><span class="status-dot"></span>${locales[currentLanguage].statusUpdated}</span>`;
+          statusHTML = `<span class="status-badge out-of-sync"><span class="status-dot"></span>${locales[currentLanguage].statusUpdated}</span>`;
         } else {
-          badgeHTML = `<span class="status-badge pending-mount"><span class="status-dot"></span>${locales[currentLanguage].statusPendingMount}</span>`;
+          statusHTML = `<span class="status-badge pending-mount"><span class="status-dot"></span>${locales[currentLanguage].statusPendingMount}</span>`;
         }
       } else {
         isChecked = false;
         if (physicalStatus === 'synced' || physicalStatus === 'out_of_sync') {
-          badgeHTML = `<span class="status-badge pending-unmount"><span class="status-dot"></span>${locales[currentLanguage].statusPendingUnmount}</span>`;
+          statusHTML = `<span class="status-badge pending-unmount"><span class="status-dot"></span>${locales[currentLanguage].statusPendingUnmount}</span>`;
         } else {
-          badgeHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusUnloaded}</span>`;
+          statusHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusUnloaded}</span>`;
         }
       }
     } else {
-      badgeHTML = `<span class="status-badge library"><span class="status-dot"></span>${currentLanguage === 'zh' ? '可用' : 'Available'}</span>`;
+      const globalState = skill.codex_global_status || 'unsupported';
+      const globalButton = {
+        enabled: {
+          icon: 'circle-check',
+          label: currentLanguage === 'zh' ? '已全局' : 'Global',
+          title: currentLanguage === 'zh' ? '点击管理这个 Skill 的全局目标' : 'Manage this Skill\'s global targets'
+        },
+        outdated: {
+          icon: 'refresh-cw',
+          label: currentLanguage === 'zh' ? '更新全局' : 'Update',
+          title: currentLanguage === 'zh' ? '源 Skill 已更新，点击刷新所选目标' : 'Source changed; refresh selected targets'
+        },
+        partial: {
+          icon: 'circle-dot-dashed',
+          label: currentLanguage === 'zh' ? '部分全局' : 'Partial',
+          title: currentLanguage === 'zh' ? '只有部分 Skill 或目标已启用，点击补齐' : 'Only some Skills or targets are enabled; click to complete'
+        },
+        conflict: {
+          icon: 'triangle-alert',
+          label: currentLanguage === 'zh' ? '名称冲突' : 'Conflict',
+          title: currentLanguage === 'zh' ? '至少一个目标存在同名冲突，无法覆盖' : 'At least one selected target has a name conflict'
+        },
+        disabled: {
+          icon: 'globe-2',
+          label: currentLanguage === 'zh' ? '全局启用' : 'Enable',
+          title: currentLanguage === 'zh' ? '为这个 Skill 选择要同步到的 Agent' : 'Choose the agents for this Skill'
+        },
+        unsupported: {
+          icon: 'minus',
+          label: currentLanguage === 'zh' ? '不可启用' : 'Unavailable',
+          title: currentLanguage === 'zh' ? '该条目不是可执行 Skill' : 'This entry is not an executable Skill'
+        }
+      }[globalState] || {
+        icon: 'minus',
+        label: currentLanguage === 'zh' ? '不可启用' : 'Unavailable',
+        title: currentLanguage === 'zh' ? '全局目标路径无效' : 'A global target path is invalid'
+      };
+      statusHTML = `<button type="button" class="codex-global-button ${escapeHtml(globalState)} js-codex-global-action" title="${escapeHtml(globalButton.title)}" aria-label="${escapeHtml(globalButton.title)}" ${['conflict', 'unsupported'].includes(globalState) ? 'disabled' : ''}>
+        <i data-lucide="${globalButton.icon}"></i><span>${escapeHtml(globalButton.label)}</span>
+      </button>`;
     }
 
     // Display translations are metadata-only; the source SKILL.md stays intact.
@@ -1362,7 +1482,6 @@ function renderSkillsGrid() {
           <button type="button" class="row-action-button danger js-delete-skill" title="${currentLanguage === 'zh' ? '移至回收区' : 'Move to trash'}" aria-label="${currentLanguage === 'zh' ? '移至回收区' : 'Move to trash'}">
             <i data-lucide="trash-2"></i>
           </button>`;
-
     card.innerHTML = `
       <div class="skill-row-primary">
         <div class="skill-emoji">${escapeHtml(resolvedEmoji)}</div>
@@ -1379,7 +1498,7 @@ function renderSkillsGrid() {
         <span>${escapeHtml(localizedCategory)}</span>
         <div class="card-tags">${tagsHTML}</div>
       </div>
-      <div class="skill-row-status">${badgeHTML}</div>
+      <div class="skill-row-status">${statusHTML}</div>
       <div class="skill-row-actions">
         ${currentProjectPath && activeProj && !activeProj.error && !skill.project_only ? `
           <label class="switch row-mount-toggle" title="${locales[currentLanguage].toggleLabel}">
@@ -1407,6 +1526,119 @@ function renderSkillsGrid() {
     cards.forEach((card, i) => setTimeout(() => card.classList.add('visible'), i * 40));
     hasRenderedSkillCards = true;
   });
+}
+
+function globalTargetIcon(targetId) {
+  return {
+    codex: 'square-terminal',
+    claude_code: 'braces',
+    antigravity: 'orbit',
+    vscode: 'code-2',
+    claude_desktop: 'package',
+  }[targetId] || 'folder';
+}
+
+function globalTargetStateLabel(target) {
+  if (target.status === 'conflict') return currentLanguage === 'zh' ? '名称冲突' : 'Conflict';
+  if (target.status === 'outdated') return currentLanguage === 'zh' ? '需要更新' : 'Update needed';
+  if (target.status === 'partial') return currentLanguage === 'zh' ? '部分成员' : 'Some members';
+  if (target.enabled) {
+    if (target.requires_manual_install) return currentLanguage === 'zh' ? 'ZIP 已生成' : 'ZIP ready';
+    return currentLanguage === 'zh' ? '已启用' : 'Enabled';
+  }
+  return currentLanguage === 'zh' ? '未启用' : 'Not enabled';
+}
+
+function openGlobalTargetModal(skill) {
+  if (!skill || !globalTargetModal || !skillGlobalTargets) return;
+  pendingGlobalTargetSkill = skill;
+  const title = skill.display_title || skill.title || skill.filename;
+  document.getElementById('global-target-modal-title').textContent = currentLanguage === 'zh'
+    ? '选择全局目标'
+    : 'Choose global targets';
+  document.getElementById('global-target-modal-subtitle').textContent = title;
+  document.getElementById('global-target-modal-intro').textContent = currentLanguage === 'zh'
+    ? '这个 Skill 可以独立选择要同步到的 Agent；设置页中的选择只作为首次启用的默认值。'
+    : 'Choose the agents for this Skill. Settings only supplies defaults for its first enablement.';
+  document.getElementById('global-target-modal-note').textContent = currentLanguage === 'zh'
+    ? '不勾选任何目标将移除这个 Skill 的全部全局入口。Claude Desktop 选项只生成上传 ZIP，不代表已经上传到账号。'
+    : 'Selecting no targets removes every managed global entry for this Skill. Claude Desktop only exports an upload ZIP.';
+  document.getElementById('global-target-modal-cancel').textContent = currentLanguage === 'zh' ? '取消' : 'Cancel';
+  document.querySelector('#global-target-modal-apply span').textContent = currentLanguage === 'zh' ? '应用选择' : 'Apply selection';
+
+  const states = Array.isArray(skill.global_target_states) ? skill.global_target_states : [];
+  const hasExistingSelection = states.some(target => target.enabled || target.status === 'partial');
+  skillGlobalTargets.innerHTML = globalSkillTargetOptions.map(option => {
+    const target = states.find(item => item.id === option.id) || {
+      ...option, enabled: false, status: 'disabled'
+    };
+    const selected = hasExistingSelection
+      ? (target.enabled || target.status === 'partial')
+      : globalSkillTargets.includes(option.id);
+    const conflict = target.status === 'conflict';
+    const secondary = option.requires_manual_install
+      ? (currentLanguage === 'zh' ? '生成 Claude 上传 ZIP' : 'Create Claude upload ZIP')
+      : option.path;
+    return `
+      <label class="global-target-option ${conflict ? 'conflict' : ''}" data-target="${escapeHtml(option.id)}">
+        <input type="checkbox" value="${escapeHtml(option.id)}" ${selected && !conflict ? 'checked' : ''} ${conflict ? 'disabled' : ''}>
+        <span class="global-target-icon"><i data-lucide="${globalTargetIcon(option.id)}"></i></span>
+        <span class="global-target-copy">
+          <strong>${escapeHtml(option.label)}</strong>
+          <small title="${escapeHtml(secondary)}">${escapeHtml(secondary)}</small>
+          <span class="global-target-state ${escapeHtml(target.status || 'disabled')}">${escapeHtml(globalTargetStateLabel(target))}</span>
+        </span>
+        <span class="global-target-check"><i data-lucide="${conflict ? 'triangle-alert' : 'check'}"></i></span>
+      </label>`;
+  }).join('');
+  activateModal(globalTargetModal, skillGlobalTargets.querySelector('input:not([disabled])'));
+  lucide.createIcons();
+}
+
+function closeGlobalTargetModal() {
+  deactivateModal(globalTargetModal);
+  pendingGlobalTargetSkill = null;
+}
+
+async function applySkillGlobalTargets() {
+  const skill = pendingGlobalTargetSkill;
+  if (!skill) return;
+  const targetIds = Array.from(
+    skillGlobalTargets.querySelectorAll('input[type="checkbox"]:checked')
+  ).map(input => input.value);
+  const applyButton = document.getElementById('global-target-modal-apply');
+  applyButton.disabled = true;
+  try {
+    const result = skill.is_collection
+      ? await window.pywebview.api.set_skills_global_targets(
+          skill.codex_global_members || [], targetIds
+        )
+      : await window.pywebview.api.set_skill_global_targets(skill.filename, targetIds);
+    if (result.error) throw new Error(result.error);
+    deactivateModal(globalTargetModal);
+    pendingGlobalTargetSkill = null;
+    await fetchSkills();
+    const manualNote = targetIds.includes('claude_desktop')
+      ? (currentLanguage === 'zh' ? '；Claude Desktop ZIP 已生成，仍需手动上传' : '; Claude Desktop ZIP exported for manual upload')
+      : '';
+    showToast(
+      (currentLanguage === 'zh'
+        ? `已应用 ${targetIds.length} 个全局目标`
+        : `Applied ${targetIds.length} global targets`) + manualNote,
+      'success'
+    );
+  } catch (error) {
+    showToast(
+      (currentLanguage === 'zh' ? '全局目标更新失败: ' : 'Failed to update global targets: ') + error,
+      'error'
+    );
+  } finally {
+    applyButton.disabled = false;
+  }
+}
+
+function handleCodexGlobalButton(skill) {
+  openGlobalTargetModal(skill);
 }
 
 // ------------------------------------------
@@ -1552,12 +1784,12 @@ function openCollectionModal(collectionId) {
   const controllerEnabled = collectionSkill.collection_controller_enabled;
   const childCount = collectionSkill.collection_child_count;
   collectionModalSummary.textContent = currentLanguage === 'zh'
-    ? `${hasPrimary ? '1 个主控 + ' : ''}${childCount} 个子技能；${readOnly ? '当前仅供查看' : '主控关闭时整组暂停'}`
-    : `${hasPrimary ? '1 controller + ' : ''}${childCount} child skills; ${readOnly ? 'view only' : 'the controller pauses the whole collection'}`;
+    ? `${hasPrimary ? '1 个主控 + ' : ''}${childCount} 个子技能；${readOnly ? '可分别发布到所选全局目标' : '主控关闭时整组暂停'}`
+    : `${hasPrimary ? '1 controller + ' : ''}${childCount} child skills; ${readOnly ? 'each can publish to selected global targets' : 'the controller pauses the whole collection'}`;
   collectionModalHint.textContent = readOnly
     ? (currentLanguage === 'zh'
-      ? '尚未选择目标项目：可以查看文档，选择项目后才能调整启用状态。'
-      : 'No target project selected: documents are available, but enablement can only be changed in project mode.')
+      ? '这里可以为每个子 Skill 单独选择全局目标，与项目启用状态互不影响。'
+      : 'Each child Skill can choose its own global targets independently of project enablement.')
     : currentLanguage === 'zh'
       ? (controller && !controllerEnabled
         ? '主控已关闭：子技能选择已保留，但不会生效；下次同步会从项目移除整组。'
@@ -1589,6 +1821,24 @@ function openCollectionModal(collectionId) {
           ? (currentLanguage === 'zh' ? '启用' : 'On')
           : (currentLanguage === 'zh' ? '停用' : 'Off');
     const smart = getSmartEmojiAndTags(member);
+    const globalState = member.codex_global_status || 'disabled';
+    const globalEnabled = member.codex_global_enabled;
+    const globalActionLabel = globalState === 'conflict'
+      ? (currentLanguage === 'zh' ? '名称冲突' : 'Conflict')
+      : globalState === 'outdated'
+        ? (currentLanguage === 'zh' ? '更新' : 'Update')
+        : globalState === 'partial'
+          ? (currentLanguage === 'zh' ? '补齐目标' : 'Complete')
+        : globalEnabled
+          ? (currentLanguage === 'zh' ? '已全局' : 'Global')
+          : (currentLanguage === 'zh' ? '全局启用' : 'Enable');
+    const globalActionIcon = globalState === 'conflict'
+      ? 'triangle-alert'
+      : globalState === 'outdated'
+        ? 'refresh-cw'
+        : globalState === 'partial'
+          ? 'circle-dot-dashed'
+        : globalEnabled ? 'circle-check' : 'globe-2';
     return `
       <div class="collection-member ${!readOnly && effectiveEnabled ? 'enabled' : ''} ${!readOnly && pausedByController ? 'controller-paused' : ''} ${isController ? 'collection-controller' : ''}" data-filename="${escapeHtml(member.filename)}">
         <div class="collection-member-main">
@@ -1603,7 +1853,10 @@ function openCollectionModal(collectionId) {
           <button type="button" class="btn btn-secondary btn-icon js-view-collection-member" data-filename="${escapeHtml(member.filename)}" title="${currentLanguage === 'zh' ? '查看文档' : 'View docs'}">
             <i data-lucide="eye" style="width:14px;height:14px;"></i>
           </button>
-          ${readOnly ? '' : `
+          ${readOnly ? `
+            <button type="button" class="codex-global-button compact ${escapeHtml(globalState)} js-collection-global-action" data-filename="${escapeHtml(member.filename)}" data-state="${escapeHtml(globalState)}" ${globalState === 'conflict' ? 'disabled' : ''}>
+              <i data-lucide="${globalActionIcon}"></i><span>${escapeHtml(globalActionLabel)}</span>
+            </button>` : `
             <span class="collection-member-state">${stateText}</span>
             <label class="switch">
               <input type="checkbox" class="js-collection-member-toggle" data-filename="${escapeHtml(member.filename)}" ${enabled ? 'checked' : ''} ${pausedByController ? 'disabled' : ''}>
@@ -1616,7 +1869,7 @@ function openCollectionModal(collectionId) {
     collectionModal,
     collectionModal.querySelector(
       readOnly
-        ? '.js-view-collection-member'
+        ? '.js-collection-global-action:not([disabled])'
         : '.js-collection-member-toggle:not([disabled])'
     )
   );
@@ -1687,6 +1940,16 @@ collectionMembersList.addEventListener('change', async event => {
 });
 
 collectionMembersList.addEventListener('click', event => {
+  const globalButton = event.target.closest('.js-collection-global-action');
+  if (globalButton) {
+    const filename = globalButton.dataset.filename;
+    const member = getCollectionDisplaySkill(activeCollectionId)?.collection_members?.find(
+      item => item.filename === filename
+    );
+    closeCollectionModal();
+    if (member) openGlobalTargetModal(member);
+    return;
+  }
   const button = event.target.closest('.js-view-collection-member');
   if (!button) return;
   const filename = button.dataset.filename;
@@ -1750,7 +2013,7 @@ async function handleSyncSkills() {
     let preview = await window.pywebview.api.preview_sync(currentProjectPath, selectedSkills);
     if (preview.error) throw new Error(preview.error);
 
-    const changedCount = preview.summary.add + preview.summary.modify + preview.summary.delete + preview.summary.preserve;
+    const changedCount = preview.summary.add + preview.summary.modify + preview.summary.delete + preview.summary.preserve + (preview.scope_conflict_count || 0);
     if (changedCount === 0) {
       needsSyncAttention = false;
       showToast(locales[currentLanguage].syncPreviewNoChanges, 'success');
@@ -2291,6 +2554,18 @@ function formatSyncPreview(preview) {
   if (preview.has_conflicts) {
     lines.push('', locales[currentLanguage].syncPreviewConflict);
   }
+  if ((preview.scope_conflicts || []).length > 0) {
+    lines.push(
+      '',
+      isZh
+        ? '作用域重叠：以下 Skill 已在用户全局范围启用，项目同步后可能被同一 Agent 重复发现；SkillHub 不会自动删除任一作用域。'
+        : 'Scope overlap: these Skills are already enabled in user scope and may be discovered twice after project sync. SkillHub does not remove either scope automatically.'
+    );
+    preview.scope_conflicts.forEach(item => {
+      const targets = (item.global_targets || []).map(target => target.label).join(', ');
+      lines.push(`!  ${item.filename}${targets ? ` → ${targets}` : ''}`);
+    });
+  }
 
   const labels = isZh
     ? { add: '新增', modify: '修改', delete: '删除', preserve: '保留' }
@@ -2554,6 +2829,25 @@ async function openSkillViewer(filename) {
   document.body.classList.add('drawer-open');
   skillDetailEdit.style.display = skill.project_only ? 'none' : '';
   skillDetailDelete.style.display = skill.project_only ? 'none' : '';
+  const showCodexGlobalAction = (
+    !currentProjectPath
+    && !skill.project_only
+    && skill.codex_global_compatible
+  );
+  skillDetailCodexGlobal.style.display = showCodexGlobalAction ? '' : 'none';
+  skillDetailCodexGlobal.disabled = false;
+  const detailGlobalNeedsUpdate = skill.codex_global_status === 'outdated';
+  skillDetailCodexGlobal.innerHTML = detailGlobalNeedsUpdate
+    ? `<i data-lucide="refresh-cw" aria-hidden="true"></i>${currentLanguage === 'zh' ? '更新全局目标' : 'Update global targets'}`
+    : skill.codex_global_enabled
+      ? `<i data-lucide="globe-2" aria-hidden="true"></i>${currentLanguage === 'zh' ? '管理全局目标' : 'Manage global targets'}`
+      : `<i data-lucide="globe-2" aria-hidden="true"></i>${currentLanguage === 'zh' ? '发布到全局目标' : 'Publish to global targets'}`;
+  skillDetailCodexGlobal.onclick = showCodexGlobalAction
+    ? () => {
+        closeSkillDrawer(false);
+        openGlobalTargetModal(skill);
+      }
+    : null;
   skillDetailEdit.onclick = skill.project_only ? null : () => {
     closeSkillDrawer(false);
     openEditorModal(filename);
@@ -2723,6 +3017,21 @@ const settingsLanguage = document.getElementById('settings-language');
 const settingsTheme = document.getElementById('settings-theme');
 const settingsSkillsDir = document.getElementById('settings-skills-dir');
 const settingsScanDir = document.getElementById('settings-scan-dir');
+const settingsGlobalTargets = document.getElementById('settings-global-targets');
+
+function syncGlobalTargetSettings() {
+  settingsGlobalTargets?.querySelectorAll('.global-target-option').forEach(option => {
+    const targetId = option.dataset.target;
+    const input = option.querySelector('input[type="checkbox"]');
+    const target = globalSkillTargetOptions.find(item => item.id === targetId);
+    if (input) input.checked = globalSkillTargets.includes(targetId);
+    const path = option.querySelector('.global-target-copy small');
+    if (path && target && !target.requires_manual_install) {
+      path.textContent = target.path;
+      path.title = target.path;
+    }
+  });
+}
 
 function syncSettingsChoiceControls() {
   document.querySelectorAll('[data-settings-choice]').forEach(group => {
@@ -2755,6 +3064,7 @@ function openSettingsModal() {
   syncSettingsChoiceControls();
   settingsSkillsDir.value = skillsDirPath.textContent;
   settingsScanDir.value = defaultScanDir;
+  syncGlobalTargetSettings();
   document.getElementById('settings-aimodel').value = deepseekModel;
   document.getElementById('settings-apibase').value = apiBase;
   // API key field: leave empty placeholder — user must re-enter to change
@@ -2805,9 +3115,20 @@ async function handleSaveSettings() {
       theme: settingsTheme.value,
       default_scan_dir: settingsScanDir.value,
       ai_import_optimization: document.getElementById('settings-ai-import-optimization').checked,
-      ai_display_translation: document.getElementById('settings-ai-display-translation').checked
+      ai_display_translation: document.getElementById('settings-ai-display-translation').checked,
+      global_skill_targets: Array.from(
+        settingsGlobalTargets.querySelectorAll('input[type="checkbox"]:checked')
+      ).map(input => input.value)
     };
+    if (!settings.global_skill_targets.length) {
+      showToast(
+        currentLanguage === 'zh' ? '请至少选择一个全局启用目标' : 'Select at least one global target',
+        'warning'
+      );
+      return;
+    }
     const result = await window.pywebview.api.save_settings(settings);
+    if (result.error) throw new Error(result.error);
 
     // Save AI config separately if API key, model, or base URL changed
     const apiKeyInput = document.getElementById('settings-apikey');
@@ -2833,6 +3154,8 @@ async function handleSaveSettings() {
     defaultScanDir = result.default_scan_dir;
     aiImportOptimization = Boolean(result.ai_import_optimization);
     aiDisplayTranslation = Boolean(result.ai_display_translation);
+    globalSkillTargets = result.global_skill_targets || ['codex'];
+    globalSkillTargetOptions = result.global_skill_target_options || globalSkillTargetOptions;
     skillsDirPath.textContent = result.skills_dir;
     skillsDirPath.title = result.skills_dir;
 
@@ -3913,11 +4236,17 @@ if (dialogInput) {
 // ------------------------------------------
 
 async function handleDeleteSkill(filename) {
+  const skill = skills.find(item => item.filename === filename);
+  const codexGlobalNote = skill?.codex_global_enabled
+    ? (currentLanguage === 'zh'
+        ? ' 同时会移除由 SkillHub 管理的全局入口和导出包；撤销删除时会尝试恢复。'
+        : ' SkillHub-managed global entries and exports will also be removed and restored if you undo.')
+    : '';
   const confirmed = await showCustomDialog({
     title: currentLanguage === 'zh' ? '删除技能' : 'Delete Skill',
     message: currentLanguage === 'zh'
-      ? `将 "${filename}" 移入 SkillHub 回收站。删除后可在提示条中立即撤销。`
-      : `Move "${filename}" to SkillHub trash. You can undo it from the confirmation toast.`,
+      ? `将 "${filename}" 移入 SkillHub 回收站。删除后可在提示条中立即撤销。${codexGlobalNote}`
+      : `Move "${filename}" to SkillHub trash. You can undo it from the confirmation toast.${codexGlobalNote}`,
     emoji: '🗑️'
   });
   if (!confirmed) return;
@@ -3950,7 +4279,12 @@ async function handleDeleteSkill(filename) {
             await fetchProjects();
             refreshCurrentProject();
           }
-          showToast(currentLanguage === 'zh' ? '技能已恢复' : 'Skill restored', 'success');
+          showToast(
+            restored.warning
+              ? ((currentLanguage === 'zh' ? '技能已恢复，但部分全局目标恢复失败: ' : 'Skill restored, but some global targets could not be restored: ') + restored.warning)
+              : (currentLanguage === 'zh' ? '技能已恢复' : 'Skill restored'),
+            restored.warning ? 'warning' : 'success'
+          );
         }
       }
     );
@@ -3966,6 +4300,8 @@ window.handleChangeSkillsDir = handleChangeSkillsDir;
 window.handleRefreshSkills = handleRefreshSkills;
 window.openSettingsModal = openSettingsModal;
 window.closeSettingsModal = closeSettingsModal;
+window.closeGlobalTargetModal = closeGlobalTargetModal;
+window.applySkillGlobalTargets = applySkillGlobalTargets;
 window.handleSettingsPickSkillsDir = handleSettingsPickSkillsDir;
 window.handleSettingsPickScanDir = handleSettingsPickScanDir;
 window.handleSaveSettings = handleSaveSettings;
