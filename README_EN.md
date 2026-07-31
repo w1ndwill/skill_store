@@ -4,43 +4,9 @@
 
 SkillHub is a local Windows workspace for organizing reusable AI development guidance, preserving multi-Skill collections, and maintaining reviewable, reversible Skill configurations for individual projects. Current version: **3.2.0**.
 
-> **How this project evolved**
->
-> This work did not replace SkillHub with a separate Agent product. It retained the existing library, import, categorization, project sync, and rollback features, then upgraded the original AI assistant into **SkillOps Agent**. The model can now select tools, observe their results, continue a task, recall structured memory, and stop at an approval gate before any write.
-
 ![SkillHub English Skill library](docs/screenshots/en/skill-library.png)
 
 *Captured from the v3.2.0 portable build. Skill names, project paths, and enablement states come from the local demonstration environment.*
-
-## SkillOps Agent
-
-SkillOps Agent focuses on the lifecycle of AI coding Skills. It does not receive an unrestricted shell; instead, it works through bounded tools for discovery, inspection, research, preview, installation, and project synchronization.
-
-```mermaid
-flowchart LR
-    A["User goal"] --> B["Agent selects a tool"]
-    B --> C["Observe the tool result"]
-    C --> D{"Write required?"}
-    D -- "No" --> E["Continue or answer"]
-    D -- "Yes" --> F["Create a hash-locked preview"]
-    F --> G["Wait for user approval"]
-    G --> H["Revalidate and apply"]
-    H --> I["Record the result and relevant memory"]
-```
-
-![SkillOps Agent English workspace](docs/screenshots/en/skillops-agent.png)
-
-*A real read-only run verifies `self-improving-agent` through `search_skills`, `inspect_skill`, and `recall_memory`. The activity panel shows redacted summaries and final state, never hidden chain of thought. Earlier Chinese sessions remain visible because the screenshot uses the same persistent bilingual test workspace.*
-
-Key Agent capabilities:
-
-- **Real tool loop** — The model selects Function Calling tools, receives `tool` observations, and uses them in the next decision.
-- **Official catalog installation** — Read the fixed SkillHub guide, resolve an exact slug, inspect the ZIP in isolation, and lock both package and tree hashes.
-- **GitHub Skill imports** — Preview one original `SKILL.md`, or detect `skills/*/SKILL.md` and preserve the repository as a collection.
-- **Approval-gated writes** — Every `apply_` tool pauses as `waiting_approval`; preview, target state, and hashes are revalidated after approval.
-- **Structured memory** — Recall relevant project facts, preferences, and decisions; memory can be viewed, disabled, or cleared.
-- **Recoverable runs** — Tasks, approvals, and redacted run records remain local and can survive an application restart.
-- **Loop protection** — A run receives up to 32 model decisions by default and stops early after repeated identical tool choices.
 
 ## Skill management and project sync
 
@@ -78,8 +44,17 @@ The detail drawer presents source information, category, tags, Frontmatter, and 
 | Bilingual descriptions | Use display-only localization without rewriting third-party `SKILL.md` |
 | Project synchronization | Preview additions, updates, removals, and conflicts before writing |
 | Sync rollback | Undo the most recent sync when affected project files have not changed again |
+| SkillOps Agent | Optional tool-assisted module for finding, inspecting, previewing, and maintaining Skills |
 | Single-instance startup | A second launch focuses the existing window instead of opening another |
 | Local data model | Skills, settings, sessions, Agent memory, and backups stay on the machine |
+
+## Optional AI assistance
+
+SkillOps Agent is an auxiliary module built on top of SkillHub's existing library and project synchronization workflows. It can help find, inspect, preview, install, and maintain Skills, but it does not replace manual imports, editing, categorization, or synchronization and does not expose an unrestricted shell.
+
+![SkillOps Agent English workspace](docs/screenshots/en/skillops-agent.png)
+
+The model can only call predefined bounded tools. Read-only work may finish directly, while installation, saving, and synchronization still require a preview and explicit user approval. Task records and structured memory remain local and can be disabled or cleared.
 
 ## Quick start
 
@@ -88,7 +63,7 @@ The detail drawer presents source information, category, tags, Frontmatter, and 
 3. Import a `.md`, `.zip`, standard Skill folder, or Skill collection.
 4. Add a target project and select the Skills it needs.
 5. Review the sync preview, then confirm the write.
-6. Open SkillOps Agent when you want to inspect, install, or maintain Skills through a tool-driven workflow.
+6. Optional: open SkillOps Agent for assisted inspection, installation, or maintenance.
 
 The application is portable and requires no installer. On first launch it creates:
 
