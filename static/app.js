@@ -3202,6 +3202,7 @@ let aiIsLoading = false;
 let currentSessionId = null;
 let allSessions = [];
 let currentAgentRunId = null;
+let currentAgentApprovalId = null;
 let agentPanelCollapsed = false;
 
 function updateAgentDialogControls() {
@@ -3355,6 +3356,7 @@ async function createNewSession(saveBeforeCreate = true) {
   aiSkillPreview.style.display = 'none';
   aiGeneratedSkill = null;
   currentAgentRunId = null;
+  currentAgentApprovalId = null;
   allSessions.unshift({
     id: currentSessionId,
     title: currentLanguage === 'zh' ? '新会话' : 'New Chat',
@@ -3459,6 +3461,7 @@ function handleChatKeydown(e) {
 
 function resetAgentRunPanel() {
   currentAgentRunId = null;
+  currentAgentApprovalId = null;
   agentStatusBadge.textContent = currentLanguage === 'zh' ? '空闲' : 'Idle';
   agentStatusBadge.className = 'agent-status-badge idle';
   agentPhase.textContent = currentLanguage === 'zh' ? '等待目标' : 'Waiting for a goal';
@@ -3602,6 +3605,7 @@ function renderAgentRun(result) {
     : `<div class="agent-empty-note">${currentLanguage === 'zh' ? '暂无工具记录。' : 'No tool events.'}</div>`;
 
   const pending = result.pending_approval;
+  currentAgentApprovalId = pending ? pending.approval_id || null : null;
   agentApprovalCard.hidden = !pending;
   if (pending) {
     agentApprovalTool.textContent = `${pending.tool} ${
@@ -3641,12 +3645,15 @@ async function loadAgentRunForSession() {
 }
 
 async function approveAgentAction() {
-  if (!currentAgentRunId || aiIsLoading) return;
+  if (!currentAgentRunId || !currentAgentApprovalId || aiIsLoading) return;
   aiIsLoading = true;
   aiSendBtn.disabled = true;
   agentPhase.textContent = currentLanguage === 'zh' ? '执行已批准操作…' : 'Applying approved action…';
   try {
-    const result = await window.pywebview.api.agent_approve(currentAgentRunId);
+    const result = await window.pywebview.api.agent_approve(
+      currentAgentRunId,
+      currentAgentApprovalId
+    );
     if (result.error) throw new Error(result.error);
     renderAgentRun(result);
     if (result.final_answer) {

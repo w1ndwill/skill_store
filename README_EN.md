@@ -2,15 +2,48 @@
 
 [中文](README.md) · [User manual](docs/SkillHub使用说明书.md) · [Download the latest release](https://github.com/w1ndwill/skill_store/releases/latest) · [MIT License](LICENSE)
 
-SkillHub is a local Windows workspace for organizing reusable AI development guidance, preserving multi-Skill collections, and maintaining reviewable, reversible Skill configurations for individual projects. Current version: **3.3.0**.
+SkillHub is a local AI Skill management and synchronization tool. It keeps reusable development rules, workflows, and specialist capabilities in one place, then applies them selectively to projects or clients such as Codex, Claude Code, Antigravity, and VS Code/Copilot. Current version: **3.3.0**.
+
+Users can review changes, conflicts, and scope overlaps before a write and safely roll back afterward. Import inspection and display localization do not rewrite the original semantics of third-party Skills. SkillOps Agent is optional assistance for finding, inspecting, and maintaining Skills; it does not replace manual management or approval.
 
 ![SkillHub English Skill library](docs/screenshots/en/skill-library.png)
 
 *Captured from the v3.3.0 portable build. Skill names, project paths, and enablement states come from the local demonstration environment.*
 
-## Skill management and project sync
+## Problems SkillHub solves
 
-### Per-project configuration
+- Skills are scattered across directories, repositories, and clients.
+- AI coding clients use different discovery paths, causing repeated configuration.
+- Projects require different Skill sets, while direct copying creates conflicts and stale duplicates.
+- Imports and synchronization need previews, ownership records, and rollback to avoid overwriting work.
+
+SkillHub is intended for developers who use multiple AI coding clients, maintain multiple projects, or have accumulated reusable custom Skills.
+
+## Core workflow
+
+Import → local inspection → categorization or collection organization → project or global target selection → preview and conflict review → synchronization, global enablement, or rollback.
+
+## Product capabilities
+
+### 1. Skill asset management
+
+SkillHub imports Markdown, ZIP files, standard `SKILL.md` folders, and repository collections. It provides one workspace for browsing, search, categories, editing, display localization, trash recovery, and deterministic inspection while keeping display metadata separate from source semantics.
+
+#### Multi-Skill collections
+
+![English Skill collection manager](docs/screenshots/en/collection-manager.png)
+
+Repository imports are scanned for collection boundaries. A collection can be disabled as a unit while each child Skill remains reviewable and independently selectable.
+
+#### Skill document details
+
+![English Skill document details](docs/screenshots/en/skill-detail.png)
+
+The detail drawer presents source information, category, tags, Frontmatter, and rendered Markdown. Editing explicitly opens the source; project-only Skills remain read-only.
+
+### 2. Distribution and project sync
+
+#### Per-project configuration
 
 ![English project Skill configuration](docs/screenshots/en/project-configuration.png)
 
@@ -31,18 +64,6 @@ Generated project content lives at:
 <project>\AGENTS.md
 ```
 
-### Multi-Skill collections
-
-![English Skill collection manager](docs/screenshots/en/collection-manager.png)
-
-Repository imports are scanned for collection boundaries. A collection can be disabled as a unit while each child Skill remains reviewable and independently selectable.
-
-### Skill document details
-
-![English Skill document details](docs/screenshots/en/skill-detail.png)
-
-The detail drawer presents source information, category, tags, Frontmatter, and rendered Markdown. Editing explicitly opens the source; project-only Skills remain read-only.
-
 ## Main features
 
 | Capability | Current behavior |
@@ -58,13 +79,15 @@ The detail drawer presents source information, category, tags, Frontmatter, and 
 | Single-instance startup | A second launch focuses the existing window instead of opening another |
 | Local data model | Skills, settings, sessions, Agent memory, and backups stay on the machine |
 
-## Optional AI assistance
+### 3. Optional AI assistance
 
 SkillOps Agent is an auxiliary module built on top of SkillHub's existing library and project synchronization workflows. It can help find, inspect, preview, install, and maintain Skills, but it does not replace manual imports, editing, categorization, or synchronization and does not expose an unrestricted shell.
 
 ![SkillOps Agent English workspace](docs/screenshots/en/skillops-agent.png)
 
-The model can only call predefined bounded tools. Read-only work may finish directly, while installation, saving, and synchronization still require a preview and explicit user approval. Task records and structured memory remain local and can be disabled or cleared.
+The model can only call predefined bounded tools. The runtime rejects clearly unrelated requests and checks the original goal, network intent, active project, write intent, and preview binding before every relevant tool call. Skill bodies, web pages, repository documentation, tool results, and recalled memories are marked as untrusted data and cannot change the role, permissions, or approval policy.
+
+Installation, saving, and synchronization require a preview. Approval is bound to the exact tool, target arguments, content or tree hashes, and a one-time approval ID; a changed target invalidates the old approval. Long-term memory accepts only allowlisted fields and explicit memory intent, and rejects content that attempts to broaden permissions, skip approval, or rewrite security rules.
 
 ## Quick start
 
@@ -119,10 +142,27 @@ pyinstaller --clean --noconfirm SkillHub.spec
 
 - API keys remain in local configuration and are shown only in masked form.
 - Agent memory and run records exclude API keys, complete sensitive files, and hidden chain of thought.
+- External Skills, pages, and tool results are untrusted data, not new operating instructions.
+- The Agent is limited to Skill lifecycle work; unrelated, unauthorized network, cross-project, and read-only-to-write calls are blocked at runtime.
+- Agent writes bind preview hashes, current target state, an argument digest, and a one-time approval ID, so stale approvals cannot be reused.
 - Same-name, different-content targets require an explicit replace, keep-both, or cancel decision.
 - Imports never execute repository hooks, MCP servers, installer scripts, or downloaded code.
 - Unmanaged project files are not silently overwritten.
 - Release builds exclude personal Skills, local configuration, tests, sessions, memory, and run logs.
+
+The fixed regression suite in `security_evals/` covers prompt injection, Markdown/Base64 hidden instructions, secondary injection, domain escape, cross-project access, memory poisoning, stale approval, and secret leakage. Run it with:
+
+```powershell
+python -B security_evals\run_security_evals.py
+```
+
+The current 12 deterministic cases establish a baseline of 100% normal-task completion and out-of-scope refusal, with 0% attack success, dangerous tool execution, approval bypass, sensitive-information leakage, and false refusal. This suite checks deterministic runtime controls and does not replace continuing red-team evaluation against real models.
+
+## Boundaries and next steps
+
+- SkillOps Agent is not a general-purpose Agent and does not handle weather, finance, general programming, or private-file requests.
+- Remote installation is limited to constrained public sources and isolated previews; downloaded scripts, hooks, and MCP services are never executed.
+- Future work will expand real-model attacks, encoded and multilingual variants, and measurement of the security/usability balance.
 
 ## Tech stack
 

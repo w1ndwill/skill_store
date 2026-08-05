@@ -2098,6 +2098,7 @@ description: <一句话描述>
                     "package_sha256": manifest["package_sha256"],
                     "transaction_id": transaction_id,
                 },
+                source="runtime",
             )
             return {
                 "ok": True,
@@ -2151,6 +2152,9 @@ description: <一句话描述>
             "ok": True,
             "target_file": filename,
             "change_type": "modify" if source else "create",
+            "target_exists": bool(source),
+            "before_sha256": hashlib.sha256(before.encode("utf-8")).hexdigest(),
+            "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
             "summary": arguments["summary"],
             "content": content,
             "diff": diff[:12000],
@@ -2544,6 +2548,7 @@ description: <一句话描述>
                     "source_sha256": manifest["source_sha256"],
                     "transaction_id": transaction_id,
                 },
+                source="runtime",
             )
             return {
                 "ok": True,
@@ -2629,6 +2634,7 @@ description: <一句话描述>
                     "collection_id": result.get("collection_id", ""),
                     "installed": result.get("filenames", []),
                 },
+                source="runtime",
             )
         return result
 
@@ -2645,6 +2651,9 @@ description: <一句话描述>
         if not filename or filename != arguments["filename"]:
             return {"error": "Invalid or normalized skill filename"}
         content = arguments["content"]
+        content_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        if content_sha256 != arguments["expected_content_sha256"]:
+            return {"error": "Skill content no longer matches the approved preview"}
         if SENSITIVE_VALUE_RE.search(content) or SENSITIVE_INLINE_RE.search(content):
             return {"error": "Content appears to contain a secret and was not saved"}
         source = self._editable_skill_source(filename)
@@ -2653,6 +2662,19 @@ description: <一句话描述>
         )
         if not target:
             return {"error": "Unsafe skill target path"}
+        target_exists = bool(source and os.path.isfile(target))
+        if target_exists != arguments["expected_target_exists"]:
+            return {"error": "Skill target existence changed after preview; preview again"}
+        before = ""
+        if target_exists:
+            try:
+                with open(target, "r", encoding="utf-8") as handle:
+                    before = handle.read()
+            except OSError as error:
+                return {"error": str(error)}
+        before_sha256 = hashlib.sha256(before.encode("utf-8")).hexdigest()
+        if before_sha256 != arguments["expected_before_sha256"]:
+            return {"error": "Skill target changed after preview; preview again"}
         transaction_id = uuid.uuid4().hex
         backup = ""
         try:
@@ -2677,6 +2699,7 @@ description: <一句话描述>
                     "transaction_id": transaction_id,
                     "had_backup": bool(backup),
                 },
+                source="runtime",
             )
             return {
                 "ok": True,
@@ -2712,6 +2735,7 @@ description: <一句话描述>
                     "enabled_skills": arguments["enabled_skills"],
                     "transaction_id": result.get("transaction_id", ""),
                 },
+                source="runtime",
             )
         return result
 
@@ -2886,8 +2910,18 @@ description: <一句话描述>
                 object_schema({
                     "filename": {"type": "string", "minLength": 1, "maxLength": 240},
                     "content": {"type": "string", "minLength": 1, "maxLength": 100000},
+                    "expected_target_exists": {"type": "boolean"},
+                    "expected_before_sha256": {"type": "string", "minLength": 64, "maxLength": 64},
+                    "expected_content_sha256": {"type": "string", "minLength": 64, "maxLength": 64},
                     "reason": {"type": "string", "minLength": 1, "maxLength": 500},
-                }, ["filename", "content", "reason"]),
+                }, [
+                    "filename",
+                    "content",
+                    "expected_target_exists",
+                    "expected_before_sha256",
+                    "expected_content_sha256",
+                    "reason",
+                ]),
                 self._tool_apply_skill_change,
                 risk="write",
             ),
@@ -3074,6 +3108,7 @@ description: <一句话描述>
                     arguments["kind"],
                     arguments["summary"],
                     project_path=arguments.get("project_path", ""),
+                    source="user_request",
                 ),
             ),
         ]
@@ -3114,10 +3149,10 @@ description: <一句话描述>
             return {"error": "请先配置 API Key"}
         return self._agent_runtime().resume(run_id)
 
-    def agent_approve(self, run_id):
+    def agent_approve(self, run_id, approval_id=""):
         if not self.deepseek_api_key:
             return {"error": "请先配置 API Key"}
-        return self._agent_runtime().approve(run_id)
+        return self._agent_runtime().approve(run_id, approval_id)
 
     def agent_reject(self, run_id, reason=""):
         return self._agent_runtime().reject(run_id, reason)
