@@ -1,6 +1,6 @@
 # SkillHub 使用说明书
 
-> 适用版本：3.3.1
+> 适用版本：3.4.0
 >
 > 运行平台：Windows
 >
@@ -8,7 +8,7 @@
 
 SkillHub 是一个本地运行的 AI Skill 管理工具。它把可复用 Skill 保存在统一的全局库中，再由使用者为不同项目选择所需内容。同步前可以预览新增、修改、删除和冲突；同步后，项目通过 `AGENTS.md` 与 `.agent/skills/` 向 AI 开发工具提供规则。
 
-SkillHub 的主要能力包括全局 Skill 管理、文件与仓库导入、集合组织、项目独立配置、同步预览、冲突保护和同步撤销。3.3.1 同时提供可选的 SkillOps Agent 辅助模块，用于在这些既有流程上帮助检索、检查和维护 Skill；手动管理和项目同步仍可独立使用。
+SkillHub 的主要能力包括全局 Skill 管理、文件与仓库导入、集合组织、项目独立配置、同步预览、冲突保护和同步撤销。3.4.0 同时提供可选的 SkillOps Agent 辅助模块，并完成桌面 API、导入、同步、全局发布与运行时基础设施的模块化重构；手动管理和项目同步仍可独立使用。
 
 本说明书介绍实际使用方法、Skill 类型、集合逻辑、项目同步机制、本地数据位置和常见问题。
 
@@ -40,13 +40,14 @@ SkillHub 的主要能力包括全局 Skill 管理、文件与仓库导入、集�
 
 | 目标 | 当前用户范围 | 安装方式 |
 | --- | --- | --- |
-| Codex | `%USERPROFILE%\.agents\skills\` | 目录联接 |
+| Codex | `%CODEX_HOME%\skills\`（默认 `%USERPROFILE%\.codex\skills\`） | 目录联接 |
 | Claude Code | `%USERPROFILE%\.claude\skills\` | 目录联接 |
 | Antigravity | `%USERPROFILE%\.gemini\config\skills\` | 目录联接 |
+| Gemini CLI | `%USERPROFILE%\.gemini\skills\` | 目录联接 |
 | VS Code / Copilot | `%USERPROFILE%\.copilot\skills\` | 目录联接 |
 | Claude Desktop | `.skill-hub\exports\claude-desktop\` | 生成 ZIP 后，在 Claude 的 `Customize > Skills` 中手动上传 |
 
-VS Code 也会发现 `~/.agents/skills` 和 `~/.claude/skills`。同时选择 Codex、Claude Code 与 VS Code 专用目录时，同一个 Skill 可能被 VS Code 从多个位置发现；需要完全避免重复时，只选择其中一个 VS Code 能读取的目录即可。
+VS Code 也可能发现 `~/.agents/skills` 和 `~/.claude/skills`。同时选择多个客户端目标时，同一个 Skill 可能被 VS Code 从多个位置发现；需要完全避免重复时，只选择其中一个 VS Code 能读取的目录即可。
 
 全局范围与项目范围彼此独立。若同一个 Skill 已发布到任一目录型全局目标，又在项目中被选中，SkillHub 会在项目同步预览中报告“作用域重叠”并要求明确确认。SkillHub 不会自动关闭全局入口，因为这会影响其他项目；也不会静默跳过项目版本。对于 Codex，同名 Skill 不会自动合并，完全避免重复时应在该 Agent 上只保留一个作用域。
 
@@ -288,8 +289,8 @@ collection\
 1. 点击“导入”。
 2. 选择文件或文件夹。
 3. SkillHub 将来源复制到临时预览区。
-4. 执行结构检查、安全检查和重复判断。
-5. 查看规范化结果、风险提示和差异。
+4. 在本机执行结构、安全、多客户端兼容和重复检查。
+5. 查看规范化结果、各客户端状态、风险提示和差异。
 6. 确认后写入全局库。
 
 正式导入后，原始来源会保存在：
@@ -311,11 +312,13 @@ collection\
 - Bundle 路径冲突；
 - ZIP 路径穿越或符号链接。
 
+多客户端兼容检查也完全在本地完成，不会把 Skill 正文发送给任何模型。它会分别判断 Codex、Claude Code、Antigravity、Gemini CLI、VS Code / Copilot 和 Claude Desktop 的目录、`SKILL.md` 元数据、上传包大小与权限字段要求。显示“由 SkillHub 适配”表示发布时会生成目标客户端专用副本；源 Skill 的 frontmatter、正文和资源不会因此改变。Claude Code 的 `allowed-tools` 会单独提示审阅，因为它可能影响调用轮次中的工具确认行为。
+
 高风险提示需要单独确认。确认只表示允许导入，不代表其中的命令已经安全；仍应查看正文和适用边界。
 
 ### 6.4 AI 导入优化
 
-在设置中开启“导入时使用 AI 优化”后，SkillHub 会先执行本地检查，再调用已配置的兼容 OpenAI 接口优化入口文档。
+在设置中开启“导入时使用 AI 优化”后，SkillHub 会先完成上述本地检查，再调用已配置的兼容 OpenAI 接口优化入口文档。多客户端兼容结果不依赖此开关，也不依赖 API Key。
 
 - 未配置 API Key 时自动使用本地结果。
 - AI 改写会显示差异，必须再次确认。

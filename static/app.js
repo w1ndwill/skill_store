@@ -638,8 +638,8 @@ function applyLanguage(lang) {
     ? '导入时使用 AI 优化'
     : 'Use AI optimization during import';
   document.getElementById('settings-desc-ai-import').textContent = lang === 'zh'
-    ? '开启后先完成本地体检，再调用 AI 优化入口文档；导入前会显示差异并要求确认。'
-    : 'Runs local validation, then asks AI to optimize the entry document; the diff must be reviewed and accepted before import.';
+    ? '开启后先完成本地结构、安全与多客户端兼容体检，再调用 AI 优化入口文档；导入前会显示差异并要求确认。'
+    : 'Runs local structure, security, and multi-client compatibility checks, then asks AI to optimize the entry document; the diff must be reviewed and accepted before import.';
   document.getElementById('settings-label-ai-display-translation').textContent = lang === 'zh'
     ? '导入时生成双语说明'
     : 'Generate bilingual descriptions on import';
@@ -976,6 +976,26 @@ function renderMarkdown(markdown) {
   return metadata + sanitizeHtml(marked.parse(body || ''));
 }
 
+// COLLECTION_DISPLAY_METADATA_HELPER_START
+function resolveCollectionDisplayMetadata(primary, collectionId, childCount, language = currentLanguage) {
+  const collection = primary.collection || {};
+  const title = collection.display_title || collection.title || collectionId;
+  const controllerDescription = collection.is_controller
+    ? (primary.display_description || primary.description || '')
+    : '';
+  const fallbackDescription = language === 'zh'
+    ? `包含 ${childCount} 个子技能的技能集合。`
+    : `A skill collection containing ${childCount} child skills.`;
+  const description = collection.display_description || controllerDescription || fallbackDescription;
+  return {
+    title,
+    description,
+    display_title: title,
+    display_description: description,
+  };
+}
+// COLLECTION_DISPLAY_METADATA_HELPER_END
+
 function buildDisplaySkills() {
   const groups = new Map();
   skills.forEach(skill => {
@@ -997,11 +1017,15 @@ function buildDisplaySkills() {
     emitted.add(collectionId);
     const members = groups.get(collectionId) || [];
     const primary = members.find(member => member.filename === collectionId) || members[0];
+    const childCount = members.filter(member => member.filename !== collectionId).length;
     const enabledCount = members.filter(member => member.collection?.effective_enabled).length;
     const configuredCount = members.filter(member => member.collection?.enabled).length;
     const tags = Array.from(new Set(members.flatMap(member => member.tags || []))).slice(0, 5);
-    const displayTitle = primary.collection?.display_title || primary.display_title || primary.title;
-    const displayDescription = primary.collection?.display_description || primary.display_description || primary.description;
+    const displayMetadata = resolveCollectionDisplayMetadata(
+      primary,
+      collectionId,
+      childCount,
+    );
     const globalMembers = members.filter(member => member.codex_global_compatible);
     const globalEnabledCount = globalMembers.filter(member => member.codex_global_enabled).length;
     const hasGlobalConflict = globalMembers.some(member => member.codex_global_status === 'conflict');
@@ -1040,18 +1064,15 @@ function buildDisplaySkills() {
     });
     display.push({
       ...primary,
+      ...displayMetadata,
       filename: `@collection:${collectionId}`,
-      title: displayTitle,
-      description: displayDescription,
       emoji: '🧰',
       tags,
       is_dir: true,
       is_collection: true,
       collection_id: collectionId,
       collection_members: members,
-      collection_child_count: members.filter(
-        member => member.filename !== collectionId
-      ).length,
+      collection_child_count: childCount,
       collection_enabled_count: enabledCount,
       collection_configured_count: configuredCount,
       collection_controller: primary.collection?.controller || '',
@@ -2138,6 +2159,20 @@ function formatImportPreview(preview) {
     : preview.ai_requested
       ? (isZh ? '本地规则体检（AI 已回退）' : 'Local validation (AI fallback)')
       : (isZh ? '本地规则体检（未调用 AI）' : 'Local validation (AI not called)');
+  const compatibilityStatusLabels = {
+    ready: isZh ? '直接兼容' : 'ready',
+    adapted: isZh ? '由 SkillHub 适配' : 'adapted by SkillHub',
+    warning: isZh ? '需审阅权限' : 'review permissions',
+    error: isZh ? '暂不可发布' : 'not publishable'
+  };
+  const appendCompatibility = (compatibility, indent = '') => {
+    const targets = Object.values(compatibility?.targets || {});
+    targets.forEach(target => {
+      const status = compatibilityStatusLabels[target.status] || target.status;
+      const detail = isZh ? target.detail_zh : target.detail_en;
+      lines.push(`${indent}• ${target.label}: ${status} — ${detail || ''}`);
+    });
+  };
   const lines = [
     `${isZh ? '来源' : 'Source'}: ${preview.source_name}`,
     `${isZh ? '类型' : 'Type'}: ${kindLabels[preview.kind] || preview.kind}`,
@@ -2186,6 +2221,13 @@ function formatImportPreview(preview) {
       if (item.display_language === currentLanguage && item.display_title) {
         lines.push(`  ${isZh ? '显示为' : 'Displayed as'}: ${item.display_title}`);
       }
+      const compatibilityIssues = Object.values(
+        item.compatibility?.targets || {}
+      ).filter(target => target.status !== 'ready');
+      compatibilityIssues.forEach(target => {
+        const compatibilityStatus = compatibilityStatusLabels[target.status] || target.status;
+        lines.push(`  ${isZh ? '兼容性' : 'Compatibility'} · ${target.label}: ${compatibilityStatus}`);
+      });
     });
   } else {
     lines.splice(
@@ -2199,6 +2241,10 @@ function formatImportPreview(preview) {
         `${isZh ? '说明' : 'Description'}: ${preview.display_description}`
       );
     }
+  }
+  if (preview.kind !== 'collection' && preview.compatibility?.targets) {
+    lines.push('', isZh ? '客户端兼容性（本地规则）：' : 'Client compatibility (local rules):');
+    appendCompatibility(preview.compatibility);
   }
   if (preview.replace_existing) {
     lines.push(
