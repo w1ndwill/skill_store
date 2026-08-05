@@ -44,7 +44,7 @@ else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.3.1"
 SINGLE_INSTANCE_MUTEX_NAME = r"Local\SkillHub.Desktop.SingleInstance"
 ERROR_ALREADY_EXISTS = 183
 SKILLHUB_INSTALL_GUIDE_URL = "https://skillhub.cn/install/skillhub.md"
