@@ -372,7 +372,7 @@
                 <label class="global-target-option" data-target="codex">
                   <input type="checkbox" value="codex">
                   <span class="global-target-icon"><i data-lucide="square-terminal"></i></span>
-                  <span class="global-target-copy"><strong>Codex</strong><small>~/.agents/skills</small></span>
+                  <span class="global-target-copy"><strong>Codex</strong><small>$CODEX_HOME/skills（默认 ~/.codex/skills）</small></span>
                   <span class="global-target-check"><i data-lucide="check"></i></span>
                 </label>
                 <label class="global-target-option" data-target="claude_code">
@@ -385,6 +385,12 @@
                   <input type="checkbox" value="antigravity">
                   <span class="global-target-icon"><i data-lucide="orbit"></i></span>
                   <span class="global-target-copy"><strong>Antigravity</strong><small>~/.gemini/config/skills</small></span>
+                  <span class="global-target-check"><i data-lucide="check"></i></span>
+                </label>
+                <label class="global-target-option" data-target="gemini_cli">
+                  <input type="checkbox" value="gemini_cli">
+                  <span class="global-target-icon"><i data-lucide="square-terminal"></i></span>
+                  <span class="global-target-copy"><strong>Gemini CLI</strong><small>~/.gemini/skills</small></span>
                   <span class="global-target-check"><i data-lucide="check"></i></span>
                 </label>
                 <label class="global-target-option" data-target="vscode">
@@ -437,7 +443,7 @@
             <div class="settings-field">
               <div class="settings-field-label">
                 <span id="settings-label-ai-import">导入时使用 AI 优化</span>
-                <span class="settings-field-desc" id="settings-desc-ai-import">开启后先完成本地体检，再调用 AI 优化入口文档；导入前会显示差异并要求确认。</span>
+                <span class="settings-field-desc" id="settings-desc-ai-import">开启后先完成本地结构、安全与多客户端兼容体检，再调用 AI 优化入口文档；导入前会显示差异并要求确认。</span>
               </div>
               <label class="switch" title="AI 优化">
                 <input type="checkbox" id="settings-ai-import-optimization">

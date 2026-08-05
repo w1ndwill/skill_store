@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .venv/
+.codex/
 
 # PyInstaller
 build/
@@ -25,7 +26,12 @@ agent_backups/
 .agents/
 AGENTS.md
 /original-skills/
-/tests/
+/docs/SkillHub项目说明-简历版.md
+/tests/*
+!/tests/test_codex_global_skills.py
+!/tests/test_frontend_collection_display.py
+!/tests/test_modular_architecture.py
+!/tests/test_refactored_workflows.py
 
 # Legacy/runtime skills folder (active libraries live outside the repository)
 /skills/
