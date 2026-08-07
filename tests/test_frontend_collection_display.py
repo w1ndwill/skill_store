@@ -82,6 +82,44 @@ process.stdout.write(JSON.stringify({ localized, imported, controlled }));
             "display_description": "Controls the complete toolkit.",
         })
 
+    def test_collection_project_state_tracks_manifest_ownership(self):
+        source = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+        helper = source.split(
+            "// COLLECTION_PROJECT_STATE_HELPER_START",
+            1,
+        )[1].split(
+            "// COLLECTION_PROJECT_STATE_HELPER_END",
+            1,
+        )[0]
+        script = helper + r"""
+const members = [
+  { filename: 'one.md', collection: { effective_enabled: false } },
+  { filename: 'two.md', collection: { effective_enabled: false } }
+];
+const state = resolveCollectionProjectState(
+  members,
+  { 'one.md': 'synced', 'two.md': 'unloaded' },
+  new Set(),
+  new Set(['one.md']),
+  new Set(['two.md'])
+);
+process.stdout.write(JSON.stringify(state));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        state = json.loads(completed.stdout)
+
+        self.assertEqual(state["physicalStatus"], "out_of_sync")
+        self.assertTrue(state["isManaged"])
+        self.assertTrue(state["isDetached"])
+        self.assertFalse(state["isLocallyEnabled"])
+
 
 if __name__ == "__main__":
     unittest.main()

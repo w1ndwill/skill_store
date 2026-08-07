@@ -38,12 +38,29 @@ class ProjectsApiMixin:
             path = proj["path"]
             state_paths = self._sync_state_paths(path)
             sync_manifest = self._load_sync_manifest(path)
+            preserved_files = sync_manifest.get("preserved_files", {})
+            if not isinstance(preserved_files, dict):
+                preserved_files = {}
+            managed_skills = sorted({
+                metadata.get("owner", "")
+                for metadata in sync_manifest.get("files", {}).values()
+                if metadata.get("owner")
+                and metadata.get("owner") != "__agents_index__"
+            })
+            detached_skills = sorted({
+                metadata.get("owner", "")
+                for metadata in preserved_files.values()
+                if metadata.get("owner")
+                and metadata.get("owner") != "__agents_index__"
+            })
             entry = {
                 "name": proj["name"],
                 "path": path,
                 "skills_status": {},
                 "project_skills": [],
                 "can_undo_sync": os.path.isfile(state_paths["last_transaction"]),
+                "managed_skills": managed_skills,
+                "detached_skills": detached_skills,
                 "enabled_skills": (
                     sync_manifest.get("enabled_skills", [])
                     if sync_manifest

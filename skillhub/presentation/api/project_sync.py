@@ -260,6 +260,9 @@ class ProjectSyncApiMixin:
 
         previous_manifest = self._load_sync_manifest(registered_path)
         previous_files = previous_manifest.get("files", {})
+        preserved_files = previous_manifest.get("preserved_files", {})
+        if not isinstance(preserved_files, dict):
+            preserved_files = {}
         effective_enabled = self._effective_enabled_skills(enabled_skills)
         scope_conflicts = self._project_global_scope_conflicts(effective_enabled)
         desired, active_metadata, source_collision_keys = self._collect_desired_sync_files(
@@ -284,16 +287,21 @@ class ProjectSyncApiMixin:
 
             exists = os.path.isfile(target)
             current_hash = get_file_md5(target) if exists else ""
+            previous = previous_by_key.get(relative_path.casefold(), ("", {}))[1]
+            owner_matches = previous.get("owner") == spec["owner"]
             if not exists:
                 action = "add"
             elif current_hash == spec["hash"]:
-                action = "unchanged"
+                action = "unchanged" if owner_matches else "adopt"
             else:
                 action = "modify"
 
-            previous = previous_by_key.get(relative_path.casefold(), ("", {}))[1]
             conflict = False
             reason = ""
+            reason_code = ""
+            if action == "adopt":
+                reason = "Existing matching project copy will be added to the SkillHub manifest"
+                reason_code = "adopt_existing_copy"
             if relative_path.casefold() in source_collision_keys:
                 conflict = True
                 reason = "Multiple selected skills provide this path"
@@ -313,11 +321,82 @@ class ProjectSyncApiMixin:
                 "after_hash": spec["hash"],
                 "conflict": conflict,
                 "reason": reason,
+                "reason_code": reason_code,
                 "requires_bundle_authorization": bool(
                     spec.get("requires_bundle_authorization")
                 ),
                 "spec": spec,
             })
+
+        change_keys = {
+            item["path"].casefold()
+            for item in changes
+        }
+        previous_keys = {
+            relative_path.casefold()
+            for relative_path in previous_files
+        }
+        preserved_keys = {
+            relative_path.casefold()
+            for relative_path in preserved_files
+        }
+        enabled_set = set(effective_enabled)
+        disabled_filenames = [
+            skill.get("filename", "")
+            for skill in self.get_skills()
+            if skill.get("filename")
+            and skill.get("filename") not in enabled_set
+            and not skill.get("project_only")
+        ]
+        legacy_desired, _metadata, legacy_collisions = (
+            self._collect_desired_sync_files(
+                registered_path,
+                disabled_filenames,
+            )
+        )
+        for relative_path, spec in legacy_desired.items():
+            filename = spec.get("owner", "")
+            if not filename or filename == "__agents_index__":
+                continue
+            path_key = relative_path.casefold()
+            if (
+                path_key in change_keys
+                or path_key in previous_keys
+                or path_key in preserved_keys
+                or path_key in desired_keys
+            ):
+                continue
+            target = safe_real_child_path(registered_path, relative_path)
+            if not target or not os.path.isfile(target):
+                continue
+            current_hash = get_file_md5(target)
+            matches_source = current_hash == spec["hash"]
+            source_collision = path_key in legacy_collisions
+            changes.append({
+                "path": relative_path,
+                "action": "delete",
+                "owner": filename,
+                "before_hash": current_hash,
+                "after_hash": "",
+                "conflict": not matches_source or source_collision,
+                "reason": (
+                    "Multiple disabled Skills map to this unmanaged project path"
+                    if source_collision
+                    else "Unmanaged project copy differs from the global Skill"
+                    if not matches_source
+                    else "Matching legacy project copy is not recorded in the SkillHub manifest"
+                ),
+                "reason_code": (
+                    "unmanaged_source_collision"
+                    if source_collision
+                    else "unmanaged_modified_copy"
+                    if not matches_source
+                    else "unmanaged_matching_copy"
+                ),
+                "requires_bundle_authorization": False,
+                "spec": None,
+            })
+            change_keys.add(path_key)
 
         for relative_path, previous in previous_files.items():
             if relative_path.casefold() in desired_keys:
@@ -340,6 +419,11 @@ class ProjectSyncApiMixin:
                 "after_hash": "",
                 "conflict": False,
                 "reason": reason,
+                "reason_code": (
+                    "managed_modified_copy_preserved"
+                    if action == "preserve"
+                    else ""
+                ),
                 "requires_bundle_authorization": False,
                 "spec": None,
             })
@@ -351,6 +435,7 @@ class ProjectSyncApiMixin:
             "desired": desired,
             "active_metadata": active_metadata,
             "previous_manifest": previous_manifest,
+            "preserved_files": preserved_files,
             "scope_conflicts": scope_conflicts,
             "changes": changes,
         }
@@ -360,6 +445,7 @@ class ProjectSyncApiMixin:
             return {"error": plan["error"]}
         summary = {
             "add": 0,
+            "adopt": 0,
             "modify": 0,
             "delete": 0,
             "preserve": 0,
@@ -377,6 +463,7 @@ class ProjectSyncApiMixin:
                 "owner": item["owner"],
                 "conflict": item["conflict"],
                 "reason": item["reason"],
+                "reason_code": item.get("reason_code", ""),
                 "requires_bundle_authorization": item[
                     "requires_bundle_authorization"
                 ],
@@ -529,6 +616,28 @@ class ProjectSyncApiMixin:
                 else:
                     self._write_sync_target(target, item["spec"])
 
+            preserved_manifest = {}
+            desired_keys = {
+                relative_path.casefold()
+                for relative_path in plan["desired"]
+            }
+            for relative_path, metadata in plan.get("preserved_files", {}).items():
+                if relative_path.casefold() in desired_keys:
+                    continue
+                target = safe_real_child_path(project_path, relative_path)
+                if target and os.path.isfile(target):
+                    preserved_manifest[relative_path] = {
+                        "hash": get_file_md5(target),
+                        "owner": metadata.get("owner", ""),
+                    }
+            for item in plan["changes"]:
+                if item["action"] != "preserve":
+                    continue
+                preserved_manifest[item["path"]] = {
+                    "hash": item["before_hash"],
+                    "owner": item["owner"],
+                }
+
             new_manifest = {
                 "version": 1,
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -540,6 +649,7 @@ class ProjectSyncApiMixin:
                     }
                     for relative_path, spec in plan["desired"].items()
                 },
+                "preserved_files": preserved_manifest,
             }
             transaction = {
                 "version": 1,

@@ -213,7 +213,8 @@ const locales = {
     statusSynced: '已同步',
     statusUpdated: '有更新',
     statusPendingMount: '待装载',
-    statusPendingUnmount: '待移除',
+    statusPendingUnmount: '待从项目移除',
+    statusProjectCustom: '项目自定义 · 已保留',
     statusUnloaded: '未装载',
     statusReadonly: '未选择项目',
     btnAI: 'SkillOps Agent',
@@ -325,7 +326,8 @@ const locales = {
     statusSynced: 'Synced',
     statusUpdated: 'Updated',
     statusPendingMount: 'Pending Mount',
-    statusPendingUnmount: 'Pending Removal',
+    statusPendingUnmount: 'Pending Project Removal',
+    statusProjectCustom: 'Project Custom · Retained',
     statusUnloaded: 'Unloaded',
     statusReadonly: 'No Project Selected',
     btnAI: 'SkillOps Agent',
@@ -703,7 +705,7 @@ function updateStatistics() {
   }
   const t = locales[currentLanguage];
   const pendingCount = pendingSyncSummary
-    ? (pendingSyncSummary.add || 0) + (pendingSyncSummary.modify || 0) + (pendingSyncSummary.delete || 0)
+    ? (pendingSyncSummary.add || 0) + (pendingSyncSummary.adopt || 0) + (pendingSyncSummary.modify || 0) + (pendingSyncSummary.delete || 0)
     : null;
   const pendingText = pendingCount === null
     ? t.checkingBtn
@@ -724,8 +726,8 @@ function updateStatistics() {
     } else {
       const summary = pendingSyncSummary || {};
       syncBarSummary.textContent = currentLanguage === 'zh'
-        ? `新增 ${summary.add || 0} · 更新 ${summary.modify || 0} · 移除 ${summary.delete || 0}`
-        : `Add ${summary.add || 0} · Update ${summary.modify || 0} · Remove ${summary.delete || 0}`;
+        ? `新增 ${summary.add || 0} · 纳管 ${summary.adopt || 0} · 更新 ${summary.modify || 0} · 移除 ${summary.delete || 0}`
+        : `Add ${summary.add || 0} · Adopt ${summary.adopt || 0} · Update ${summary.modify || 0} · Remove ${summary.delete || 0}`;
     }
   }
 }
@@ -1275,7 +1277,14 @@ window.handleSelectCategory = function(canonicalCat) {
 };
 
 // COLLECTION_PROJECT_STATE_HELPER_START
-function resolveCollectionProjectState(collectionMembers, statusMap, enabledSkills) {
+function resolveCollectionProjectState(
+  collectionMembers,
+  statusMap,
+  enabledSkills,
+  managedSkills = new Set(),
+  detachedSkills = new Set()
+) {
+  const includeOwnership = arguments.length >= 4;
   const members = Array.isArray(collectionMembers) ? collectionMembers : [];
   const activeMembers = members.filter(
     member => member.collection?.effective_enabled
@@ -1294,12 +1303,17 @@ function resolveCollectionProjectState(collectionMembers, statusMap, enabledSkil
   ) {
     physicalStatus = 'out_of_sync';
   }
-  return {
+  const state = {
     physicalStatus,
     isLocallyEnabled: activeMembers.length > 0 && activeMembers.every(
       member => enabledSkills.has(member.filename)
     )
   };
+  if (includeOwnership) {
+    state.isManaged = observedMembers.some(member => managedSkills.has(member.filename));
+    state.isDetached = observedMembers.some(member => detachedSkills.has(member.filename));
+  }
+  return state;
 }
 // COLLECTION_PROJECT_STATE_HELPER_END
 
@@ -1360,6 +1374,8 @@ function renderSkillsGrid() {
 
   const activeProj = currentProjectPath ? projects.find(p => p.path === currentProjectPath) : null;
   const statusMap = activeProj ? (activeProj.skills_status || {}) : {};
+  const managedSkills = new Set(activeProj ? (activeProj.managed_skills || []) : []);
+  const detachedSkills = new Set(activeProj ? (activeProj.detached_skills || []) : []);
   const fragment = document.createDocumentFragment();
 
   filtered.forEach((skill, index) => {
@@ -1381,14 +1397,20 @@ function renderSkillsGrid() {
     } else if (currentProjectPath && activeProj && !activeProj.error) {
       let physicalStatus = statusMap[skill.filename] || 'unloaded';
       let isLocallyEnabled = enabledSkills.has(skill.filename);
+      let isManaged = managedSkills.has(skill.filename);
+      let isDetached = detachedSkills.has(skill.filename);
       if (skill.is_collection) {
         const collectionState = resolveCollectionProjectState(
           skill.collection_members,
           statusMap,
-          enabledSkills
+          enabledSkills,
+          managedSkills,
+          detachedSkills
         );
         isLocallyEnabled = collectionState.isLocallyEnabled;
         physicalStatus = collectionState.physicalStatus;
+        isManaged = collectionState.isManaged;
+        isDetached = collectionState.isDetached;
       }
 
       if (isLocallyEnabled) {
@@ -1402,8 +1424,20 @@ function renderSkillsGrid() {
         }
       } else {
         isChecked = false;
-        if (physicalStatus === 'synced' || physicalStatus === 'out_of_sync') {
-          statusHTML = `<span class="status-badge pending-unmount"><span class="status-dot"></span>${locales[currentLanguage].statusPendingUnmount}</span>`;
+        if (isDetached && (physicalStatus === 'synced' || physicalStatus === 'out_of_sync')) {
+          const retainedHint = currentLanguage === 'zh'
+            ? '该项目副本曾被修改；SkillHub 已停止管理并保留它。'
+            : 'This project copy was modified; SkillHub stopped managing it and retained it.';
+          statusHTML = `<span class="status-badge library" title="${escapeHtml(retainedHint)}"><span class="status-dot"></span>${locales[currentLanguage].statusProjectCustom}</span>`;
+        } else if (physicalStatus === 'synced' || physicalStatus === 'out_of_sync') {
+          const removalHint = currentLanguage === 'zh'
+            ? (isManaged
+              ? '已取消选择；项目副本将在确认同步后备份并移除。'
+              : '检测到未登记的项目副本；同步预览会显示内容差异，确认后备份并移除。')
+            : (isManaged
+              ? 'Deselected; the project copy will be backed up and removed after sync confirmation.'
+              : 'An unregistered project copy was found; sync preview will show content differences before backup and removal.');
+          statusHTML = `<span class="status-badge pending-unmount" title="${escapeHtml(removalHint)}"><span class="status-dot"></span>${locales[currentLanguage].statusPendingUnmount}</span>`;
         } else {
           statusHTML = `<span class="status-badge unloaded"><span class="status-dot"></span>${locales[currentLanguage].statusUnloaded}</span>`;
         }
@@ -2034,7 +2068,7 @@ async function handleSyncSkills() {
     let preview = await window.pywebview.api.preview_sync(currentProjectPath, selectedSkills);
     if (preview.error) throw new Error(preview.error);
 
-    const changedCount = preview.summary.add + preview.summary.modify + preview.summary.delete + preview.summary.preserve + (preview.scope_conflict_count || 0);
+    const changedCount = preview.summary.add + (preview.summary.adopt || 0) + preview.summary.modify + preview.summary.delete + preview.summary.preserve + (preview.scope_conflict_count || 0);
     if (changedCount === 0) {
       needsSyncAttention = false;
       showToast(locales[currentLanguage].syncPreviewNoChanges, 'success');
@@ -2594,8 +2628,8 @@ function formatSyncPreview(preview) {
   const summary = preview.summary;
   const isZh = currentLanguage === 'zh';
   const countLine = isZh
-    ? `新增 ${summary.add}  修改 ${summary.modify}  删除 ${summary.delete}  保留 ${summary.preserve}`
-    : `Add ${summary.add}  Modify ${summary.modify}  Delete ${summary.delete}  Preserve ${summary.preserve}`;
+    ? `新增 ${summary.add}  纳管 ${summary.adopt || 0}  修改 ${summary.modify}  删除 ${summary.delete}  保留 ${summary.preserve}`
+    : `Add ${summary.add}  Adopt ${summary.adopt || 0}  Modify ${summary.modify}  Delete ${summary.delete}  Preserve ${summary.preserve}`;
   const lines = [locales[currentLanguage].syncPreviewIntro, countLine];
   if (preview.has_conflicts) {
     lines.push('', locales[currentLanguage].syncPreviewConflict);
@@ -2614,12 +2648,30 @@ function formatSyncPreview(preview) {
   }
 
   const labels = isZh
-    ? { add: '新增', modify: '修改', delete: '删除', preserve: '保留' }
-    : { add: 'ADD', modify: 'MOD', delete: 'DEL', preserve: 'KEEP' };
+    ? { add: '新增', adopt: '纳管', modify: '修改', delete: '删除', preserve: '保留' }
+    : { add: 'ADD', adopt: 'ADOPT', modify: 'MOD', delete: 'DEL', preserve: 'KEEP' };
+  const reasonMessages = isZh
+    ? {
+        adopt_existing_copy: '项目中已有内容一致的副本，将只补充 SkillHub 所有权记录，不重写文件。',
+        unmanaged_matching_copy: '项目中存在未登记但内容一致的旧副本；确认后将备份并移除。',
+        unmanaged_modified_copy: '项目中存在未登记且内容不同的副本；确认后将备份并移除。',
+        unmanaged_source_collision: '多个未启用 Skill 指向同一路径；需要明确确认后移除。',
+        managed_modified_copy_preserved: '该副本已在项目中修改；本次同步会保留文件，并停止由 SkillHub 管理。'
+      }
+    : {
+        adopt_existing_copy: 'An identical project copy already exists; SkillHub will record ownership without rewriting it.',
+        unmanaged_matching_copy: 'An identical unregistered project copy exists; it will be backed up and removed after confirmation.',
+        unmanaged_modified_copy: 'A modified unregistered project copy exists; it will be backed up and removed after confirmation.',
+        unmanaged_source_collision: 'Multiple disabled Skills target this path; explicit confirmation is required before removal.',
+        managed_modified_copy_preserved: 'This project copy was modified; sync will retain it and stop managing it.'
+      };
   const visibleChanges = preview.changes.filter(item => item.action !== 'unchanged');
   visibleChanges.slice(0, 14).forEach(item => {
     const conflict = item.conflict ? ' !' : '';
     lines.push(`${labels[item.action] || item.action}${conflict}  ${item.path}`);
+    if (reasonMessages[item.reason_code]) {
+      lines.push(`   ${reasonMessages[item.reason_code]}`);
+    }
   });
   if (visibleChanges.length > 14) {
     const remaining = visibleChanges.length - 14;
