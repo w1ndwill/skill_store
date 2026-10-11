@@ -192,6 +192,22 @@ class ProjectSyncOwnershipTests(unittest.TestCase):
 
         self.assertEqual(projects[0]["skills_status"]["alpha.md"], "unloaded")
 
+    def test_removal_counts_distinguish_skill_packages_from_their_files(self):
+        global_root, project_root = self.create_standard_skill()
+        for index in range(6):
+            write_text(global_root / "references" / f"note-{index}.md", "# Reference\n")
+        installed = self.api.sync_skills(str(self.project_dir), [global_root.name])
+        self.assertTrue(installed["ok"])
+        before = {str(path): path.read_bytes() for path in project_root.rglob("*") if path.is_file()}
+        preview = self.api.preview_sync(str(self.project_dir), [])
+        self.assertEqual(preview["summary"]["delete"], 8)
+        self.assertEqual(preview["skill_summary"]["delete"], 1)
+        self.assertEqual(preview["removed_skills"], [{"filename": global_root.name, "file_count": 8}])
+        self.assertEqual(before, {str(path): path.read_bytes() for path in project_root.rglob("*") if path.is_file()})
+        restored_selection = self.api.preview_sync(str(self.project_dir), [global_root.name])
+        self.assertEqual(restored_selection["summary"]["delete"], 0)
+        self.assertEqual(restored_selection["removed_skills"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ let pendingSyncTimer = null;
 let pendingSyncInFlight = false;
 let pendingSyncQueued = false;
 const modalReturnFocus = new WeakMap();
+const modalViewIds = new WeakMap();
 
 // i18n & Theme State
 let currentLanguage = 'zh';
@@ -53,6 +54,7 @@ let editorOpenaiFormDirty = false;
 let editorOpenaiFormError = '';
 let editorInitialSnapshot = null;
 let editorClosePending = false;
+let editorViewId = 0;
 let reviewResolve = null;
 
 // DOM cache
@@ -143,6 +145,7 @@ function getModalFocusableElements(modal) {
 function activateModal(modal, preferredFocus = null) {
   if (!modal) return;
   if (!modal.classList.contains('active')) {
+    modalViewIds.set(modal, (modalViewIds.get(modal) || 0) + 1);
     modalReturnFocus.set(modal, document.activeElement);
   }
   modal.removeAttribute('inert');
@@ -157,6 +160,7 @@ function activateModal(modal, preferredFocus = null) {
 
 function deactivateModal(modal) {
   if (!modal) return;
+  modalViewIds.set(modal, (modalViewIds.get(modal) || 0) + 1);
   modal.classList.remove('active');
   modal.setAttribute('aria-hidden', 'true');
   modal.setAttribute('inert', '');
@@ -223,6 +227,7 @@ document.addEventListener('keydown', event => {
       'project-rules-editor': closeProjectRulesEditor,
       'workspace-tool-modal': closeWorkspaceTool,
       'collection-modal': closeCollectionModal,
+      'collection-editor': closeCollectionEditor,
       'global-target-modal': closeGlobalTargetModal,
       'settings-modal': closeSettingsModal,
       'ai-modal': closeAIModal,
@@ -960,6 +965,14 @@ async function fetchProjects({ throwOnError = false, projectPath = '' } = {}) {
 }
 
 function updateStatistics() {
+  const resetSelection = document.getElementById('reset-project-selection');
+  const savedProject = projects.find(p => p.path === currentProjectPath);
+  if (resetSelection) {
+    const saved = Array.isArray(savedProject?.enabled_skills) ? savedProject.enabled_skills : [];
+    resetSelection.hidden = !currentProjectPath || !Array.isArray(savedProject?.enabled_skills)
+      || (saved.length === enabledSkills.size && saved.every(name => enabledSkills.has(name)));
+    resetSelection.textContent = currentLanguage === 'zh' ? '恢复已保存配置' : 'Restore saved selection';
+  }
   if (!currentProjectPath) {
     toolbarStats.style.display = 'none';
     pendingSyncSummary = null;
@@ -997,8 +1010,8 @@ function updateStatistics() {
     } else {
       const summary = pendingSyncSummary || {};
       syncBarSummary.textContent = currentLanguage === 'zh'
-        ? `新增 ${summary.add || 0} · 纳管 ${summary.adopt || 0} · 更新 ${summary.modify || 0} · 移除 ${summary.delete || 0}`
-        : `Add ${summary.add || 0} · Adopt ${summary.adopt || 0} · Update ${summary.modify || 0} · Remove ${summary.delete || 0}`;
+        ? `新增 ${summary.add || 0} · 纳管 ${summary.adopt || 0} · 更新 ${summary.modify || 0} 个文件 · 移除 ${summary.removed_skill_count || 0} 个 Skill（${summary.delete || 0} 个文件）`
+        : `Add ${summary.add || 0} · Adopt ${summary.adopt || 0} · Update ${summary.modify || 0} files · Remove ${summary.removed_skill_count || 0} Skills (${summary.delete || 0} files)`;
     }
   }
 }
@@ -1019,7 +1032,8 @@ async function refreshPendingSyncSummary() {
       Array.from(enabledSkills)
     );
     if (requestId !== pendingSyncRequestId || projectPath !== currentProjectPath) return;
-    pendingSyncSummary = preview && !preview.error ? preview.summary : null;
+    pendingSyncSummary = preview && !preview.error
+      ? {...preview.summary, removed_skill_count: preview.skill_summary?.delete || 0} : null;
   } catch (_error) {
     if (requestId !== pendingSyncRequestId || projectPath !== currentProjectPath) return;
     pendingSyncSummary = null;
@@ -1209,62 +1223,6 @@ function splitMarkdownFrontmatter(markdown) {
     frontmatter: match[1].trim(),
     body: source.slice(match[0].length)
   };
-}
-
-function getMarkdownFrontmatterCategory(markdown) {
-  const { frontmatter } = splitMarkdownFrontmatter(markdown);
-  if (!frontmatter) return '';
-  const line = frontmatter.split(/\r?\n/).find(item => /^\s*category\s*:/i.test(item));
-  if (!line) return '';
-  const value = line.replace(/^\s*category\s*:\s*/i, '').trim();
-  if (
-    value.length >= 2
-    && ((value.startsWith('"') && value.endsWith('"'))
-      || (value.startsWith("'") && value.endsWith("'")))
-  ) {
-    return value.slice(1, -1);
-  }
-  return value;
-}
-
-function formatFrontmatterScalar(value) {
-  const normalized = String(value || '').trim();
-  if (/^[^:#\[\]{}'",\r\n\t]+$/.test(normalized)) return normalized;
-  return JSON.stringify(normalized);
-}
-
-function setMarkdownFrontmatterCategory(markdown, category) {
-  const source = String(markdown || '');
-  const normalizedCategory = String(category || '').trim();
-  const newline = source.includes('\r\n') ? '\r\n' : '\n';
-  const match = source.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
-
-  if (!match) {
-    if (!normalizedCategory) return source;
-    return [
-      '---',
-      `category: ${formatFrontmatterScalar(normalizedCategory)}`,
-      '---',
-      '',
-      source,
-    ].join(newline);
-  }
-
-  const lines = match[1].split(/\r?\n/);
-  const categoryIndex = lines.findIndex(line => /^\s*category\s*:/i.test(line));
-  if (categoryIndex >= 0) {
-    if (normalizedCategory) {
-      const indentation = lines[categoryIndex].match(/^\s*/)?.[0] || '';
-      lines[categoryIndex] = `${indentation}category: ${formatFrontmatterScalar(normalizedCategory)}`;
-    } else {
-      lines.splice(categoryIndex, 1);
-    }
-  } else if (normalizedCategory) {
-    lines.push(`category: ${formatFrontmatterScalar(normalizedCategory)}`);
-  }
-
-  const replacement = `---${newline}${lines.join(newline)}${newline}---${newline}`;
-  return replacement + source.slice(match[0].length);
 }
 
 function renderMarkdown(markdown) {
@@ -2076,6 +2034,7 @@ function closeGlobalTargetModal() {
 
 async function applySkillGlobalTargets() {
   const skill = pendingGlobalTargetSkill;
+  const viewId = modalViewIds.get(globalTargetModal);
   if (!skill) return;
   const targetIds = Array.from(
     skillGlobalTargets.querySelectorAll('input[type="checkbox"]:checked')
@@ -2089,8 +2048,10 @@ async function applySkillGlobalTargets() {
         )
       : await window.pywebview.api.set_skill_global_targets(skill.filename, targetIds);
     if (result.error) throw new Error(result.error);
-    deactivateModal(globalTargetModal);
-    pendingGlobalTargetSkill = null;
+    if (viewId === modalViewIds.get(globalTargetModal)) {
+      deactivateModal(globalTargetModal);
+      pendingGlobalTargetSkill = null;
+    }
     await fetchSkills();
     const manualNote = targetIds.includes('claude_desktop')
       ? (currentLanguage === 'zh' ? '；Claude Desktop ZIP 已生成，仍需手动上传' : '; Claude Desktop ZIP exported for manual upload')
@@ -2107,7 +2068,7 @@ async function applySkillGlobalTargets() {
       'error'
     );
   } finally {
-    applyButton.disabled = false;
+    if (pendingGlobalTargetSkill === skill || !pendingGlobalTargetSkill) applyButton.disabled = false;
   }
 }
 
@@ -2197,6 +2158,11 @@ function refreshCurrentProject() {
   const proj = projects.find(p => p.path === currentProjectPath);
   if (!proj) return;
   _loadProjectState(proj);
+}
+
+function restoreSavedProjectSelection() {
+  refreshCurrentProject();
+  showToast(currentLanguage === 'zh' ? '已恢复已保存的项目选择，未写入或删除文件' : 'Saved selection restored; no files changed', 'info');
 }
 
 function _loadProjectState(proj) {
@@ -2462,6 +2428,9 @@ function openCollectionModal(collectionId) {
     )
   );
   lucide.createIcons();
+  const editCollectionButton = document.getElementById('collection-edit-button');
+  editCollectionButton.textContent = currentLanguage === 'zh' ? '编辑集合' : 'Edit collection';
+  editCollectionButton.onclick = () => openCollectionEditor(collectionId);
 }
 
 function closeCollectionModal() {
@@ -2957,10 +2926,13 @@ function buildSyncReview(preview) {
     metrics: [
       { value: summary.add || 0, label: isZh ? '新增' : 'Add', tone: 'success' },
       { value: (summary.adopt || 0) + (summary.modify || 0), label: isZh ? '纳管 / 更新' : 'Adopt / update' },
-      { value: summary.delete || 0, label: isZh ? '移除' : 'Remove', tone: summary.delete ? 'warning' : '' },
+      { value: preview.skill_summary?.delete || 0, label: isZh ? `移除 Skill（${summary.delete || 0} 个文件）` : `Remove Skills (${summary.delete || 0} files)`, tone: summary.delete ? 'warning' : '' },
       { value: (preview.scope_conflict_count || 0) + (preview.has_conflicts ? 1 : 0), label: isZh ? '冲突信号' : 'Conflict signals', tone: preview.has_conflicts ? 'danger' : '' }
     ],
-    sections: [{
+    sections: [...((preview.removed_skills || []).length ? [{
+      title: isZh ? '将卸载的 Skill' : 'Skills to unload',
+      items: preview.removed_skills.map(item => `${item.filename} · ${item.file_count} ${isZh ? '个项目副本文件' : 'project copy files'}`)
+    }] : []), {
       title: isZh ? '文件与作用域影响' : 'File and scope impact',
       items: formatSyncPreview(preview).split('\n').filter(Boolean)
     }],
@@ -3301,7 +3273,7 @@ function updateEditorDirtyState() {
   return dirty;
 }
 
-function getEditorContentWithCategory() {
+async function getEditorContentWithCategory() {
   const skillSource = activeEditorSource === 'skill'
     ? markdownTextarea.value
     : editorSkillContent;
@@ -3309,7 +3281,9 @@ function getEditorContentWithCategory() {
   if (selectedCategory === getSkillCategorySelectValue(loadedEditorCategory)) {
     return skillSource;
   }
-  return setMarkdownFrontmatterCategory(skillSource, selectedCategory);
+  const result = await window.pywebview.api.render_skill_category(skillSource, selectedCategory);
+  if (result.error) throw new Error(result.error);
+  return result.content;
 }
 
 function refreshEditorSourceUi() {
@@ -3497,11 +3471,13 @@ function removeOpenaiToolDependency(index) {
 }
 
 async function renderOpenaiFormToYaml() {
+  const viewId = editorViewId;
   editorOpenaiForm = collectOpenaiFormData();
   const result = await window.pywebview.api.render_openai_yaml_form(
     editorOpenaiYamlContent,
     editorOpenaiForm,
   );
+  if (viewId !== editorViewId) return;
   if (result.error) throw new Error(result.error);
   editorOpenaiYamlContent = result.content;
   editorOpenaiYamlDirty = editorOpenaiYamlContent !== editorOpenaiYamlInitialContent;
@@ -3649,6 +3625,9 @@ function resetSkillModalForViewing() {
 }
 
 async function openEditorModal(filename) {
+  const viewId = ++editorViewId;
+  editorSaveBusy = false;
+  modalSaveBtn.disabled = false;
   editorInitialSnapshot = null;
   if (editorDirtyIndicator) editorDirtyIndicator.hidden = true;
   activeEditorSource = 'skill';
@@ -3680,7 +3659,7 @@ async function openEditorModal(filename) {
   activateModal(editorModal, markdownTextarea);
   try {
     const data = await window.pywebview.api.get_skill_editor_data(filename);
-    if(editingFilename!==filename || !editorModal.classList.contains("active"))return;
+    if(viewId!==editorViewId || editingFilename!==filename || !editorModal.classList.contains("active"))return;
     if (data.error) throw new Error(data.error);
     editorVersion = data.version;
     editorSkillContent = data.skill_content;
@@ -3694,7 +3673,7 @@ async function openEditorModal(filename) {
     populateOpenaiForm(editorOpenaiForm);
     markdownTextarea.value = editorSkillContent;
     loadedEditorCategory = (
-      getMarkdownFrontmatterCategory(editorSkillContent)
+      data.category
       || String(skill?.category || '').trim()
     );
     populateSkillCategoryOptions(loadedEditorCategory);
@@ -3703,12 +3682,15 @@ async function openEditorModal(filename) {
     updateEditorDirtyState();
     await restoreEditorDraft();
   } catch (e) {
+    if (viewId !== editorViewId) return;
     showToast((currentLanguage === 'zh' ? '加载失败: ' : 'Failed to load: ') + e, 'error');
     await closeEditorModal(true);
   } finally {
-    markdownTextarea.removeAttribute('disabled');
-    skillCategorySelect.disabled = false;
-    if (editorModal.classList.contains('active')) markdownTextarea.focus();
+    if (viewId === editorViewId) {
+      markdownTextarea.removeAttribute('disabled');
+      skillCategorySelect.disabled = false;
+      if (editorModal.classList.contains('active')) markdownTextarea.focus();
+    }
   }
   lucide.createIcons();
 }
@@ -3818,21 +3800,12 @@ function closeSkillDrawer(restoreFocus = true) {
 }
 
 async function closeEditorModal(force = false) {
-  if (editorClosePending) return;
-  if (!force && updateEditorDirtyState()) {
-    editorClosePending = true;
-    const discard = await showCustomDialog({
-      title: currentLanguage === 'zh' ? '放弃未保存修改？' : 'Discard unsaved changes?',
-      message: currentLanguage === 'zh'
-        ? 'SKILL.md、分类或使用配置中的修改尚未保存。关闭后可从本地草稿恢复。'
-        : 'Changes to SKILL.md, its category, or usage configuration have not been saved and can be recovered from the local draft after closing.',
-      emoji: '⚠️',
-      confirmText: currentLanguage === 'zh' ? '放弃修改' : 'Discard changes'
-    });
-    editorClosePending = false;
-    if (!discard) return;
-  }
-  await retainEditorDraft();
+  // Capture the draft before clearing the editor; disk persistence may finish later.
+  void retainEditorDraft();
+  ++editorViewId;
+  editorClosePending = false;
+  editorSaveBusy = false;
+  modalSaveBtn.disabled = false;
   if(typeof closeSkillCategoryPicker==='function')closeSkillCategoryPicker(false);
   deactivateModal(editorModal);
   editingFilename = null;
@@ -3861,7 +3834,7 @@ async function closeEditorModal(force = false) {
   modalSaveBtn.style.display = '';
 }
 
-function switchModalTab(tab) {
+async function switchModalTab(tab) {
   if (tab === 'edit') {
     modalTabEdit.classList.add('active');
     modalTabPreview.classList.remove('active');
@@ -3871,7 +3844,11 @@ function switchModalTab(tab) {
     modalTabEdit.classList.remove('active');
     modalTabPreview.classList.add('active');
     modalBody.className = 'modal-body tab-preview';
-    markdownPreview.innerHTML = renderMarkdown(getEditorContentWithCategory());
+    try {
+      markdownPreview.innerHTML = renderMarkdown(await getEditorContentWithCategory());
+    } catch (error) {
+      showToast(String(error.message || error), 'error');
+    }
   }
 }
 
@@ -3879,11 +3856,15 @@ async function handleSaveSkill() {
   if (isViewingSkill) return;
   if (!editingFilename || editorSaveBusy) return;
   editorSaveBusy = true; modalSaveBtn.disabled = true;
+  const viewId = editorViewId, filename = editingFilename;
   try {
     syncActiveEditorBuffer();
     if (editorOpenaiFormDirty) await renderOpenaiFormToYaml();
-    const skillContent = getEditorContentWithCategory();
-    const result = await window.pywebview.api.save_skill_editor_data(editingFilename, {
+    if (viewId !== editorViewId) return;
+    const skillContent = await getEditorContentWithCategory();
+    if (viewId !== editorViewId) return;
+    const savedSnapshot = getEditorSnapshot();
+    const result = await window.pywebview.api.save_skill_editor_data(filename, {
       expected_version: editorVersion,
       skill_content: skillContent,
       openai_yaml_content: editorOpenaiYamlContent,
@@ -3893,9 +3874,22 @@ async function handleSaveSkill() {
         || editorOpenaiYamlCreateRequested
       ),
     });
+    if (viewId !== editorViewId) {
+      showToast(result.error || (currentLanguage === 'zh' ? `后台保存完成：${filename}` : `Saved in background: ${filename}`), result.error ? 'error' : 'success');
+      if (!result.error) await fetchSkills();
+      return;
+    }
     if (result.conflict) { await resolveEditorConflict(result); return; }
     if (result.error) throw new Error(result.error);
-    await clearEditorDraft();editorInitialSnapshot=null;
+    if (getEditorSnapshot() !== savedSnapshot) {
+      editorInitialSnapshot = savedSnapshot;
+      updateEditorDirtyState();
+      void retainEditorDraft();
+      return;
+    }
+    await clearEditorDraft(filename);
+    if (viewId !== editorViewId) return;
+    editorInitialSnapshot=null;
     showToast(locales[currentLanguage].toastSaveSuccess, 'success');
     await closeEditorModal(true);
     await fetchSkills();
@@ -3906,7 +3900,7 @@ async function handleSaveSkill() {
     }
   } catch (e) {
     showToast((currentLanguage === 'zh' ? '保存失败: ' : 'Failed to save: ') + e, 'error');
-  } finally { editorSaveBusy = false; modalSaveBtn.disabled = false; }
+  } finally { if (viewId === editorViewId) { editorSaveBusy = false; modalSaveBtn.disabled = false; } }
 }
 
 // ------------------------------------------
@@ -4129,6 +4123,7 @@ async function handleSettingsPickScanDir() {
 }
 
 async function handleSaveSettings() {
+  const viewId = modalViewIds.get(settingsModal);
   try {
     const settings = {
       skills_dir: settingsSkillsDir.value,
@@ -4183,7 +4178,7 @@ async function handleSaveSettings() {
     updateAIConfigurationIndicators();
     await Promise.all([fetchSkills(), fetchProjects()]);
 
-    closeSettingsModal();
+    if (viewId === modalViewIds.get(settingsModal)) closeSettingsModal();
     showToast(locales[currentLanguage].toastSettingsSaved, 'success');
   } catch (e) {
     showToast('Failed to save settings: ' + e, 'error');
@@ -4335,8 +4330,7 @@ function resizeAgentChatInput() {
 aiChatInput?.addEventListener('input', resizeAgentChatInput);
 
 async function openAIModal() {
-  aiGeneratedSkill = null;
-  aiSkillPreview.style.display = 'none';
+  aiSkillPreview.style.display = aiGeneratedSkill ? 'block' : 'none';
   try {
     const savedPanelState = localStorage.getItem('skillhub.agentPanelCollapsed');
     agentPanelCollapsed = savedPanelState === null
@@ -4347,14 +4341,15 @@ async function openAIModal() {
   }
   updateAgentDialogControls();
   activateModal(aiModal, aiChatInput);
-  await loadSessionList(true);
+  await loadSessionList(!currentSessionId);
   await refreshAgentMemory();
   lucide.createIcons();
   setTimeout(() => aiChatInput.focus(), 200);
 }
 
 async function closeAIModal() {
-  if (await confirmSessionLeave()) deactivateModal(aiModal);
+  deactivateModal(aiModal);
+  void saveCurrentSession();
 }
 
 // loadSessionList is implemented in session-controller.js.
@@ -4728,6 +4723,7 @@ async function handleNewSession() {
 
 async function handleAIGenerateSkill() {
   if (aiChatHistory.length === 0 || aiIsLoading) return;
+  const owningSession = currentSessionId;
   const typingId = showTypingIndicator();
   aiIsLoading = true;
   const generateButton = document.getElementById('ai-btn-generate');
@@ -4738,6 +4734,7 @@ async function handleAIGenerateSkill() {
       'generate'
     );
     removeTypingIndicator(typingId);
+    if (currentSessionId !== owningSession) return;
     if (result.error) {
       appendChatBubble('ai', '❌ ' + result.error);
     } else if (result.skill) {
@@ -4752,10 +4749,12 @@ async function handleAIGenerateSkill() {
     }
   } catch (e) {
     removeTypingIndicator(typingId);
-    appendChatBubble('ai', '❌ ' + (e.message || e));
+    if (currentSessionId === owningSession) appendChatBubble('ai', '❌ ' + (e.message || e));
   } finally {
-    aiIsLoading = false;
-    if (generateButton) generateButton.disabled = aiChatHistory.length === 0;
+    if (currentSessionId === owningSession) {
+      aiIsLoading = false;
+      if (generateButton) generateButton.disabled = aiChatHistory.length === 0;
+    }
   }
 }
 
@@ -5105,6 +5104,11 @@ function showCustomDialog({
   secondaryText = '',
   secondaryValue = 'secondary'
 }) {
+  if (dialogResolve) {
+    const previous = dialogResolve;
+    dialogResolve = null;
+    previous(null);
+  }
   return new Promise((resolve) => {
     dialogResolve = resolve;
     

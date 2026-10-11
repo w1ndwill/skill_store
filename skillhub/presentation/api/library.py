@@ -13,10 +13,8 @@ from skillhub.infrastructure.transactions import capture_files, restore_files, p
 from skillhub.domain.catalog import parse_markdown_metadata
 from skillhub.domain.collections import COLLECTION_DISPLAY_LOCALIZATIONS
 from skillhub.domain.frontmatter import (
-    frontmatter_top_level_keys,
-    remove_markdown_frontmatter_field,
-    split_markdown_frontmatter,
-    split_markdown_frontmatter_source,
+    get_markdown_frontmatter_category,
+    set_markdown_frontmatter_category,
 )
 from skillhub.domain.global_targets import GLOBAL_SKILL_TARGETS, SKILL_LIBRARY_STATE_DIR
 from skillhub.domain.naming import (
@@ -295,11 +293,7 @@ class LibraryApiMixin:
                     content = handle.read()
             except OSError:
                 continue
-            metadata, _body = split_markdown_frontmatter(content)
-            if str(metadata.get("category", "")).strip() != requested:
-                continue
-            raw_frontmatter, _body, has_frontmatter = split_markdown_frontmatter_source(content)
-            if not has_frontmatter or "category" not in frontmatter_top_level_keys(raw_frontmatter):
+            if get_markdown_frontmatter_category(content) != requested:
                 continue
             sources[normalized_path] = {
                 "path": path,
@@ -358,7 +352,7 @@ class LibraryApiMixin:
         written = []
         try:
             for source in sources:
-                updated = remove_markdown_frontmatter_field(source["content"], "category")
+                updated = set_markdown_frontmatter_category(source["content"], "")
                 if updated == source["content"]:
                     raise ValueError(f"Category field not found: {source['path']}")
                 atomic_write_text(source["path"], updated)

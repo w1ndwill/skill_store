@@ -25,6 +25,25 @@ class EditorApi(SkillEditorApiMixin, LibraryApiMixin):
 
 
 class SkillPackageEditorApiTests(unittest.TestCase):
+    def test_nested_category_agrees_after_save_and_reopen(self):
+        with tempfile.TemporaryDirectory(dir=ROOT) as temp_dir:
+            root = Path(temp_dir)
+            package = self._write_skill(root)
+            source = "---\nname: demo-skill\nmetadata:\n  category: 工程效率\n  owner: keep\n---\n\n# Demo\n"
+            (package / "SKILL.md").write_text(source, encoding="utf-8")
+            api = EditorApi(root)
+            loaded = api.get_skill_editor_data("demo-skill")
+            self.assertEqual(loaded["category"], "工程效率")
+            rendered = api.render_skill_category(loaded["skill_content"], "工程质量")
+            saved = api.save_skill_editor_data("demo-skill", {
+                "skill_content": rendered["content"],
+                "expected_version": loaded["version"],
+            })
+            self.assertTrue(saved["ok"])
+            reopened = EditorApi(root).get_skill_editor_data("demo-skill")
+            self.assertEqual(reopened["category"], "工程质量")
+            self.assertIn("  owner: keep\n", reopened["skill_content"])
+
     def _write_skill(self, root: Path, name: str = "demo-skill") -> Path:
         package = root / name
         package.mkdir(parents=True)
@@ -227,7 +246,7 @@ class SkillPackageEditorFrontendTests(unittest.TestCase):
         self.assertIn("get_skill_editor_data(filename)", javascript)
         self.assertIn("parse_openai_yaml_form", javascript)
         self.assertIn("render_openai_yaml_form", javascript)
-        self.assertIn("save_skill_editor_data(editingFilename", javascript)
+        self.assertIn("save_skill_editor_data(filename", javascript)
         self.assertIn("editorOpenaiYamlCreateRequested", javascript)
 
 

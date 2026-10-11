@@ -15,7 +15,8 @@ function queueRulesDraft(){clearTimeout(rulesDraftTimer);rulesDraftTimer=setTime
 function persistRulesDraft(){
   const state=rulesEditorState;if(!state?.ready||rulesText.value===state.original)return Promise.resolve(true);
   const draft={snapshot:{skillContent:rulesText.value,openaiYaml:'',category:'',openaiForm:{}},version:state.version,at:Date.now()};
-  rulesDraftWrites=rulesDraftWrites.then(async()=>{try{const r=await window.pywebview.api.save_editor_draft(rulesDraftKey(state),draft);if(r.error)throw new Error(r.error);return true;}catch(e){rulesStatus.textContent=e.message;return false;}});
+  try{localStorage.setItem(rulesDraftKey(state),JSON.stringify(draft));}catch(_){}
+  rulesDraftWrites=rulesDraftWrites.then(async()=>{try{const r=await window.pywebview.api.save_editor_draft(rulesDraftKey(state),draft);if(r.error)throw new Error(r.error);return true;}catch(e){if(state===rulesEditorState)rulesStatus.textContent=e.message;else showToast(e.message,'error');return false;}});
   return rulesDraftWrites;
 }
 async function openProjectRulesEditor(project){
@@ -34,33 +35,34 @@ async function openProjectRulesEditor(project){
     rulesStatus.textContent=r.exists?uiText('手动编辑','Manual editing'):uiText('尚未创建，保存后创建','Not created; Save creates the file');
     const saved=await window.pywebview.api.load_editor_draft(rulesDraftKey(state));
     if(state!==rulesEditorState)return;
-    if(saved.draft&&saved.draft.snapshot.skillContent!==state.original&&await showCustomDialog({title:uiText('恢复项目规约草稿？','Restore project rules draft?'),message:uiText('原文件保持不变，保存前会检查版本冲突。','The original stays unchanged; saving checks for version conflicts.')})){
-      if(state!==rulesEditorState)return;rulesText.value=saved.draft.snapshot.skillContent;state.version=saved.draft.version;rulesStatus.textContent=uiText('草稿已恢复，尚未保存','Draft restored; not saved');
+    let draft=saved.draft;try{const local=JSON.parse(localStorage.getItem(rulesDraftKey(state))||'null');if(local&&(!draft||local.at>draft.at))draft=local;}catch(_){}
+    if(draft&&draft.snapshot.skillContent!==state.original&&await showCustomDialog({title:uiText('恢复项目规约草稿？','Restore project rules draft?'),message:uiText('原文件保持不变，保存前会检查版本冲突。','The original stays unchanged; saving checks for version conflicts.')})){
+      if(state!==rulesEditorState)return;rulesText.value=draft.snapshot.skillContent;state.version=draft.version;rulesStatus.textContent=uiText('草稿已恢复，尚未保存','Draft restored; not saved');
     }
-  }catch(e){rulesStatus.textContent=e.message;}finally{if(state===rulesEditorState){setRulesBusy(state,false);rulesSave.disabled=!state.ready;rulesAi.disabled=!state.ready;rulesText.focus();}}
+  }catch(e){if(state===rulesEditorState)rulesStatus.textContent=e.message;}finally{if(state===rulesEditorState){setRulesBusy(state,false);rulesSave.disabled=!state.ready;rulesAi.disabled=!state.ready;rulesText.focus();}}
 }
 async function closeProjectRulesEditor(){
   const state=rulesEditorState;if(!state)return true;
-  if(state.busy){showToast(uiText('请等待当前操作完成','Wait for the current operation'),'info');return false;}
-  if(state.ready&&rulesText.value!==state.original){
-    if(!await showCustomDialog({title:uiText('保留草稿并关闭？','Keep draft and close?'),message:uiText('修改尚未保存到 AGENTS.md，下次打开可恢复草稿。','Changes are not saved to AGENTS.md. The draft can be restored next time.'),confirmText:uiText('保留草稿并关闭','Keep draft and close')}))return false;
-    if(!await persistRulesDraft())return false;
-  }
+  if(state.ready&&rulesText.value!==state.original)void persistRulesDraft();
   clearTimeout(rulesDraftTimer);deactivateModal(rulesEditor);rulesEditorState=null;return true;
 }
 async function saveProjectRulesFromEditor(){
   const state=rulesEditorState;if(!state?.ready||state.busy)return;
+  const content=rulesText.value,version=state.version;
   setRulesBusy(state,true);clearTimeout(rulesDraftTimer);
   try{
     await rulesDraftWrites;
-    const r=await window.pywebview.api.save_project_rules(state.project,rulesText.value,state.version);
+    const r=await window.pywebview.api.save_project_rules(state.project,content,version);
+    if(state!==rulesEditorState){showToast(r.error||uiText('规约已在后台保存','Rules saved in background'),r.error?'error':'success');return;}
     if(r.conflict){state.conflict=r.current;rulesReload.hidden=false;rulesCompare.hidden=false;rulesCompare.textContent=uiText('磁盘当前版本：\n','Current disk version:\n')+r.current.content;}
     if(r.error)throw new Error(r.error);
     state.version=r.version;state.original=r.content;state.proposal=null;rulesUseAi.hidden=true;rulesCompare.hidden=true;rulesReload.hidden=true;
     const clear=await window.pywebview.api.clear_editor_draft(rulesDraftKey(state));
+    if(state!==rulesEditorState)return;
+    try{localStorage.removeItem(rulesDraftKey(state));}catch(_){}
     rulesStatus.textContent=clear.error?uiText('文件已保存，旧草稿未能清除','Saved; old draft could not be cleared'):uiText('已保存','Saved');
     await fetchProjects();if(currentProjectPath===state.project)refreshCurrentProject();
-  }catch(e){rulesStatus.textContent=e.message;}finally{setRulesBusy(state,false);}
+  }catch(e){if(state===rulesEditorState)rulesStatus.textContent=e.message;else showToast(e.message,'error');}finally{setRulesBusy(state,false);}
 }
 async function authorizeRulesAiDraft(){
   const state=rulesEditorState;if(!state?.ready||state.busy)return;
@@ -68,12 +70,12 @@ async function authorizeRulesAiDraft(){
   if(typeof instruction!=='string'||!instruction.trim()||state!==rulesEditorState)return;
   if(!await showCustomDialog({title:uiText('授权本次 AI 起草？','Authorize this AI drafting request?'),message:uiText('将把编辑区全文和本次要求发送给已配置的 AI 服务。AI 仅返回草稿，你审阅并点击保存后才会修改 AGENTS.md。','The editor text and instruction will be sent to your configured AI service. AI only returns a draft; AGENTS.md changes only after you review and Save.'),confirmText:uiText('授权本次请求','Authorize this request')}))return;
   if(state!==rulesEditorState)return;
-  await persistRulesDraft();setRulesBusy(state,true);rulesStatus.textContent=uiText('AI 正在起草，不会写入文件…','AI is drafting; no file will be written…');
+  await persistRulesDraft();if(state!==rulesEditorState)return;setRulesBusy(state,true);rulesStatus.textContent=uiText('AI 正在起草，不会写入文件…','AI is drafting; no file will be written…');
   try{
-    const grant=await window.pywebview.api.authorize_project_rules_ai(state.project,rulesText.value,instruction,state.version);if(grant.error)throw new Error(grant.error);
-    const r=await window.pywebview.api.draft_project_rules_ai(grant.token);if(r.error)throw new Error(r.error);
+    const grant=await window.pywebview.api.authorize_project_rules_ai(state.project,rulesText.value,instruction,state.version);if(state!==rulesEditorState)return;if(grant.error)throw new Error(grant.error);
+    const r=await window.pywebview.api.draft_project_rules_ai(grant.token);if(state!==rulesEditorState)return;if(r.error)throw new Error(r.error);
     state.proposal=r.content;rulesCompare.textContent=r.diff||uiText('内容没有变化','No changes');rulesCompare.hidden=false;rulesText.hidden=true;rulesPreview.hidden=true;rulesUseAi.hidden=false;rulesStatus.textContent=uiText('AI 草稿待审阅，文件未修改','Review the AI draft; file unchanged');
-  }catch(e){rulesStatus.textContent=e.message;}finally{setRulesBusy(state,false);}
+  }catch(e){if(state===rulesEditorState)rulesStatus.textContent=e.message;}finally{setRulesBusy(state,false);}
 }
 rulesText.addEventListener('input',queueRulesDraft);
 document.getElementById('rules-editor-close').onclick=closeProjectRulesEditor;

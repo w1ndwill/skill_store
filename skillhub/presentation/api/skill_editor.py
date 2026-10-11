@@ -8,10 +8,15 @@ import uuid
 from skillhub.settings import USER_DATA_DIR
 from skillhub.infrastructure.filesystem import atomic_write_json
 from skillhub.infrastructure.json_store import file_lock
+from skillhub.infrastructure.transactions import capture_files, restore_files, persist_snapshot
 
 import yaml
 
 from skillhub.domain.catalog import parse_markdown_metadata
+from skillhub.domain.frontmatter import (
+    get_markdown_frontmatter_category,
+    set_markdown_frontmatter_category,
+)
 from skillhub.infrastructure.filesystem import atomic_write_text, safe_real_child_path
 
 
@@ -25,6 +30,218 @@ class SkillEditorApiMixin:
         "transport",
         "url",
     )
+
+    @staticmethod
+    def _collection_editor_version(collection):
+        import json
+        data = {key: collection.get(key) for key in ("id", "members", "shared_rules")}
+        return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def get_collection_editor_data(self, collection_id):
+        with file_lock(self.skills_dir):
+            collection = next((item for item in self._load_skill_collections().get("collections", []) if item.get("id") == collection_id), None)
+            if not collection:
+                return {"error": "Collection does not exist"}
+            items = []
+            for name in collection.get("members", []):
+                data = self._get_skill_editor_data(name)
+                items.append({"filename": name, "version": data.get("version"),
+                              "skill_content": data.get("skill_content", ""),
+                              "editable": not bool(data.get("error")),
+                              "supported": bool(data.get("openai_yaml_supported") and not data.get("openai_form_error")),
+                              "allow_implicit_invocation": data.get("openai_form", {}).get("allow_implicit_invocation", True),
+                              "error": data.get("error") or data.get("openai_form_error") or ""})
+            return {"ok": True, "collection_version": self._collection_editor_version(collection),
+                    "shared_rules": collection.get("shared_rules", ""), "items": items}
+
+    @staticmethod
+    def _apply_collection_rules(content, collection_id, rules):
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", collection_id or ""):
+            raise ValueError("Invalid collection identifier")
+        start = f"<!-- SKILLHUB:COLLECTION_RULES:{collection_id}:START -->"
+        end = f"<!-- SKILLHUB:COLLECTION_RULES:{collection_id}:END -->"
+        if start in rules or end in rules:
+            raise ValueError("Rules cannot contain their management markers")
+        if content.count(start) != content.count(end) or content.count(start) > 1:
+            raise ValueError("Collection rule markers are ambiguous; repair the member first")
+        newline = "\r\n" if "\r\n" in content else "\n"
+        text = rules.strip().replace("\r\n", "\n").replace("\n", newline)
+        block = start + newline + "## 集合共同要求" + newline * 2 + text + newline + end if text else ""
+        if start in content:
+            begin, finish = content.index(start), content.index(end) + len(end)
+            if begin >= finish:
+                raise ValueError("Invalid collection rule markers")
+            return content[:begin] + block + content[finish:]
+        if not block:
+            return content
+        separator = "" if content.endswith(newline * 2) else newline if content.endswith(newline) else newline * 2
+        return content + separator + block + newline
+
+    def save_collection_editor_data(self, collection_id, changes, collection_version):
+        if not isinstance(changes, dict):
+            return {"error": "Invalid collection changes"}
+        policies, documents = changes.get("policies", {}), changes.get("documents", {})
+        versions = changes.get("expected_versions", {})
+        if not all(isinstance(value, dict) for value in (policies, documents, versions)):
+            return {"error": "Invalid member settings"}
+        if not all(isinstance(value, bool) for value in policies.values()) or not all(isinstance(value, str) for value in documents.values()):
+            return {"error": "Policies must be boolean and documents must be text"}
+        shared = changes.get("shared_rules")
+        if "shared_rules" in changes and not isinstance(shared, str):
+            return {"error": "Shared rules must be text"}
+        with file_lock(self.skills_dir):
+            state = self._load_skill_collections()
+            collection = next((item for item in state.get("collections", []) if item.get("id") == collection_id), None)
+            if not collection or collection_version != self._collection_editor_version(collection):
+                return {"conflict": True, "error": "Collection changed; reopen the editor. Your draft is retained."}
+            members = set(collection.get("members", []))
+            affected = set(policies) | set(documents) | (members if shared is not None else set())
+            if not affected <= members:
+                return {"error": "Changes include a Skill outside this collection"}
+            prepared, updated = [], []
+            for name in sorted(affected):
+                files = self._skill_editor_files(name)
+                if not files or versions.get(name) != self._editor_version(files):
+                    return {"conflict": True, "error": f"{name}: Skill changed; reopen the editor. Your draft is retained."}
+                try:
+                    if name in documents or shared is not None:
+                        with open(files["skill_path"], encoding="utf-8", newline="") as handle:
+                            original = handle.read()
+                        content = documents.get(name, original)
+                        if shared is not None:
+                            content = self._apply_collection_rules(content, collection_id, shared)
+                        if content != original:
+                            prepared.append((files["skill_path"], content))
+                            updated.append(name)
+                    if name in policies:
+                        if not files.get("openai_yaml_supported"):
+                            return {"error": f"{name}: invocation policy is unsupported"}
+                        target = files["openai_yaml_path"]
+                        original = ""
+                        if os.path.isfile(target):
+                            with open(target, encoding="utf-8", newline="") as handle:
+                                original = handle.read()
+                        content = self._render_invocation_policy(original, policies[name])
+                        if content != original:
+                            prepared.append((target, content))
+                            updated.append(name)
+                except (OSError, ValueError, yaml.YAMLError) as error:
+                    return {"error": f"{name}: {error}"}
+            shared_changed = shared is not None and shared != collection.get("shared_rules", "")
+            if not prepared and not shared_changed:
+                return {"ok": True, "updated": []}
+            snapshot = capture_files([path for path, _ in prepared] + [self._library_index_path(), self._skill_collections_path()])
+            backup = os.path.join(self.skills_dir, ".skill-hub", "collection-editor-backups", uuid.uuid4().hex)
+            try:
+                persist_snapshot(snapshot, backup)
+                for path, content in prepared:
+                    atomic_write_text(path, content)
+                if shared_changed:
+                    collection["shared_rules"] = shared
+                    self._save_skill_collections(state)
+                for name in dict.fromkeys(updated):
+                    self._register_library_entry(name, source="collection-editor")
+            except Exception as error:
+                errors = restore_files(snapshot)
+                return {"error": str(error), "rolled_back": not errors, "rollback_errors": errors, "recovery_path": backup}
+            return {"ok": True, "updated": list(dict.fromkeys(updated)), "backup_path": backup}
+
+    def get_skills_invocation_policy(self, filenames):
+        if not isinstance(filenames, list) or not all(isinstance(name, str) for name in filenames):
+            return {"error": "Skill names must be a list of strings"}
+        with file_lock(self.skills_dir):
+            items = []
+            for name in dict.fromkeys(filenames):
+                data = self._get_skill_editor_data(name)
+                error = data.get("error") or data.get("openai_form_error")
+                supported = bool(data.get("openai_yaml_supported") and not error)
+                items.append({"filename": name, "supported": supported,
+                              "allow_implicit_invocation": data.get("openai_form", {}).get("allow_implicit_invocation", True),
+                              "version": data.get("version"),
+                              "error": error or ("Only standard Skill packages support invocation policy" if not supported else "")})
+            return {"ok": True, "items": items}
+
+    @classmethod
+    def _render_invocation_policy(cls, content, allow_implicit):
+        """Change one YAML value while retaining unrelated text and comments."""
+        if not content:
+            return "policy:\n  allow_implicit_invocation: " + ("true" if allow_implicit else "false") + "\n"
+        error = cls._validate_openai_yaml(content)
+        if error:
+            raise ValueError(error)
+        value = "true" if allow_implicit else "false"
+        newline = "\r\n" if "\r\n" in content else "\n"
+        root = yaml.compose(content)
+        policy_entries = [(key, node) for key, node in root.value if key.value == "policy"] if root else []
+        policies = [node for _, node in policy_entries]
+        if len(policies) > 1:
+            raise ValueError("Duplicate policy keys are ambiguous")
+        if not policies:
+            result = content.rstrip("\r\n") + (newline if content else "") + f"policy:{newline}  allow_implicit_invocation: {value}{newline}"
+        else:
+            policy = policies[0]
+            if policy.start_mark.index < policy_entries[0][0].end_mark.index:
+                raise ValueError("Aliased policy must be edited manually")
+            fields = [node for key, node in policy.value if key.value == "allow_implicit_invocation"] if isinstance(policy, yaml.MappingNode) else []
+            if len(fields) > 1:
+                raise ValueError("Duplicate invocation policy keys are ambiguous")
+            if fields:
+                node = fields[0]
+                if not policy.start_mark.index <= node.start_mark.index < policy.end_mark.index:
+                    raise ValueError("Aliased invocation value must be edited manually")
+                result = content[:node.start_mark.index] + value + content[node.end_mark.index:]
+            elif isinstance(policy, yaml.MappingNode) and policy.flow_style:
+                index = policy.end_mark.index - 1
+                result = content[:index] + (", " if policy.value else "") + f"allow_implicit_invocation: {value}" + content[index:]
+            elif isinstance(policy, yaml.MappingNode):
+                index = policy.end_mark.index
+                indent = policy.value[0][0].start_mark.column if policy.value else 2
+                prefix = "" if not index or content[index-1] in "\r\n" else newline
+                result = content[:index] + prefix + " " * indent + f"allow_implicit_invocation: {value}{newline}" + content[index:]
+            else:
+                result = content[:policy.start_mark.index] + f"{newline}  allow_implicit_invocation: {value}" + content[policy.end_mark.index:]
+        error = cls._validate_openai_yaml(result)
+        if error:
+            raise ValueError(error)
+        return result
+
+    def set_skills_invocation_policy(self, filenames, allow_implicit, expected_versions):
+        if not isinstance(allow_implicit, bool) or not isinstance(expected_versions, dict):
+            return {"error": "Boolean policy and reviewed versions are required"}
+        if not isinstance(filenames, list) or not filenames or not all(isinstance(name, str) for name in filenames):
+            return {"error": "Skill names must be a non-empty list"}
+        with file_lock(self.skills_dir):
+            prepared = []
+            for name in dict.fromkeys(filenames):
+                files = self._skill_editor_files(name)
+                if not files.get("openai_yaml_supported"):
+                    return {"error": f"{name}: invocation policy requires a standard Skill package"}
+                if expected_versions.get(name) != self._editor_version(files):
+                    return {"conflict": True, "error": f"{name}: Skill changed; reload the policy settings"}
+                target = files["openai_yaml_path"]
+                try:
+                    content = ""
+                    if os.path.isfile(target):
+                        with open(target, encoding="utf-8", newline="") as handle:
+                            content = handle.read()
+                    rendered = self._render_invocation_policy(content, allow_implicit)
+                except (OSError, ValueError, yaml.YAMLError) as error:
+                    return {"error": f"{name}: {error}"}
+                if rendered != content:
+                    prepared.append((name, target, rendered))
+            if not prepared:
+                return {"ok": True, "updated": []}
+            snapshot = capture_files([target for _, target, _ in prepared] + [self._library_index_path()])
+            backup = os.path.join(self.skills_dir, ".skill-hub", "policy-backups", uuid.uuid4().hex)
+            try:
+                persist_snapshot(snapshot, backup)
+                for name, target, rendered in prepared:
+                    atomic_write_text(target, rendered)
+                    self._register_library_entry(name, source="invocation-policy")
+            except Exception as error:
+                rollback_errors = restore_files(snapshot)
+                return {"error": str(error), "rolled_back": not rollback_errors, "rollback_errors": rollback_errors, "recovery_path": backup}
+            return {"ok": True, "updated": [name for name, _, _ in prepared], "backup_path": backup}
 
     def _skill_editor_files(self, filename: str) -> dict:
         source = self._editable_skill_source(filename)
@@ -140,6 +357,7 @@ class SkillEditorApiMixin:
             return {
                 "version": self._editor_version(files),
                 "skill_content": skill_content,
+                "category": get_markdown_frontmatter_category(skill_content),
                 "openai_yaml_content": metadata_content,
                 "openai_form": form_result.get("form", {}),
                 "openai_form_error": form_result.get("error", ""),
@@ -149,6 +367,14 @@ class SkillEditorApiMixin:
                 ),
             }
         except Exception as error:
+            return {"error": str(error)}
+
+    def render_skill_category(self, content, category):
+        if not isinstance(content, str) or not isinstance(category, str):
+            return {"error": "Skill content and category must be text"}
+        try:
+            return {"content": set_markdown_frontmatter_category(content, category)}
+        except ValueError as error:
             return {"error": str(error)}
 
     @classmethod

@@ -3,7 +3,10 @@
 import os
 import re
 
-from skillhub.domain.frontmatter import split_markdown_frontmatter
+from skillhub.domain.frontmatter import (
+    get_markdown_frontmatter_category,
+    split_markdown_frontmatter,
+)
 def parse_markdown_metadata(file_path: str) -> dict:
     filename = os.path.basename(file_path)
     default_title = os.path.splitext(filename)[0]
@@ -31,7 +34,7 @@ def parse_markdown_metadata(file_path: str) -> dict:
             or metadata["title"]
         )
         metadata["emoji"] = frontmatter.get("emoji") or metadata["emoji"]
-        metadata["category"] = frontmatter.get("category") or metadata["category"]
+        metadata["category"] = get_markdown_frontmatter_category(content) or metadata["category"]
         if frontmatter.get("tags"):
             metadata["tags"] = [
                 item.strip()

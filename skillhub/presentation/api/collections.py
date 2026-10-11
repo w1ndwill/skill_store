@@ -164,23 +164,33 @@ Return one JSON object only with string fields "title" and "description"."""
             url = self.api_base.strip()
             if not url.endswith("/chat/completions"):
                 url = url.rstrip("/") + "/chat/completions"
-            response = requests.post(
-                url,
-                headers={
-                    "Authorization": f"Bearer {self.deepseek_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": self.deepseek_model, **deepseek_options(self.api_base, getattr(self, "ai_reasoning_effort", "high")),
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": payload},
-                    ],
-                    "temperature": 0.1,
-                    "max_tokens": 1000,
-                },
-                timeout=45,
-            )
+            request_payload = {
+                "model": self.deepseek_model,
+                # Metadata translation does not need the agent's reasoning budget.
+                **deepseek_options(self.api_base, "none"),
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": payload},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 2000,
+            }
+            for token_budget in (2000, 4000):
+                request_payload["max_tokens"] = token_budget
+                response = requests.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {self.deepseek_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=dict(request_payload),
+                    timeout=45,
+                )
+                if response.status_code != 200:
+                    break
+                choice = response.json().get("choices", [{}])[0]
+                if choice.get("finish_reason") != "length":
+                    break
             if response.status_code != 200:
                 try:
                     message = response.json().get("error", {}).get(

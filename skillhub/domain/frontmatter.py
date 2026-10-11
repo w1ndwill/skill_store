@@ -3,6 +3,8 @@
 import json
 import re
 
+import yaml
+
 
 def split_markdown_frontmatter(content: str) -> tuple:
     """Return a simple frontmatter mapping and the Markdown body."""
@@ -63,6 +65,83 @@ def split_markdown_frontmatter_source(content: str) -> tuple:
     raw_frontmatter = "".join(lines[1:closing_index])
     body = "".join(lines[closing_index + 1:]).lstrip("\r\n")
     return raw_frontmatter, body, True
+
+
+def _category_fields(raw_frontmatter: str) -> list:
+    """Locate legacy and metadata.category fields without rewriting YAML."""
+    document = yaml.compose(raw_frontmatter)
+    if not isinstance(document, yaml.MappingNode):
+        return []
+    fields = []
+    mappings = [document]
+    for key, value in document.value:
+        if key.value == "metadata" and isinstance(value, yaml.MappingNode):
+            mappings.append(value)
+    for mapping in mappings:
+        for index, (key, value) in enumerate(mapping.value):
+            if key.value == "category":
+                fields.append((mapping, index, key, value))
+    return fields
+
+
+def get_markdown_frontmatter_category(content: str) -> str:
+    """Prefer a nonempty legacy category, then the direct metadata category."""
+    raw, _body, valid = split_markdown_frontmatter_source(content)
+    if not valid:
+        return ""
+    try:
+        for _mapping, _index, _key, value in _category_fields(raw):
+            if isinstance(value, yaml.ScalarNode) and value.tag == "tag:yaml.org,2002:str":
+                category = value.value.strip()
+                if category:
+                    return category
+    except yaml.YAMLError:
+        # Retain support for existing loosely formatted legacy frontmatter.
+        metadata, _body = split_markdown_frontmatter(content)
+        return str(metadata.get("category") or "").strip()
+    return ""
+
+
+def set_markdown_frontmatter_category(content: str, category: str) -> str:
+    """Edit category fields in place, preserving all unrelated source text."""
+    text = content or ""
+    raw, _body, valid = split_markdown_frontmatter_source(text)
+    category = category.strip()
+    newline = "\r\n" if "\r\n" in text else "\n"
+    scalar = json.dumps(category, ensure_ascii=False)
+    if not valid:
+        return f"---{newline}category: {scalar}{newline}---{newline}{newline}{text}" if category else text
+    try:
+        fields = _category_fields(raw)
+    except yaml.YAMLError as error:
+        raise ValueError(f"Invalid Skill frontmatter: {error}") from error
+    edits = []
+    for mapping, index, key, value in fields:
+        start, end = value.start_mark.index, value.end_mark.index
+        if category:
+            ending = newline if raw[start:end].endswith("\n") else ""
+            edits.append((start, end, scalar + ending))
+        elif mapping.flow_style:
+            start = key.start_mark.index
+            if index + 1 < len(mapping.value):
+                end = mapping.value[index + 1][0].start_mark.index
+            elif index:
+                start = mapping.value[index - 1][1].end_mark.index
+            edits.append((start, end, ""))
+        else:
+            start = raw.rfind("\n", 0, key.start_mark.index) + 1
+            if value.end_mark.column:
+                line_end = raw.find("\n", end)
+                end = line_end + 1 if line_end >= 0 else len(raw)
+            edits.append((start, end, ""))
+    if not fields and category:
+        raw = raw.rstrip("\r\n") + newline + f"category: {scalar}" + newline
+    else:
+        for start, end, replacement in sorted(edits, reverse=True):
+            raw = raw[:start] + replacement + raw[end:]
+    header = text.splitlines(keepends=True)[0]
+    original_raw, _body, _valid = split_markdown_frontmatter_source(text)
+    return header + raw + text[len(header) + len(original_raw):]
 
 
 def remove_markdown_frontmatter_field(content: str, field_name: str) -> str:

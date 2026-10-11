@@ -132,6 +132,7 @@
           </div>
         </div>
         <div class="sync-bar-actions">
+          <button id="reset-project-selection" class="btn btn-secondary" onclick="restoreSavedProjectSelection()" hidden>恢复已保存配置</button>
           <button id="undo-sync-btn" class="btn btn-secondary btn-icon sync-history-btn" onclick="handleUndoSync()" disabled title="撤销最近同步">
             <i data-lucide="undo-2" aria-hidden="true"></i>
           </button>
@@ -329,9 +330,9 @@
             <p class="collection-modal-summary" id="collection-modal-summary"></p>
           </div>
         </div>
-        <button class="btn btn-secondary btn-icon" onclick="closeCollectionModal()">
+        <div class="collection-header-actions"><button type="button" class="btn btn-secondary" id="collection-edit-button">编辑集合</button><button class="btn btn-secondary btn-icon" onclick="closeCollectionModal()" aria-label="关闭集合">
           <i data-lucide="x" style="width:18px;height:18px;"></i>
-        </button>
+        </button></div>
       </header>
       <div id="collection-category-editor" class="collection-category-editor">
         <div class="collection-category-heading">
@@ -355,6 +356,45 @@
   </div>
 
   <!-- Per-Skill Global Target Modal -->
+  <div id="collection-editor" class="modal-overlay collection-editor-overlay" role="dialog" aria-modal="true" aria-labelledby="collection-editor-title" aria-hidden="true" inert>
+    <section class="collection-editor-page">
+      <header class="collection-editor-header">
+        <button type="button" class="btn btn-secondary" id="collection-editor-back" onclick="closeCollectionEditor(true)">← 返回集合</button>
+        <div><span id="collection-editor-kicker">集合编辑</span><h2 id="collection-editor-title"></h2></div>
+        <button type="button" class="btn btn-secondary btn-icon" onclick="closeCollectionEditor()" aria-label="关闭集合编辑器">×</button>
+      </header>
+      <div class="collection-editor-layout">
+        <aside class="collection-editor-sidebar">
+          <div class="collection-editor-sidebar-top">
+            <button type="button" id="collection-editor-all" class="collection-editor-nav" onclick="selectCollectionEditorMember(null)"><strong>整个集合</strong><small id="collection-editor-count"></small></button>
+            <label for="collection-editor-search" id="collection-editor-members-label">成员</label>
+            <input type="search" id="collection-editor-search" placeholder="搜索成员…" oninput="renderCollectionEditorNavigation()">
+          </div>
+          <nav id="collection-editor-members" aria-label="集合成员"></nav>
+        </aside>
+        <main class="collection-editor-content">
+          <div class="collection-editor-context"><span id="collection-editor-scope"></span><h3 id="collection-editor-heading"></h3><p id="collection-editor-description"></p></div>
+          <section class="collection-editor-section">
+            <h4 id="collection-editor-policy-heading">调用方式</h4><p id="collection-editor-policy-hint"></p>
+            <div class="collection-editor-policy-options">
+              <label class="collection-editor-choice"><input type="radio" name="collection-editor-policy" value="false" onchange="stageCollectionEditorPolicy(false)"><span><strong id="collection-editor-explicit-label">仅显式调用</strong><small id="collection-editor-explicit-help">由你使用 $skill-name 主动调用。</small></span></label>
+              <label class="collection-editor-choice"><input type="radio" name="collection-editor-policy" value="true" onchange="stageCollectionEditorPolicy(true)"><span><strong id="collection-editor-auto-label">允许自动调用</strong><small id="collection-editor-auto-help">请求匹配时，Agent 可以自动选择。</small></span></label>
+            </div>
+          </section>
+          <section class="collection-editor-section" id="collection-editor-shared-section">
+            <h4 id="collection-editor-shared-heading">共同要求</h4><p id="collection-editor-shared-hint">保存后应用到所有成员，保留各自原有规则。</p>
+            <textarea id="collection-editor-shared" rows="9" aria-label="集合共同要求" placeholder="例如：默认使用中文；所有结论必须提供可核对的来源。" oninput="stageCollectionEditorRules(this.value)"></textarea>
+          </section>
+          <section class="collection-editor-section" id="collection-editor-document-section" hidden>
+            <h4 id="collection-editor-document-heading">成员规则</h4><p id="collection-editor-document-hint">只修改当前成员的 Skill 文档。</p>
+            <textarea id="collection-editor-document" rows="16" aria-label="成员规则" spellcheck="false" oninput="stageCollectionEditorDocument(this.value)"></textarea>
+          </section>
+        </main>
+      </div>
+      <footer class="collection-editor-footer"><div><strong id="collection-editor-status" role="status"></strong><small id="collection-editor-save-hint">修改技能库原件；项目和发布副本需更新后生效。</small></div><button type="button" class="btn btn-primary" id="collection-editor-save" onclick="saveCollectionEditor()">保存修改</button></footer>
+    </section>
+  </div>
+
   <div id="global-target-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="global-target-modal-title" aria-hidden="true" inert>
     <div class="modal-container global-target-modal-container">
       <header class="modal-header">
@@ -860,5 +900,6 @@
   <script src="workspace-tools.js"></script>
   <script src="category-picker.js"></script>
   <script src="project-rules-editor.js"></script>
+  <script src="collection-editor.js"></script>
 </body>
 </html>

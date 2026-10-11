@@ -2,7 +2,9 @@
 
 [中文](README.md) · [User manual](docs/SkillHub使用说明书.md) · [Architecture & Technical Manual](docs/ARCHITECTURE.md) · [Download the latest release](https://github.com/w1ndmiIl/skill_store/releases/latest) · [MIT License](LICENSE)
 
-SkillHub is a local AI Skill management and synchronization tool. It keeps reusable development rules, workflows, and specialist capabilities in one place, then applies them selectively to projects or clients such as Codex, Claude Code, Cursor, Cline, OpenCode, Windsurf, Gemini CLI, and VS Code/Copilot. Current version: **3.6.2**.
+SkillHub is a local AI Skill management and synchronization tool. It keeps reusable development rules, workflows, and specialist capabilities in one place, then applies them selectively to projects or clients such as Codex, Claude Code, Cursor, Cline, OpenCode, Windsurf, Gemini CLI, and VS Code/Copilot. Current version: **3.6.3**.
+
+3.6.3 adds collection rule editing, continues inspection after its queue is closed, and improves category compatibility and asynchronous window state handling. See the [3.6.3 release notes](docs/releases/v3.6.3.md).
 
 Every mutation follows a review-first workflow: imports receive local inspection, project synchronization shows file-level additions, updates, removals, and conflicts, and Agent writes are bound to one-time approvals and current hashes. Settings, sessions, memory, trash, and backups stay on the local machine.
 

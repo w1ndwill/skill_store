@@ -75,6 +75,17 @@ class RefactoredWorkflowTests(unittest.TestCase):
         for path, original in zip(paths, originals):
             self.assertEqual(Path(path).read_text(encoding="utf-8"), original)
 
+    def test_nested_category_delete_is_previewed_and_persists_after_reopen(self):
+        path = Path(self.skills_dir) / "aliyun-ssh" / "SKILL.md"
+        write_text(str(path), "---\nname: aliyun-ssh\nmetadata:\n  category: 工程效率\n  owner: keep\n---\n\n# SSH\n")
+        self.assertEqual(self.api.get_skills()[0]["category"], "工程效率")
+        self.assertEqual(self.api.preview_delete_skill_category("工程效率")["affected_count"], 1)
+        self.assertTrue(self.api.delete_skill_category("工程效率")["ok"])
+        self.assertEqual(self.api.get_skills()[0]["category"], "未分类")
+        self.api._skill_metadata_cache = {}
+        self.assertEqual(self.api.get_skills()[0]["category"], "未分类")
+        self.assertIn("  owner: keep\n", path.read_text(encoding="utf-8"))
+
     def test_import_tree_rejects_reparse_points_through_preparation_adapter(self):
         source = os.path.join(self.sources_dir, "linked-skill")
         write_text(

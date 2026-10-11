@@ -459,8 +459,15 @@ class ProjectSyncApiMixin:
             "conflict": 0,
         }
         changes = []
+        skill_owners = {action: set() for action in summary if action != "conflict"}
+        removal_counts = {}
         for item in plan["changes"]:
             summary[item["action"]] += 1
+            owner = item.get("owner", "")
+            if owner and owner != "__agents_index__":
+                skill_owners[item["action"]].add(owner)
+                if item["action"] == "delete":
+                    removal_counts[owner] = removal_counts.get(owner, 0) + 1
             if item["conflict"]:
                 summary["conflict"] += 1
             changes.append({
@@ -505,6 +512,11 @@ class ProjectSyncApiMixin:
         return {
             "ok": True,
             "summary": summary,
+            "skill_summary": {action: len(owners) for action, owners in skill_owners.items()},
+            "removed_skills": [
+                {"filename": owner, "file_count": count}
+                for owner, count in sorted(removal_counts.items())
+            ],
             "changes": changes,
             "enabled_skills": list(plan["enabled_skills"]),
             "synced_count": len(plan["active_metadata"]),

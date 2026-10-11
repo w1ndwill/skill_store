@@ -3,7 +3,7 @@
 import os
 import re
 
-from .frontmatter import split_markdown_frontmatter
+from .frontmatter import get_markdown_frontmatter_category, split_markdown_frontmatter
 
 
 def clean_frontmatter_value(value: str, fallback: str = "") -> str:
@@ -80,7 +80,7 @@ def infer_skill_metadata(content: str, filename: str, language: str = "zh") -> d
     return {
         "title": clean_frontmatter_value(title, fallback_title),
         "emoji": clean_frontmatter_value(frontmatter.get("emoji"), emoji),
-        "category": clean_frontmatter_value(frontmatter.get("category"), category),
+        "category": clean_frontmatter_value(get_markdown_frontmatter_category(content), category),
         "tags": tags[:6],
         "description": clean_frontmatter_value(description),
         "body": body,

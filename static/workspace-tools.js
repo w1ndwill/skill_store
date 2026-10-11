@@ -4,6 +4,7 @@ let listPreferenceKey=null;
 let listPage=0,listPageSignature="";
 let editorVersion=null, editorSaveBusy=false, draftTimer=null;
 let toolBusy=false, toolKind='';
+let toolCloseRequested=false;
 const toolModal=document.createElement('div');
 toolModal.id='workspace-tool-modal';toolModal.className='modal-overlay';
 toolModal.setAttribute('role','dialog');toolModal.setAttribute('aria-modal','true');
@@ -12,9 +13,16 @@ toolModal.innerHTML='<section class="modal-container workspace-tool-container"><
 document.body.append(toolModal);
 const toolBody=toolModal.querySelector('.workspace-tool-body'),toolActions=toolModal.querySelector('.workspace-tool-actions'),toolFooter=toolModal.querySelector('footer');
 document.getElementById('workspace-tool-close').onclick=closeWorkspaceTool;
-function closeWorkspaceTool(){if(toolBusy){showToast(uiText('请等待本项操作完成','Wait for the current operation'),'info');return;}deactivateModal(toolModal);}
+function closeWorkspaceTool(){toolCloseRequested=true;
+  const inspectionContinues=toolKind==='inspection'&&inspectionRunning&&!inspectionPauseRequested;
+  if(toolKind==='inspection')inspectionModalVisible=false;
+  if(toolBusy)showToast(uiText('窗口已关闭，当前操作在后台完成','Window closed; the current operation will finish in the background'),'info');
+  deactivateModal(toolModal);
+  if(inspectionContinues)showToast(uiText('体检继续在后台进行','Inspection continues in the background'),'info',{
+    duration:12000,actionLabel:uiText('查看进度','View progress'),onAction:()=>openInspectionQueue(inspectionQueue)});
+}
 function toolButton(label,action,parent=toolActions){const b=document.createElement('button');b.className='btn btn-secondary';b.type='button';b.textContent=label;b.onclick=async()=>{try{await action();}catch(e){showToast(e.message,'error');}};parent.append(b);return b;}
-function openWorkspaceTool(title,kind){if(toolBusy)return false;toolKind=kind;document.getElementById('workspace-tool-title').textContent=title;toolBody.replaceChildren();toolActions.replaceChildren();toolFooter.textContent='';activateModal(toolModal);return true;}
+function openWorkspaceTool(title,kind){if(toolBusy)return false;toolCloseRequested=false;toolKind=kind;document.getElementById('workspace-tool-title').textContent=title;toolBody.replaceChildren();toolActions.replaceChildren();toolFooter.textContent='';activateModal(toolModal);return true;}
 function textBlock(text,parent=toolBody){const el=document.createElement('pre');el.className='tool-detail';el.textContent=text;parent.append(el);return el;}
 
 async function openTrash(){
@@ -40,10 +48,10 @@ async function openTrash(){
     toolBusy=true;const results=[];
     try{
       if(purge){const r=await window.pywebview.api.purge_trash([...selected],plan.token);if(r.error)throw new Error(r.error);results.push(...r.removed.map(n=>n+' ✓'),...r.errors.map(e=>e.filename+': '+e.error));}
-      else for(const token of selected){const r=await window.pywebview.api.restore_deleted_skill(token);results.push((items.find(i=>i.token===token)?.filename||token)+': '+(r.error||r.warning||uiText('已恢复','Restored')));}
+      else for(const token of selected){if(toolCloseRequested)break;const r=await window.pywebview.api.restore_deleted_skill(token);results.push((items.find(i=>i.token===token)?.filename||token)+': '+(r.error||r.warning||uiText('已恢复','Restored')));}
       await fetchSkills();
     }finally{toolBusy=false;}
-    await openTrash();toolFooter.textContent=results.join('\n');
+    if(!toolCloseRequested){await openTrash();toolFooter.textContent=results.join('\n');}
   }draw();
 }
 
@@ -55,7 +63,16 @@ function workspaceFilterSkills(items){
     if(listPreferenceKey!==null)listPreferences.set(listPreferenceKey,{sort:sort.value,query:searchInput.value,category:activeCategoryFilter});
     const pref=listPreferences.get(key)||{};sort.value=pref.sort||'name';searchInput.value=pref.query||'';activeCategoryFilter=pref.category||null;listPreferenceKey=key;
   }
-  return [...items].sort(sort.value==='modified'?(a,b)=>(b.modified_at||0)-(a.modified_at||0):(a,b)=>(a.display_title||a.title||a.filename).localeCompare(b.display_title||b.title||b.filename,currentLanguage));
+  const project=currentProjectPath?projects.find(item=>item.path===currentProjectPath):null;
+  const hasProjectCopy=skill=>Boolean(project&&(skill.project_only||
+    (skill.is_collection?skill.collection_members||[]:[skill]).some(member=>
+      ['synced','out_of_sync'].includes(project.skills_status?.[member.filename]))));
+  return [...items].sort((a,b)=>{
+    const projectOrder=Number(hasProjectCopy(b))-Number(hasProjectCopy(a));
+    if(projectOrder)return projectOrder;
+    return sort.value==='modified'?(b.modified_at||0)-(a.modified_at||0):
+      (a.display_title||a.title||a.filename).localeCompare(b.display_title||b.title||b.filename,currentLanguage);
+  });
 }
 function paginateSkillRows(items){
   const signature=JSON.stringify([currentProjectPath,searchInput.value,activeCategoryFilter,document.getElementById('skill-sort').value,items.length]);
@@ -91,16 +108,18 @@ function retainEditorDraft(){
   });
   return draftWriteChain;
 }
-async function clearEditorDraft(){
+async function clearEditorDraft(filename=editingFilename){
   clearTimeout(draftTimer);await draftWriteChain;
-  try{localStorage.removeItem(draftKey());const r=await window.pywebview.api.clear_editor_draft(editingFilename);if(r.error)throw new Error(r.error);}
+  try{localStorage.removeItem(draftKey(filename));const r=await window.pywebview.api.clear_editor_draft(filename);if(r.error)throw new Error(r.error);}
   catch(e){showToast(uiText('内容已保存，但旧草稿未清除：','Saved, but old draft was not cleared: ')+e.message,'warning');}
 }
 function queueEditorDraft(){clearTimeout(draftTimer);draftTimer=setTimeout(retainEditorDraft,450);}
 async function restoreEditorDraft(){
-  let draft;try{const r=await window.pywebview.api.load_editor_draft(editingFilename);if(r.error)throw new Error(r.error);draft=r.draft||JSON.parse(localStorage.getItem(draftKey())||'null');}catch(e){showToast(e.message,'error');return;}
+  const viewId=editorViewId,filename=editingFilename;
+  let draft;try{const r=await window.pywebview.api.load_editor_draft(filename);if(viewId!==editorViewId)return;if(r.error)throw new Error(r.error);draft=r.draft||JSON.parse(localStorage.getItem(draftKey(filename))||'null');}catch(e){if(viewId===editorViewId)showToast(e.message,'error');return;}
   if(!draft||JSON.stringify(draft.snapshot)===getEditorSnapshot())return;
   if(!await showCustomDialog({title:uiText('恢复未保存草稿？','Restore unsaved draft?'),message:new Date(draft.at).toLocaleString(),confirmText:uiText('恢复草稿','Restore draft')}))return;
+  if(viewId!==editorViewId)return;
   const v=draft.snapshot;const formChanged=JSON.stringify(v.openaiForm||{})!==JSON.stringify(editorOpenaiForm);editorSkillContent=v.skillContent;editorOpenaiYamlContent=v.openaiYaml;editorOpenaiForm=v.openaiForm||{};
   editorOpenaiFormDirty=editorOpenaiYamlSupported&&formChanged;editorOpenaiYamlDirty=editorOpenaiYamlSupported&&v.openaiYaml!==editorOpenaiYamlInitialContent;editorOpenaiYamlCreateRequested=editorOpenaiYamlSupported&&Boolean(v.createOpenaiYaml);
   editorVersion=draft.version;markdownTextarea.value=editorSkillContent;populateSkillCategoryOptions(v.category);populateOpenaiForm(editorOpenaiForm);updateEditorDirtyState();
@@ -109,11 +128,11 @@ async function resolveEditorConflict(result){
   retainEditorDraft();
   if(!openWorkspaceTool(uiText('文件已变化 · 草稿已保留','File changed · draft retained'),'conflict'))return;
   textBlock(uiText('磁盘版本','Disk version'));textBlock(result.current?.skill_content||uiText('文件已删除','File removed'));
-  textBlock(uiText('你的草稿','Your draft'));textBlock(getEditorContentWithCategory());
+  textBlock(uiText('你的草稿','Your draft'));textBlock(await getEditorContentWithCategory());
   if(editorOpenaiYamlSupported){textBlock('agents/openai.yaml — '+uiText('磁盘 / 草稿','Disk / draft'));textBlock((result.current?.openai_yaml_content||'')+'\n────────\n'+editorOpenaiYamlContent);}
   if(result.diff)textBlock(result.diff);
-  toolButton(uiText('复制草稿','Copy draft'),()=>copyAgentText(getEditorContentWithCategory()));
-  toolButton(uiText('另存草稿','Export draft'),async()=>{const r=await window.pywebview.api.export_editor_draft(editingFilename,{skill_content:getEditorContentWithCategory(),openai_yaml_content:editorOpenaiYamlContent});if(r.error)throw new Error(r.error);toolFooter.textContent=uiText('草稿已另存至：','Draft exported to: ')+r.path;});
+  toolButton(uiText('复制草稿','Copy draft'),async()=>copyAgentText(await getEditorContentWithCategory()));
+  toolButton(uiText('另存草稿','Export draft'),async()=>{const r=await window.pywebview.api.export_editor_draft(editingFilename,{skill_content:await getEditorContentWithCategory(),openai_yaml_content:editorOpenaiYamlContent});if(r.error)throw new Error(r.error);toolFooter.textContent=uiText('草稿已另存至：','Draft exported to: ')+r.path;});
   toolButton(uiText('重新载入磁盘版本','Reload disk version'),async()=>{const name=editingFilename;closeWorkspaceTool();await openEditorModal(name);});
   toolButton(uiText('明确覆盖此版本','Overwrite this version'),async()=>{
     if(!result.current?.version){showToast(uiText('原文件已删除，请另存草稿','Original removed; save draft separately'),'warning');return;}
@@ -123,26 +142,39 @@ async function resolveEditorConflict(result){
 }
 
 let inspectionQueue=[];
+let inspectionRunning=false,inspectionPauseRequested=false;
+let inspectionModalVisible=false;
+let inspectionInspectButton=null,inspectionPauseButton=null;
 async function openInspectionQueue(items){
   if(!openWorkspaceTool(uiText('技能体检队列','Skill inspection queue'),'inspection'))return;
-  inspectionQueue=items.map(i=>({...i,status:'pending',selected:false,preview:null,error:''}));
-  toolButton(uiText('检查全部 / 重试失败','Inspect all / retry failed'),()=>inspectAll());
+  inspectionModalVisible=true;
+  if(!inspectionRunning){const previous=new Map(inspectionQueue.map(i=>[i.filename,i]));
+    inspectionQueue=items.map(i=>{const old=previous.get(i.filename);return old&&old.hash===i.hash?old:{...i,status:'pending',selected:false,preview:null,error:''};});}
+  inspectionInspectButton=toolButton(uiText('检查全部 / 重试失败','Inspect all / retry failed'),()=>inspectAll());
+  inspectionPauseButton=toolButton(uiText('暂停后续检查','Pause remaining checks'),()=>{inspectionPauseRequested=true;drawQueue();});
   toolButton(uiText('选择低风险项','Select low-risk'),()=>{inspectionQueue.forEach(i=>i.selected=Boolean(i.preview&&!i.preview.has_high_risk&&!i.preview.ai_used&&!i.preview.error));drawQueue();});
   toolButton(uiText('应用所选低风险项','Apply selected low-risk'),()=>applySelected());
   toolButton(uiText('保留所选原样','Keep selected unchanged'),()=>keepSelected());drawQueue();
 }
 function drawQueue(){
+  if(toolKind!=='inspection')return;
+  if(inspectionInspectButton)inspectionInspectButton.disabled=toolBusy||inspectionRunning;
+  if(inspectionPauseButton)inspectionPauseButton.disabled=!inspectionRunning||inspectionPauseRequested;
   toolBody.replaceChildren();
   for(const item of inspectionQueue){const row=document.createElement('div');row.className='tool-row';
-    const check=document.createElement('input');check.type='checkbox';check.checked=item.selected;check.disabled=toolBusy||['done','skipped'].includes(item.status);check.onchange=()=>item.selected=check.checked;
+    const check=document.createElement('input');check.type='checkbox';check.checked=item.selected;check.disabled=toolBusy||['checking','done','skipped'].includes(item.status);check.onchange=()=>item.selected=check.checked;
+    check.setAttribute('aria-label',uiText('选择 ','Select ')+item.filename);
     const title=document.createElement('span');title.textContent=item.filename;
     const status=document.createElement('small');status.textContent=item.error||({pending:uiText('待检查','Pending'),checking:uiText('检查中','Inspecting'),ready:uiText('待审阅','Review'),done:uiText('已完成','Completed'),skipped:uiText('已跳过','Skipped'),failed:uiText('失败，可重试','Failed; retry')}[item.status]||item.status);
+    if(item.preview?.display_translation_error)status.textContent+=' · '+uiText('简介翻译失败，可重试','Display translation failed; retry available');
     row.append(check,title,status);
     if(item.preview){toolButton(uiText('查看 / 审阅','Details / review'),()=>reviewQueueItem(item),row);}
-    if(!['done','skipped'].includes(item.status))toolButton(uiText('跳过','Skip'),()=>skipQueueItem(item),row);
+    if(!['done','skipped'].includes(item.status)){const skip=toolButton(uiText('跳过','Skip'),()=>skipQueueItem(item),row);skip.disabled=toolBusy||item.status==='checking';}
+    if(item.status==='ready'&&item.preview?.display_translation_error){const retry=toolButton(uiText('重试体检','Retry inspection'),()=>inspectAll(item),row);retry.disabled=toolBusy||inspectionRunning;}
     toolBody.append(row);
   }
   toolFooter.textContent=uiText('已完成 ','Completed ')+inspectionQueue.filter(i=>['done','skipped'].includes(i.status)).length+' / '+inspectionQueue.length;
+  if(inspectionRunning)toolFooter.textContent+=' · '+(inspectionPauseRequested?uiText('当前项完成后暂停','Pausing after the current item'):uiText('检查中，可审阅和处理已就绪项','Inspecting; ready items remain actionable'));
 }
 async function acknowledgeQueueItem(item,status){
   const r=await window.pywebview.api.acknowledge_unregistered_skill(item.filename,item.hash);
@@ -150,31 +182,44 @@ async function acknowledgeQueueItem(item,status){
   if(item.preview?.token){try{await window.pywebview.api.discard_skill_import(item.preview.token);}catch(_){/* Staged previews expire automatically. */}}
   item.status=status;item.selected=false;item.preview=null;item.error='';
 }
-async function skipQueueItem(item){if(toolBusy||['done','skipped'].includes(item.status))return;
+async function skipQueueItem(item){if(toolBusy||['checking','done','skipped'].includes(item.status))return;
   toolBusy=true;try{await acknowledgeQueueItem(item,'skipped');}catch(e){item.status='failed';item.error=e.message;}
   finally{toolBusy=false;drawQueue();await fetchSkills();}
 }
-async function inspectAll(){if(toolBusy)return;toolBusy=true;
-  try{for(const item of inspectionQueue.filter(i=>['pending','failed'].includes(i.status))){
-    item.status='checking';drawQueue();try{item.preview=await window.pywebview.api.preview_unregistered_skill(item.filename);if(item.preview.error)throw new Error(item.preview.error);item.error='';item.status='ready';}catch(e){item.status='failed';item.error=e.message;}drawQueue();
-  }}finally{toolBusy=false;drawQueue();}}
+async function inspectAll(retryItem=null){if(toolBusy||inspectionRunning)return;inspectionRunning=true;inspectionPauseRequested=false;
+  const items=retryItem?[retryItem]:inspectionQueue.filter(i=>['pending','failed'].includes(i.status));
+  try{for(const item of items){
+    if(inspectionPauseRequested)break;
+    if(['checking','done','skipped'].includes(item.status))continue;
+    const previousToken=item.preview?.token;item.preview=null;item.status='checking';drawQueue();
+    try{item.preview=await window.pywebview.api.preview_unregistered_skill(item.filename);if(item.preview.error)throw new Error(item.preview.error);item.error='';item.status='ready';}
+    catch(e){item.preview=null;item.status='failed';item.error=e.message;}
+    if(previousToken){try{await window.pywebview.api.discard_skill_import(previousToken);}catch(_){/* Staged previews expire automatically. */}}
+    drawQueue();
+  }}finally{inspectionRunning=false;drawQueue();
+    if(!inspectionModalVisible)showToast(
+      inspectionPauseRequested?uiText('体检已暂停，可打开队列继续','Inspection paused; open the queue to continue'):uiText('后台体检已完成，可查看结果','Background inspection finished; review the results'),
+      'info',{duration:15000,actionLabel:uiText('打开队列','Open queue'),onAction:()=>openInspectionQueue(inspectionQueue)});
+  }}
 async function applyQueueItem(item,ai=false,risk=false){
   const r=await window.pywebview.api.apply_skill_import(item.preview.token,ai,risk);
   if(r.error)throw new Error(r.error);item.status='done';item.selected=false;item.preview=null;
 }
 async function applySelected(){if(toolBusy)return;
-  const selected=inspectionQueue.filter(i=>i.selected&&i.status==='ready'&&!i.preview.has_high_risk&&!i.preview.ai_used);
+  const selected=inspectionQueue.filter(i=>i.selected&&i.status==='ready'&&i.preview&&!i.preview.has_high_risk&&!i.preview.ai_used);
   if(!selected.length)return;
   if(!await showCustomDialog({title:uiText('应用所选低风险项？','Apply selected low-risk items?'),message:selected.map(i=>i.filename).join('\n')}))return;
-  toolBusy=true;try{for(const item of selected){try{await applyQueueItem(item);}catch(e){item.status='failed';item.error=e.message;}drawQueue();}}finally{toolBusy=false;drawQueue();await fetchSkills();}}
-async function keepSelected(){if(toolBusy)return;toolBusy=true;try{for(const item of inspectionQueue.filter(i=>i.selected)){
+  toolBusy=true;try{for(const item of selected){if(toolCloseRequested)break;try{await applyQueueItem(item);}catch(e){item.status='failed';item.error=e.message;}drawQueue();}}finally{toolBusy=false;drawQueue();await fetchSkills();}}
+async function keepSelected(){if(toolBusy)return;toolBusy=true;try{for(const item of inspectionQueue.filter(i=>i.selected&&!['checking','done','skipped'].includes(i.status))){
+    if(toolCloseRequested)break;
     try{await acknowledgeQueueItem(item,'done');}catch(e){item.status='failed';item.error=e.message;}
   }}finally{toolBusy=false;drawQueue();await fetchSkills();}}
-async function reviewQueueItem(item){if(toolBusy||!item.preview)return;const preview=item.preview;
+async function reviewQueueItem(item){if(toolBusy||item.status==='checking'||!item.preview)return;const preview=item.preview;
   const confirmed=await showCustomDialog({title:item.filename,message:formatImportPreview(preview),confirmText:uiText('应用','Apply')});if(!confirmed)return;
   let risk=false,ai=false;
   if(preview.has_high_risk){risk=Boolean(await showCustomDialog({title:uiText('确认高风险项','Confirm high-risk findings'),message:(preview.findings||[]).filter(f=>f.severity==='high').map(f=>currentLanguage==='zh'?f.message_zh:f.message_en).join('\n'),emoji:'⚠️'}));if(!risk)return;}
   if(preview.ai_used){ai=Boolean(await showCustomDialog({title:uiText('审阅 AI 改写','Review AI changes'),message:formatAiImportDiff(preview)}));if(!ai)return;}
+  if(toolBusy||item.preview!==preview||['checking','done','skipped'].includes(item.status))return;
   toolBusy=true;try{await applyQueueItem(item,ai,risk);}catch(e){item.status='failed';item.error=e.message;}finally{toolBusy=false;drawQueue();await fetchSkills();}
 }
 
